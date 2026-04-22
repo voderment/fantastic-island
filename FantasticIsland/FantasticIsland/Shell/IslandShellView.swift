@@ -49,11 +49,27 @@ private struct PeekRenderState {
     let activity: IslandActivity
 }
 
-// This notch surface is adapted from Open Island's island panel approach:
+// Copyright 2026 Fantastic Island contributors
+// Portions adapted from open-vibe-island contributors
+//
+// This file is part of Fantastic Island.
+//
+// Fantastic Island is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, version 3.
+//
+// Fantastic Island is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Fantastic Island. If not, see <https://www.gnu.org/licenses/>.
+//
+// This file adapts work from open-vibe-island:
 // https://github.com/Octane0411/open-vibe-island
 // Original file: Sources/OpenIslandApp/Views/IslandPanelView.swift
-// Upstream license: GPL-3.0
-// Modified for island on 2026-04-14.
+// Modified for Fantastic Island on 2026-04-14.
 struct IslandShellView: View {
     @ObservedObject var model: IslandAppModel
     let compactWidth: CGFloat

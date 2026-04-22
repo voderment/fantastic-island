@@ -5,10 +5,11 @@
 
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
+Fantastic Island is built on top of the open-source project `open-vibe-island`, and is an open, extensible app for the macOS notch area.
 
-Fantastic Island is an extensible notch app for macOS.
+It supports plugging different capabilities in as modules, and the code is open too. In theory, you can use this container and its extensibility to build an island that is actually yours.
 
-It treats the notch shell as a stable container and plugs different capabilities into one shared island surface: expand it, peek into it, switch modules, and enable only the pieces you actually want.
+The fan component is mostly here because it is fun. You can hide it if you want, or just keep it around as a tiny reminder thing.
 
 The repository currently ships with three built-in modules:
 
@@ -16,14 +17,13 @@ The repository currently ships with three built-in modules:
 - `Clash`
 - `Player`
 
-The `Codex` and `Clash` modules continue from open-source foundations. The spinning `Wind Drive` fan in the middle exists for a much simpler reason: it is fun.
+The `Codex` and `Clash` modules continue to evolve from open-source foundations.
 
 ## Core Idea
 
-- This is not just a few floating utilities placed next to each other.
-- The shell owns expansion, collapse, peek, notifications, and module navigation.
-- Each module focuses on its own state, summaries, and expanded content.
-- New capabilities are meant to plug into the existing container instead of forcing a shell rewrite.
+More and more products want to live around the island area, but that space is scarce. If you use A, you usually cannot use B without the interactions starting to fight each other.
+
+Fantastic Island started from the open-source project `open-vibe-island`, but the real thing I want to build is a shell architecture with modular extensions, so you can assemble your own island as needed. You could even plug a todo module into it, although I am not totally sure the experience would be good.
 
 ## Settings And Modularity
 
@@ -34,7 +34,7 @@ The `Codex` and `Clash` modules continue from open-source foundations. The spinn
   <img src="./docs/images/settings-wind-drive.png" alt="Fantastic Island wind drive and module configuration" />
 </p>
 
-The settings surface keeps app-level behavior, `Wind Drive`, module toggles, and design token debugging in one place. The shell stays stable while the module layer remains easy to extend.
+The settings page keeps app-level behavior, `Wind Drive`, module toggles, and the design token debugging entry in one place. The shell stays stable, while the module layer stays easy to extend.
 
 ## Built-In Pieces
 
@@ -49,15 +49,15 @@ The settings surface keeps app-level behavior, `Wind Drive`, module toggles, and
 
 ### Codex
 
-The `Codex` module acts like a local workspace that lives inside the notch. Session state, quota, and recent activity stay visible without forcing you back into the terminal every few seconds.
+The `Codex` module is more like a local workspace living inside the notch. Session state, quota, and recent activity stay visible without making you jump back to the terminal every few seconds.
 
-`Claude` is not wired into the agent monitoring path right now. This is less an architectural decision than an account-level incident: it banned my account, so this part currently stays focused on local `Codex` workflows.
+`Claude` is not wired into the agent monitoring path right now because it banned my account. To be fair, I also prefer `Codex`, so...
 
 ![Fantastic Island Codex module](./docs/images/island-codex.png)
 
 ### Player
 
-The `Player` module keeps now playing information inside the same surface, so media controls can coexist with `Codex` and `Clash` without a separate UI layer.
+The `Player` module is here to show and control current playback, so media controls can live together with `Codex` and `Clash` without needing another separate UI layer.
 
 ![Fantastic Island Player module](./docs/images/island-player.png)
 
