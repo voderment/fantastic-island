@@ -34,6 +34,7 @@ final class IslandShellController {
 
     fileprivate weak var model: IslandAppModel?
     private var panel: IslandShellPanel?
+    private var closedActivationPanel: IslandClosedActivationPanel?
     private var screenObserver: NSObjectProtocol?
     private var globalClickMonitor: Any?
     private var localClickMonitor: Any?
@@ -75,6 +76,7 @@ final class IslandShellController {
         panel.ignoresMouseEvents = !isPanelInteractive(for: model)
         panel.acceptsMouseMovedEvents = isPanelInteractive(for: model)
         panel.orderFrontRegardless()
+        syncClosedActivationPanel(using: model, on: screen)
         startEventMonitoring()
     }
 
@@ -99,6 +101,7 @@ final class IslandShellController {
         panel.orderFrontRegardless()
         panel.ignoresMouseEvents = false
         panel.acceptsMouseMovedEvents = true
+        hideClosedActivationPanel()
         startEventMonitoring()
     }
 
@@ -124,12 +127,14 @@ final class IslandShellController {
         let isInteractive = model.isInteractivePeeking
         panel.ignoresMouseEvents = !isInteractive
         panel.acceptsMouseMovedEvents = isInteractive
+        hideClosedActivationPanel()
         startEventMonitoring()
     }
 
     func hide() {
         cancelPendingCloseResize(resetCollapseState: true)
         panel?.orderOut(nil)
+        hideClosedActivationPanel()
         stopEventMonitoring()
     }
 
@@ -145,6 +150,7 @@ final class IslandShellController {
         }
         updatePanelFrame(panel, using: model, on: screen)
         computeNotchRect(screen: screen)
+        syncClosedActivationPanel(using: model, on: screen)
     }
 
     func contentRect(for model: IslandAppModel, in bounds: NSRect) -> NSRect {
@@ -171,7 +177,7 @@ final class IslandShellController {
             return centeredShellRect(
                 in: contentRect,
                 width: peekShellWidth(for: screen),
-                height: max(closedNotchHeight(for: screen), model.peekContentHeight)
+                height: max(closedNotchHeight(for: screen), peekContentHeight(for: model, on: screen))
             )
         }
 
@@ -213,7 +219,11 @@ final class IslandShellController {
 
     func closedPanelWidth(for model: IslandAppModel, on screen: NSScreen?) -> CGFloat {
         let notchWidth = screen?.codexIslandNotchSize.width ?? Self.defaultNotchSize.width
-        return model.closedSurfaceWidth(baseCompactWidth: notchWidth)
+        let hardwareNotchExclusionWidth = screen?.codexIslandClosedContentNotchExclusionWidth ?? 0
+        return model.closedSurfaceWidth(
+            baseCompactWidth: notchWidth,
+            hardwareNotchExclusionWidth: hardwareNotchExclusionWidth
+        )
     }
 
     private var panelShadowInsets: (horizontal: CGFloat, bottom: CGFloat) {
@@ -277,12 +287,16 @@ final class IslandShellController {
         let closedHeight = closedNotchHeight(for: screen)
         let expandedContentWidth = expandedContentWidth(for: screen)
         let peekContentWidth = peekContentWidth(for: screen)
+        let expandedContentTopClearance = screen?.codexIslandExpandedContentTopClearance ?? 0
+        let closedContentNotchExclusionWidth = screen?.codexIslandClosedContentNotchExclusionWidth ?? 0
         return IslandShellView(
             model: model,
             compactWidth: compactWidth,
             closedHeight: closedHeight,
             expandedContentWidth: expandedContentWidth,
-            peekContentWidth: peekContentWidth
+            peekContentWidth: peekContentWidth,
+            expandedContentTopClearance: expandedContentTopClearance,
+            closedContentNotchExclusionWidth: closedContentNotchExclusionWidth
         )
     }
 
@@ -299,7 +313,11 @@ final class IslandShellController {
     private func holdingPanelSize(for model: IslandAppModel, on screen: NSScreen) -> CGSize {
         let insets = panelShadowInsets
         let panelWidth = expandedShellWidth(for: screen)
-        let contentHeight = max(closedNotchHeight(for: screen), openedContentHeight(for: model))
+        let targetOpenedContentHeight =
+            model.isInteractivePeeking
+            ? peekContentHeight(for: model, on: screen)
+            : openedContentHeight(for: model, on: screen)
+        let contentHeight = max(closedNotchHeight(for: screen), targetOpenedContentHeight)
         let height = contentHeight + Self.openedContentBottomPadding + insets.bottom
 
         return CGSize(
@@ -308,8 +326,14 @@ final class IslandShellController {
         )
     }
 
-    private func openedContentHeight(for model: IslandAppModel) -> CGFloat {
-        model.selectedModuleContentHeight
+    private func openedContentHeight(for model: IslandAppModel, on screen: NSScreen?) -> CGFloat {
+        let expandedContentTopClearance = screen?.codexIslandExpandedContentTopClearance ?? 0
+        return model.selectedModuleContentHeight + expandedContentTopClearance
+    }
+
+    private func peekContentHeight(for model: IslandAppModel, on screen: NSScreen?) -> CGFloat {
+        let expandedContentTopClearance = screen?.codexIslandExpandedContentTopClearance ?? 0
+        return model.peekContentHeight + expandedContentTopClearance
     }
 
     private func expandedShellWidth(for screen: NSScreen?) -> CGFloat {
@@ -373,17 +397,40 @@ final class IslandShellController {
         panel.acceptsMouseMovedEvents = false
     }
 
+    private func syncClosedActivationPanel(using model: IslandAppModel, on screen: NSScreen) {
+        guard !model.islandUsesOpenedVisualState,
+              let activationRect = closedActivationRect(for: model) else {
+            hideClosedActivationPanel()
+            return
+        }
+
+        let activationPanel = self.closedActivationPanel ?? makeClosedActivationPanel(frame: activationRect)
+        self.closedActivationPanel = activationPanel
+
+        if activationPanel.frame != activationRect {
+            activationPanel.setFrame(activationRect, display: true)
+        }
+
+        activationPanel.orderFrontRegardless()
+    }
+
+    private func hideClosedActivationPanel() {
+        closedActivationPanel?.orderOut(nil)
+    }
+
     private func computeNotchRect(screen: NSScreen?) {
         guard let screen else {
             notchRect = .zero
             return
         }
 
-        let notchSize = screen.codexIslandNotchSize
-        let screenFrame = screen.frame
-        let notchX = screenFrame.midX - notchSize.width / 2
-        let notchY = screenFrame.maxY - notchSize.height
-        notchRect = NSRect(x: notchX, y: notchY, width: notchSize.width, height: notchSize.height)
+        notchRect = screen.codexIslandHardwareNotchRect
+            ?? NSRect(
+                x: screen.frame.midX - screen.codexIslandNotchSize.width / 2,
+                y: screen.frame.maxY - screen.codexIslandNotchSize.height,
+                width: screen.codexIslandNotchSize.width,
+                height: screen.codexIslandNotchSize.height
+            )
     }
 
     private func closedNotchHeight(for screen: NSScreen?) -> CGFloat {
@@ -485,6 +532,14 @@ final class IslandShellController {
         model.expandIsland(reason: .manualTap)
     }
 
+    fileprivate func handleClosedActivationMouseDown() {
+        guard let model, !model.islandExpanded else {
+            return
+        }
+
+        model.expandIsland(reason: .manualTap)
+    }
+
     private func screenPoint(for event: NSEvent) -> NSPoint {
         if let window = event.window {
             return window.convertPoint(toScreen: event.locationInWindow)
@@ -501,10 +556,45 @@ final class IslandShellController {
             && point.y >= rect.minY
             && point.y <= rect.maxY
     }
+
+    private func makeClosedActivationPanel(frame: NSRect) -> IslandClosedActivationPanel {
+        let panel = IslandClosedActivationPanel(
+            contentRect: frame,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+
+        panel.isFloatingPanel = true
+        panel.becomesKeyOnlyIfNeeded = false
+        panel.level = .statusBar
+        panel.sharingType = .readOnly
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = false
+        panel.isMovable = false
+        panel.hidesOnDeactivate = false
+        panel.acceptsMouseMovedEvents = false
+        panel.collectionBehavior = [.fullScreenAuxiliary, .stationary, .canJoinAllSpaces, .ignoresCycle]
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
+        panel.ignoresMouseEvents = false
+
+        let activationView = IslandClosedActivationView(frame: NSRect(origin: .zero, size: frame.size))
+        activationView.notchController = self
+        panel.contentView = activationView
+
+        return panel
+    }
 }
 
 private final class IslandShellPanel: NSPanel {
     override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
+
+private final class IslandClosedActivationPanel: NSPanel {
+    override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 }
 
@@ -548,7 +638,43 @@ private final class IslandShellHostingView<Content: View>: NSHostingView<Content
     }
 }
 
+private final class IslandClosedActivationView: NSView {
+    weak var notchController: IslandShellController?
+
+    override var isOpaque: Bool { false }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        notchController?.handleClosedActivationMouseDown()
+    }
+}
+
 extension NSScreen {
+    var codexIslandHardwareNotchRect: NSRect? {
+        guard safeAreaInsets.top > 0 else {
+            return nil
+        }
+
+        let notchSize = codexIslandNotchSize
+        return NSRect(
+            x: frame.midX - notchSize.width / 2,
+            y: frame.maxY - notchSize.height,
+            width: notchSize.width,
+            height: notchSize.height
+        )
+    }
+
+    var codexIslandExpandedContentTopClearance: CGFloat {
+        safeAreaInsets.top > 0 ? safeAreaInsets.top : 0
+    }
+
+    var codexIslandClosedContentNotchExclusionWidth: CGFloat {
+        safeAreaInsets.top > 0 ? codexIslandNotchSize.width : 0
+    }
+
     var codexIslandNotchSize: CGSize {
         guard safeAreaInsets.top > 0 else {
             return islandDefaultNotchSize

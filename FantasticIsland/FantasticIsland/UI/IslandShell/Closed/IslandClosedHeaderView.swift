@@ -2,20 +2,45 @@ import SwiftUI
 
 struct IslandClosedHeaderView: View {
     let state: IslandShellClosedHeaderRenderState
+    let notchExclusionWidth: CGFloat
+
+    init(state: IslandShellClosedHeaderRenderState, notchExclusionWidth: CGFloat = 0) {
+        self.state = state
+        self.notchExclusionWidth = notchExclusionWidth
+    }
 
     var body: some View {
-        HStack(spacing: 0) {
-            IslandFanIconView(animationState: state.fanAnimationState)
+        Group {
+            if notchExclusionWidth > 0 {
+                HStack(spacing: 0) {
+                    HStack(spacing: 0) {
+                        IslandFanIconView(animationState: state.fanAnimationState)
+                    }
+                    .padding(.horizontal, CodexIslandChromeMetrics.closedHorizontalPadding)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer(minLength: CodexIslandChromeMetrics.closedFanModuleSpacing)
+                    Color.clear
+                        .frame(width: notchExclusionWidth)
 
-            HStack(spacing: CodexIslandChromeMetrics.closedModuleSpacing) {
-                ForEach(state.compactModules) { module in
-                    compactModuleSummary(module)
+                    Color.clear
+                        .padding(.horizontal, CodexIslandChromeMetrics.closedHorizontalPadding)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
+            } else {
+                HStack(spacing: 0) {
+                    IslandFanIconView(animationState: state.fanAnimationState)
+
+                    Spacer(minLength: CodexIslandChromeMetrics.closedFanModuleSpacing)
+
+                    HStack(spacing: CodexIslandChromeMetrics.closedModuleSpacing) {
+                        ForEach(state.compactModules) { module in
+                            compactModuleSummary(module)
+                        }
+                    }
+                }
+                .padding(.horizontal, CodexIslandChromeMetrics.closedHorizontalPadding)
             }
         }
-        .padding(.horizontal, CodexIslandChromeMetrics.closedHorizontalPadding)
     }
 
     @ViewBuilder

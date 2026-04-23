@@ -343,13 +343,20 @@ final class IslandAppModel: ObservableObject {
         return .autoupdatingCurrent
     }
 
-    func closedSurfaceWidth(baseCompactWidth: CGFloat) -> CGFloat {
+    func closedSurfaceWidth(baseCompactWidth: CGFloat, hardwareNotchExclusionWidth: CGFloat = 0) -> CGFloat {
         let moduleSpacing = CodexIslandChromeMetrics.closedModuleSpacing
         let horizontalPadding = CodexIslandChromeMetrics.closedHorizontalPadding * 2
         let fanWidth: CGFloat = 20
         let minimumGapAfterFan = CodexIslandChromeMetrics.closedFanModuleSpacing
         let modulesWidth = visibleCompactModules.reduce(0) { $0 + $1.estimatedWidth }
         let totalModuleSpacing = CGFloat(max(visibleCompactModules.count - 1, 0)) * moduleSpacing
+
+        if hardwareNotchExclusionWidth > 0 {
+            let wingRequiredWidth = fanWidth + horizontalPadding + 4
+            let preferredWidth = hardwareNotchExclusionWidth + (wingRequiredWidth * 2)
+            return max(baseCompactWidth + 92, preferredWidth)
+        }
+
         let preferredWidth = horizontalPadding + fanWidth + minimumGapAfterFan + modulesWidth + totalModuleSpacing
         return max(baseCompactWidth + 92, 332, preferredWidth)
     }

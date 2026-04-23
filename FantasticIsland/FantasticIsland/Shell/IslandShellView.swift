@@ -76,6 +76,8 @@ struct IslandShellView: View {
     let closedHeight: CGFloat
     let expandedContentWidth: CGFloat
     let peekContentWidth: CGFloat
+    let expandedContentTopClearance: CGFloat
+    let closedContentNotchExclusionWidth: CGFloat
 
     @State private var isHovering = false
     @State private var visualMode: IslandShellVisualMode = .closed
@@ -106,7 +108,10 @@ struct IslandShellView: View {
     }
 
     private var closedContentWidth: CGFloat {
-        model.closedSurfaceWidth(baseCompactWidth: compactWidth)
+        model.closedSurfaceWidth(
+            baseCompactWidth: compactWidth,
+            hardwareNotchExclusionWidth: closedContentNotchExclusionWidth
+        )
     }
 
     private var renderedPeekActivity: IslandActivity? {
@@ -154,11 +159,21 @@ struct IslandShellView: View {
         )
         let expandedSurfaceHeight = min(
             layoutHeight,
-            max(closedHeight, model.selectedModuleContentHeight + CodexIslandChromeMetrics.openedSurfaceBottomInset)
+            max(
+                closedHeight,
+                model.selectedModuleContentHeight
+                    + expandedContentTopClearance
+                    + CodexIslandChromeMetrics.openedSurfaceBottomInset
+            )
         )
         let peekSurfaceHeight = min(
             layoutHeight,
-            max(closedHeight, renderedPeekContentHeight + CodexIslandChromeMetrics.openedSurfaceBottomInset)
+            max(
+                closedHeight,
+                renderedPeekContentHeight
+                    + expandedContentTopClearance
+                    + CodexIslandChromeMetrics.openedSurfaceBottomInset
+            )
         )
 
         let surfaceMetrics: (width: CGFloat, height: CGFloat) = {
@@ -426,7 +441,8 @@ struct IslandShellView: View {
             state: IslandShellClosedHeaderRenderState(
                 fanAnimationState: model.fanAnimationState,
                 compactModules: model.visibleCompactModules
-            )
+            ),
+            notchExclusionWidth: closedContentNotchExclusionWidth
         )
             .opacity(showsClosedHeader ? 1 : 0)
             .allowsHitTesting(visualMode == .closed && showsClosedHeader)
@@ -450,7 +466,12 @@ struct IslandShellView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .padding(.top, visualMode == .peek ? CodexIslandPeekMetrics.contentTopPadding : CodexIslandChromeMetrics.expandedContentTopPadding) // peek 与 expanded 分别使用各自的顶部留白
+        .padding(
+            .top,
+            visualMode == .peek
+                ? CodexIslandPeekMetrics.contentTopPadding + expandedContentTopClearance
+                : CodexIslandChromeMetrics.expandedContentTopPadding + expandedContentTopClearance
+        ) // peek 与 expanded 分别使用各自的顶部留白；带硬件刘海时让 opened 内容整体下移
         .foregroundStyle(.white)
         .allowsHitTesting(
             (model.islandExpanded && visualMode == .expanded && showsExpandedBody)
