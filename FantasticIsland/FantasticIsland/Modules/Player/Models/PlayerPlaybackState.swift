@@ -132,6 +132,7 @@ struct PlayerNowPlayingState: Equatable {
             && lhs.shuffleMode == rhs.shuffleMode
             && lhs.repeatMode == rhs.repeatMode
             && lhs.automationIssue == rhs.automationIssue
+            && lhs.artworkComparisonKey == rhs.artworkComparisonKey
     }
 
     var sourceLabel: String {
@@ -196,6 +197,29 @@ struct PlayerNowPlayingState: Equatable {
         }
 
         return "PLAYER --"
+    }
+
+    private var artworkComparisonKey: String {
+        let identity = trackIdentityForArtwork ?? "none"
+        let presence = artworkImage == nil ? "missing" : "present"
+        return "\(presence):\(identity)"
+    }
+
+    private var trackIdentityForArtwork: String? {
+        if let artworkURL = track?.artworkURL?.absoluteString {
+            return artworkURL
+        }
+
+        guard let track else {
+            return source?.rawValue
+        }
+
+        return [
+            source?.rawValue ?? "player",
+            track.title,
+            track.artist,
+            track.album ?? "",
+        ].joined(separator: "\u{1F}")
     }
 
     private static func timeText(_ duration: TimeInterval) -> String {

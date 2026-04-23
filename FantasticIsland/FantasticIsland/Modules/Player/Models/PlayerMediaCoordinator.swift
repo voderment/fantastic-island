@@ -80,6 +80,7 @@ final class PlayerMediaCoordinator {
     private var lastPreferredSourceKind: PlayerSourceKind?
     private var artworkCache: [String: NSImage] = [:]
     private var artworkCacheOrder: [String] = []
+    private var musicArtworkURLCache: [String: URL] = [:]
     private let artworkCacheLimit = 8
     private let launchedCommandDelay: TimeInterval = 0.8
     private let immediateRefreshDelay: TimeInterval = 0.25
@@ -150,6 +151,53 @@ final class PlayerMediaCoordinator {
         resolvedSource(for: sourceKind)?.cycleRepeat()
     }
 
+    func loadArtworkIfNeeded(for state: PlayerNowPlayingState) async -> NSImage? {
+        guard let source = state.source,
+              let track = state.track,
+              state.artworkImage == nil else {
+            return nil
+        }
+
+        let cacheKey: String
+        let remoteArtworkURL: URL?
+
+        switch source {
+        case .music:
+            cacheKey = musicArtworkCacheKey(for: track)
+            remoteArtworkURL = musicArtworkURLCache[cacheKey]
+        case .spotify:
+            cacheKey = spotifyArtworkCacheKey(for: track, artworkURL: track.artworkURL)
+            remoteArtworkURL = track.artworkURL
+        }
+
+        if let cachedImage = cachedArtworkImage(for: cacheKey) {
+            return cachedImage
+        }
+
+        let resolvedArtworkURL: URL?
+        switch source {
+        case .music:
+            if let remoteArtworkURL {
+                resolvedArtworkURL = remoteArtworkURL
+            } else {
+                resolvedArtworkURL = await Self.lookupMusicArtworkURL(for: track)
+                if let resolvedArtworkURL {
+                    musicArtworkURLCache[cacheKey] = resolvedArtworkURL
+                }
+            }
+        case .spotify:
+            resolvedArtworkURL = remoteArtworkURL
+        }
+
+        guard let resolvedArtworkURL,
+              let image = await Self.loadArtworkImage(from: resolvedArtworkURL) else {
+            return nil
+        }
+
+        storeArtwork(image, for: cacheKey)
+        return image
+    }
+
     nonisolated static func automationPermissionStatus(
         for sourceKind: PlayerSourceKind?,
         askUserIfNeeded: Bool
@@ -184,7 +232,7 @@ final class PlayerMediaCoordinator {
         if let runningApplication = NSRunningApplication
             .runningApplications(withBundleIdentifier: sourceKind.bundleIdentifier)
             .first {
-            return runningApplication.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+            return runningApplication.activate(options: [.activateAllWindows])
         }
 
         return Self.launchApplication(bundleIdentifier: sourceKind.bundleIdentifier)
@@ -400,13 +448,26 @@ final class PlayerMediaCoordinator {
                 return .unavailable
             }
 
+            let title = fallback(parts[1], default: "Unknown Track")
+            let artist = fallback(parts[2], default: "Unknown Artist")
+            let album = parts[3].nilIfEmpty
+            let duration = Double(parts[4]) ?? 0
+            let elapsed = Double(parts[5]) ?? 0
+
+            let cacheKey = [
+                "music",
+                title,
+                artist,
+                album ?? "",
+            ].joined(separator: "\u{1F}")
+
             let track = PlayerTrackMetadata(
-                title: fallback(parts[1], default: "Unknown Track"),
-                artist: fallback(parts[2], default: "Unknown Artist"),
-                album: parts[3].nilIfEmpty,
-                duration: Double(parts[4]) ?? 0,
-                elapsed: Double(parts[5]) ?? 0,
-                artworkURL: nil
+                title: title,
+                artist: artist,
+                album: album,
+                duration: duration,
+                elapsed: elapsed,
+                artworkURL: musicArtworkURLCache[cacheKey]
             )
 
             return .snapshot(PlayerSnapshot(
@@ -415,9 +476,7 @@ final class PlayerMediaCoordinator {
                 track: track,
                 shuffleMode: shuffleMode(for: parts[6]),
                 repeatMode: repeatMode(for: parts[7]),
-                artworkImage: cachedArtwork(for: musicArtworkCacheKey(for: track)) {
-                    loadMusicArtwork()
-                }
+                artworkImage: cachedArtworkImage(for: cacheKey) ?? loadMusicArtworkFromAppleScript(cacheKey: cacheKey)
             ))
         }
     }
@@ -484,9 +543,7 @@ final class PlayerMediaCoordinator {
                 track: track,
                 shuffleMode: .unsupported,
                 repeatMode: .unsupported,
-                artworkImage: cachedArtwork(for: spotifyArtworkCacheKey(for: track, artworkURL: artworkURL)) {
-                    loadArtwork(from: artworkURL)
-                }
+                artworkImage: cachedArtworkImage(for: spotifyArtworkCacheKey(for: track, artworkURL: artworkURL))
             ))
         }
     }
@@ -567,15 +624,11 @@ final class PlayerMediaCoordinator {
         ].joined(separator: "\u{1F}")
     }
 
-    private func cachedArtwork(for key: String, loader: () -> NSImage?) -> NSImage? {
-        if let cachedImage = artworkCache[key] {
-            return cachedImage
-        }
+    private func cachedArtworkImage(for key: String) -> NSImage? {
+        artworkCache[key]
+    }
 
-        guard let image = loader() else {
-            return nil
-        }
-
+    private func storeArtwork(_ image: NSImage, for key: String) {
         artworkCache[key] = image
         artworkCacheOrder.removeAll { $0 == key }
         artworkCacheOrder.append(key)
@@ -585,11 +638,9 @@ final class PlayerMediaCoordinator {
             artworkCacheOrder.removeFirst()
             artworkCache.removeValue(forKey: evictedKey)
         }
-
-        return image
     }
 
-    private func loadMusicArtwork() -> NSImage? {
+    private func loadMusicArtworkFromAppleScript(cacheKey: String) -> NSImage? {
         let result = Self.runAppleScriptDescriptor([
             #"tell application "Music""#,
             #"set currentTrack to current track"#,
@@ -611,20 +662,25 @@ final class PlayerMediaCoordinator {
             return nil
         }
 
-        return NSImage(data: data)
+        guard let image = NSImage(data: data) else {
+            return nil
+        }
+
+        storeArtwork(image, for: cacheKey)
+        return image
     }
 
-    private func loadArtwork(from url: URL?) -> NSImage? {
-        guard let url else {
+    private static func loadArtworkImage(from url: URL) async -> NSImage? {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 2.5
+
+        guard let data = await fetchData(for: request) else {
             return nil
         }
 
-        guard let data = try? Data(contentsOf: url),
-              let image = NSImage(data: data) else {
-            return nil
+        return await MainActor.run {
+            NSImage(data: data)
         }
-
-        return image
     }
 
     @discardableResult
@@ -647,6 +703,112 @@ final class PlayerMediaCoordinator {
         }
     }
 
+    private static func normalizedMetadataValue(_ value: String?) -> String? {
+        guard let value else {
+            return nil
+        }
+
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func lookupMusicArtworkURL(for track: PlayerTrackMetadata) async -> URL? {
+        let term = [track.title, track.artist]
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard !term.isEmpty else {
+            return nil
+        }
+
+        let country = Locale.current.region?.identifier ?? "US"
+        let candidates = [country, "US"]
+
+        for storefront in candidates {
+            guard let url = searchEndpointURL(term: term, storefront: storefront),
+                  let data = await fetchData(from: url, timeout: 0.8),
+                  let response = try? JSONDecoder().decode(PlayerMusicArtworkSearchResponse.self, from: data),
+                  let match = bestSearchArtworkResult(from: response.results, for: track),
+                  let rawArtworkURL = match.artworkUrl100,
+                  let artworkURL = highResolutionArtworkURL(from: rawArtworkURL) else {
+                continue
+            }
+
+            return artworkURL
+        }
+
+        return nil
+    }
+
+    private static func searchEndpointURL(term: String, storefront: String) -> URL? {
+        var components = URLComponents(string: "https://itunes.apple.com/search")
+        components?.queryItems = [
+            URLQueryItem(name: "term", value: term),
+            URLQueryItem(name: "entity", value: "song"),
+            URLQueryItem(name: "limit", value: "10"),
+            URLQueryItem(name: "country", value: storefront),
+        ]
+        return components?.url
+    }
+
+    private static func fetchData(from url: URL, timeout: TimeInterval) async -> Data? {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = timeout
+        return await fetchData(for: request)
+    }
+
+    private static func fetchData(for request: URLRequest) async -> Data? {
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return data
+        } catch {
+            return nil
+        }
+    }
+
+    private static func bestSearchArtworkResult(
+        from results: [PlayerMusicArtworkSearchResult],
+        for track: PlayerTrackMetadata
+    ) -> PlayerMusicArtworkSearchResult? {
+        if let exactAlbumMatch = results.first(where: { result in
+            matchesSearchArtworkResult(result, to: track, requireAlbumMatch: true)
+        }) {
+            return exactAlbumMatch
+        }
+
+        return results.first(where: { result in
+            matchesSearchArtworkResult(result, to: track, requireAlbumMatch: false)
+        })
+    }
+
+    private static func matchesSearchArtworkResult(
+        _ result: PlayerMusicArtworkSearchResult,
+        to track: PlayerTrackMetadata,
+        requireAlbumMatch: Bool
+    ) -> Bool {
+        let expectedTitle = normalizedMetadataValue(track.title)
+        let expectedArtist = normalizedMetadataValue(track.artist)
+        let expectedAlbum = normalizedMetadataValue(track.album)
+
+        guard normalizedMetadataValue(result.trackName) == expectedTitle,
+              normalizedMetadataValue(result.artistName) == expectedArtist else {
+            return false
+        }
+
+        guard requireAlbumMatch,
+              let expectedAlbum else {
+            return true
+        }
+
+        return normalizedMetadataValue(result.collectionName) == expectedAlbum
+    }
+
+    private static func highResolutionArtworkURL(from rawValue: String) -> URL? {
+        let upgraded = rawValue
+            .replacingOccurrences(of: "100x100bb", with: "600x600bb")
+            .replacingOccurrences(of: "100x100-75", with: "600x600-75")
+        return URL(string: upgraded)
+    }
+
     nonisolated private static func isApplicationRunning(bundleIdentifier: String) -> Bool {
         !NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).isEmpty
     }
@@ -663,6 +825,17 @@ final class PlayerMediaCoordinator {
             return false
         }
     }
+}
+
+private struct PlayerMusicArtworkSearchResult: Decodable {
+    let trackName: String?
+    let artistName: String?
+    let collectionName: String?
+    let artworkUrl100: String?
+}
+
+private struct PlayerMusicArtworkSearchResponse: Decodable {
+    let results: [PlayerMusicArtworkSearchResult]
 }
 
 private extension String {

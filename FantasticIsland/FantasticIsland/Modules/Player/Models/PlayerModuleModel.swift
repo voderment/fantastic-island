@@ -24,6 +24,10 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
                 return nil
             }
 
+            self.init(source: source, track: track)
+        }
+
+        init(source: PlayerSourceKind, track: PlayerTrackMetadata) {
             self.source = source
             self.title = track.title
             self.artist = track.artist
@@ -60,17 +64,26 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
 
     private let mediaCoordinator = PlayerMediaCoordinator()
     private var pollingTask: Task<Void, Never>?
+    private var artworkLoadTask: Task<Void, Never>?
+    private var artworkLoadIdentity: TrackIdentity?
     private var isRefreshing = false
     private var lastObservedTrackIdentity: TrackIdentity?
     private var workspaceObservers: [NSObjectProtocol] = []
+    private var distributedObservers: [NSObjectProtocol] = []
     private static let automationSettingsURLs: [URL] = [
         URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Automation"),
         URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"),
     ].compactMap { $0 }
+    private static let playbackNotificationNames: [Notification.Name] = [
+        Notification.Name("com.apple.Music.playerInfo"),
+        Notification.Name("com.apple.iTunes.playerInfo"),
+        Notification.Name("com.spotify.client.PlaybackStateChanged"),
+    ]
 
     init() {
         syncSourceAvailability()
         configureWorkspaceObservers()
+        configureDistributedPlaybackObservers()
         pollingTask = Task { [weak self] in
             await self?.runPollingLoop()
         }
@@ -78,8 +91,12 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
 
     deinit {
         pollingTask?.cancel()
+        artworkLoadTask?.cancel()
         for observer in workspaceObservers {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
+        for observer in distributedObservers {
+            DistributedNotificationCenter.default().removeObserver(observer)
         }
     }
 
@@ -194,6 +211,7 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
         if nextState != nowPlayingState {
             nowPlayingState = nextState
         }
+        requestArtworkLoadIfNeeded(for: nowPlayingState)
     }
 
     func previousTrack() {
@@ -314,6 +332,23 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
         }
     }
 
+    private func configureDistributedPlaybackObservers() {
+        let notificationCenter = DistributedNotificationCenter.default()
+
+        for name in Self.playbackNotificationNames {
+            let observer = notificationCenter.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.refreshSoon(after: 0.05)
+                }
+            }
+            distributedObservers.append(observer)
+        }
+    }
+
     var canActivateCurrentSource: Bool {
         nowPlayingState.playbackStatus.isPlaying && nowPlayingState.source != nil
     }
@@ -423,6 +458,63 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
                 self.refreshSoon(after: 0.1)
             }
         }
+    }
+
+    private func requestArtworkLoadIfNeeded(for state: PlayerNowPlayingState) {
+        guard let identity = TrackIdentity(state: state),
+              state.artworkImage == nil else {
+            artworkLoadTask?.cancel()
+            artworkLoadTask = nil
+            artworkLoadIdentity = nil
+            return
+        }
+
+        guard artworkLoadIdentity != identity else {
+            return
+        }
+
+        artworkLoadTask?.cancel()
+        artworkLoadIdentity = identity
+
+        artworkLoadTask = Task { [weak self, state, identity] in
+            guard let self else {
+                return
+            }
+
+            defer {
+                if self.artworkLoadIdentity == identity {
+                    self.artworkLoadTask = nil
+                    self.artworkLoadIdentity = nil
+                }
+            }
+
+            guard let artworkImage = await self.mediaCoordinator.loadArtworkIfNeeded(for: state),
+                  !Task.isCancelled,
+                  self.artworkLoadIdentity == identity,
+                  TrackIdentity(state: self.nowPlayingState) == identity else {
+                return
+            }
+
+            self.nowPlayingState.artworkImage = artworkImage
+            self.updateTrackSwitchNotificationArtworkIfNeeded(artworkImage, for: identity)
+        }
+    }
+
+    private func updateTrackSwitchNotificationArtworkIfNeeded(_ artworkImage: NSImage, for identity: TrackIdentity) {
+        guard let trackSwitchNotification,
+              trackSwitchNotification.artworkImage == nil,
+              TrackIdentity(source: trackSwitchNotification.source, track: trackSwitchNotification.track) == identity else {
+            return
+        }
+
+        self.trackSwitchNotification = TrackSwitchNotification(
+            activityID: trackSwitchNotification.activityID,
+            source: trackSwitchNotification.source,
+            track: trackSwitchNotification.track,
+            artworkImage: artworkImage,
+            createdAt: trackSwitchNotification.createdAt,
+            updatedAt: Date()
+        )
     }
 
     private func runPollingLoop() async {
