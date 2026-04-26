@@ -122,16 +122,16 @@ struct ClashModuleContentView: View {
 
             trafficRateLabel(
                 symbol: "arrow.up",
-                text: model.controlState.isCaptureActive ? model.uploadRateText : "-",
+                text: model.status == .attached ? model.uploadRateText : "-",
                 activeColor: Color.green.opacity(0.92),
-                isEnabled: model.controlState.isCaptureActive
+                isEnabled: model.status == .attached
             )
 
             trafficRateLabel(
                 symbol: "arrow.down",
-                text: model.controlState.isCaptureActive ? model.downloadRateText : "-",
+                text: model.status == .attached ? model.downloadRateText : "-",
                 activeColor: Color.blue.opacity(0.95),
-                isEnabled: model.controlState.isCaptureActive
+                isEnabled: model.status == .attached
             )
 
             Toggle("", isOn: systemProxyBinding)

@@ -395,10 +395,10 @@ struct ClashPortSnapshot: Equatable {
 }
 
 struct ClashTrafficSnapshot: Equatable {
-    let upKbps: Double
-    let downKbps: Double
+    let upBytesPerSecond: Double
+    let downBytesPerSecond: Double
 
-    static let zero = ClashTrafficSnapshot(upKbps: 0, downKbps: 0)
+    static let zero = ClashTrafficSnapshot(upBytesPerSecond: 0, downBytesPerSecond: 0)
 }
 
 struct ClashProxyOptionSummary: Identifiable, Equatable {

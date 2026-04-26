@@ -338,22 +338,33 @@ enum ClashConfigSupport {
         )
     }
 
-    static func formatTrafficRate(_ kbps: Double) -> String {
-        let sanitized = max(0, kbps)
-        if sanitized >= 1000 {
-            let mbps = sanitized / 1000
-            if mbps >= 10 {
-                return "\(Int(mbps.rounded()))mb/s"
-            }
+    static func formatTrafficRate(_ bytesPerSecond: Double) -> String {
+        let units = ["B/s", "KB/s", "MB/s", "GB/s", "TB/s"]
+        var value = max(0, bytesPerSecond)
+        var unitIndex = 0
 
-            return "\(String(format: "%.1f", mbps).replacingOccurrences(of: ".0", with: ""))mb/s"
+        while value >= 1024, unitIndex < units.count - 1 {
+            value /= 1024
+            unitIndex += 1
         }
 
-        if sanitized >= 10 {
-            return "\(Int(sanitized.rounded()))kb/s"
+        return "\(formatTrafficRateValue(value, unitIndex: unitIndex)) \(units[unitIndex])"
+    }
+
+    private static func formatTrafficRateValue(_ value: Double, unitIndex: Int) -> String {
+        if unitIndex == 0 || value >= 100 {
+            return "\(Int(value.rounded()))"
         }
 
-        return "\(String(format: "%.1f", sanitized).replacingOccurrences(of: ".0", with: ""))kb/s"
+        let precision = value >= 10 ? 1 : 2
+        var formatted = String(format: "%.\(precision)f", value)
+        while formatted.contains("."), formatted.last == "0" {
+            formatted.removeLast()
+        }
+        if formatted.last == "." {
+            formatted.removeLast()
+        }
+        return formatted
     }
 
     static func localizedFormat(_ key: String, _ arguments: CVarArg...) -> String {
