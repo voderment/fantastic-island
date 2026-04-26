@@ -3,6 +3,7 @@ import Foundation
 enum CodexHookEventName: String, Codable {
     case sessionStart = "SessionStart"
     case preToolUse = "PreToolUse"
+    case permissionRequest = "PermissionRequest"
     case postToolUse = "PostToolUse"
     case userPromptSubmit = "UserPromptSubmit"
     case stop = "Stop"
@@ -17,7 +18,36 @@ enum CodexPermissionMode: String, Codable {
 }
 
 struct CodexHookToolInput: Equatable, Codable {
-    var command: String
+    var command: String?
+    var description: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case command
+        case description
+    }
+
+    init(command: String? = nil, description: String? = nil) {
+        self.command = command
+        self.description = description
+    }
+
+    init(from decoder: any Decoder) throws {
+        if let container = try? decoder.container(keyedBy: CodingKeys.self) {
+            command = try container.decodeIfPresent(String.self, forKey: .command)
+            description = try container.decodeIfPresent(String.self, forKey: .description)
+            return
+        }
+
+        let container = try decoder.singleValueContainer()
+        command = try? container.decode(String.self)
+        description = nil
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(command, forKey: .command)
+        try container.encodeIfPresent(description, forKey: .description)
+    }
 }
 
 enum CodexHookJSONValue: Equatable, Codable {
@@ -72,7 +102,7 @@ struct CodexHookPayload: Codable {
     var cwd: String
     var hookEventName: CodexHookEventName
     var model: String?
-    var permissionMode: CodexPermissionMode
+    var permissionMode: CodexPermissionMode?
     var sessionID: String
     var terminalApp: String?
     var terminalSessionID: String?
@@ -127,7 +157,7 @@ struct CodexHookPayload: Codable {
         case lastAssistantMessage = "last_assistant_message"
     }
 
-    var hasTerminalContext: Bool {
+    nonisolated var hasTerminalContext: Bool {
         terminalApp != nil
             || terminalSessionID != nil
             || terminalTTY != nil
@@ -145,7 +175,7 @@ struct CodexHookPayload: Codable {
         clipped(lastAssistantMessage, limit: 160)
     }
 
-    var sessionSurface: CodexSessionSurface {
+    nonisolated var sessionSurface: CodexSessionSurface {
         if let source = source?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
            source == "vscode" || source == "app-server" {
             return .codexApp
@@ -208,31 +238,94 @@ struct CodexHookPayload: Codable {
 }
 
 enum CodexHookDirective: Equatable, Codable {
-    case deny(reason: String)
+    case permissionRequestAllow
+    case permissionRequestDeny(reason: String)
+    case preToolUseDeny(reason: String)
 
     private enum CodingKeys: String, CodingKey {
-        case type
-        case reason
+        case hookSpecificOutput
     }
 
-    private enum DirectiveType: String, Codable {
+    private enum HookSpecificOutputKeys: String, CodingKey {
+        case hookEventName
+        case decision
+        case permissionDecision
+        case permissionDecisionReason
+    }
+
+    private enum DecisionKeys: String, CodingKey {
+        case behavior
+        case message
+    }
+
+    private enum Behavior: String, Codable {
+        case allow
         case deny
+    }
+
+    private enum PermissionDecision: String, Codable {
+        case deny
+    }
+
+    static func allow(for eventName: CodexHookEventName) -> CodexHookDirective? {
+        switch eventName {
+        case .permissionRequest:
+            return .permissionRequestAllow
+        case .preToolUse, .sessionStart, .postToolUse, .userPromptSubmit, .stop:
+            return nil
+        }
+    }
+
+    static func deny(reason: String, for eventName: CodexHookEventName) -> CodexHookDirective {
+        switch eventName {
+        case .permissionRequest:
+            return .permissionRequestDeny(reason: reason)
+        case .preToolUse, .sessionStart, .postToolUse, .userPromptSubmit, .stop:
+            return .preToolUseDeny(reason: reason)
+        }
     }
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        switch try container.decode(DirectiveType.self, forKey: .type) {
-        case .deny:
-            self = .deny(reason: try container.decode(String.self, forKey: .reason))
+        let output = try container.nestedContainer(keyedBy: HookSpecificOutputKeys.self, forKey: .hookSpecificOutput)
+        let hookEventName = try output.decode(CodexHookEventName.self, forKey: .hookEventName)
+
+        switch hookEventName {
+        case .permissionRequest:
+            let decision = try output.nestedContainer(keyedBy: DecisionKeys.self, forKey: .decision)
+            switch try decision.decode(Behavior.self, forKey: .behavior) {
+            case .allow:
+                self = .permissionRequestAllow
+            case .deny:
+                self = .permissionRequestDeny(reason: try decision.decodeIfPresent(String.self, forKey: .message) ?? "")
+            }
+        case .preToolUse:
+            self = .preToolUseDeny(
+                reason: try output.decodeIfPresent(String.self, forKey: .permissionDecisionReason) ?? ""
+            )
+        case .sessionStart, .postToolUse, .userPromptSubmit, .stop:
+            self = .preToolUseDeny(reason: "")
         }
     }
 
     func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        var output = container.nestedContainer(keyedBy: HookSpecificOutputKeys.self, forKey: .hookSpecificOutput)
+
         switch self {
-        case let .deny(reason):
-            try container.encode(DirectiveType.deny, forKey: .type)
-            try container.encode(reason, forKey: .reason)
+        case .permissionRequestAllow:
+            try output.encode(CodexHookEventName.permissionRequest, forKey: .hookEventName)
+            var decision = output.nestedContainer(keyedBy: DecisionKeys.self, forKey: .decision)
+            try decision.encode(Behavior.allow, forKey: .behavior)
+        case let .permissionRequestDeny(reason):
+            try output.encode(CodexHookEventName.permissionRequest, forKey: .hookEventName)
+            var decision = output.nestedContainer(keyedBy: DecisionKeys.self, forKey: .decision)
+            try decision.encode(Behavior.deny, forKey: .behavior)
+            try decision.encode(reason, forKey: .message)
+        case let .preToolUseDeny(reason):
+            try output.encode(CodexHookEventName.preToolUse, forKey: .hookEventName)
+            try output.encode(PermissionDecision.deny, forKey: .permissionDecision)
+            try output.encode(reason, forKey: .permissionDecisionReason)
         }
     }
 }

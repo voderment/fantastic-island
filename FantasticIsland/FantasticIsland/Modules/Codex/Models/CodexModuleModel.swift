@@ -6,10 +6,13 @@ import SwiftUI
 private final class PendingHookApprovalDecision: @unchecked Sendable {
     private let semaphore = DispatchSemaphore(value: 0)
     private let lock = NSLock()
+    let eventName: CodexHookEventName
     nonisolated(unsafe) private var resolved = false
     nonisolated(unsafe) private var directive: CodexHookDirective?
 
-    nonisolated init() {}
+    nonisolated init(eventName: CodexHookEventName) {
+        self.eventName = eventName
+    }
 
     nonisolated
     func resolve(_ directive: CodexHookDirective?) {
@@ -35,6 +38,12 @@ private final class PendingHookApprovalDecision: @unchecked Sendable {
     }
 }
 
+private func firstNonEmpty(_ values: [String?]) -> String? {
+    values
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .first { !$0.isEmpty }
+}
+
 @MainActor
 final class CodexModuleModel: ObservableObject, IslandModule {
     static let moduleID = "codex"
@@ -49,6 +58,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     private static let estimatedSessionRowHeight: CGFloat = 88
     private static let estimatedSessionRowSpacing: CGFloat = 6
     private static let estimatedActionableSessionHeight: CGFloat = 196
+    private static let estimatedApprovalSessionHeight: CGFloat = 248
     private static let estimatedTransientSessionHeight: CGFloat = 196
     private static let estimatedPeekNotificationHeight: CGFloat = 120
     private static let estimatedFooterButtonHeight: CGFloat = 28
@@ -302,7 +312,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     private var estimatedSessionSectionHeight: CGFloat {
         if isNotificationMode, activeNotificationSession != nil {
             let showsFooter = shouldShowShowAllButton
-            return Self.estimatedActionableSessionHeight
+            return estimatedActionableSessionHeight(for: activeNotificationSession)
                 + (showsFooter ? Self.estimatedContentSpacing + Self.estimatedFooterButtonHeight : 0)
         }
 
@@ -323,7 +333,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
             let estimatedBodyHeight: CGFloat
             switch activity.kind {
             case .actionRequired:
-                estimatedBodyHeight = Self.estimatedActionableSessionHeight
+                estimatedBodyHeight = estimatedActionableSessionHeight(for: session(for: activity))
             case .transientNotification:
                 estimatedBodyHeight = Self.estimatedTransientSessionHeight
             case .persistentPresence:
@@ -337,7 +347,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
             if case let .peek(activity) = presentation,
                activity.kind == .actionRequired {
                 return CodexIslandPeekMetrics.contentTopPadding
-                    + Self.estimatedActionableSessionHeight
+                    + estimatedActionableSessionHeight(for: session(for: activity))
                     + CodexIslandPeekMetrics.contentBottomPadding
             }
 
@@ -351,6 +361,12 @@ final class CodexModuleModel: ObservableObject, IslandModule {
         AnyView(CodexModuleContentView(model: self, presentation: presentation))
     }
 
+    private func estimatedActionableSessionHeight(for session: SessionSnapshot?) -> CGFloat {
+        session?.phase == .waitingForApproval
+            ? Self.estimatedApprovalSessionHeight
+            : Self.estimatedActionableSessionHeight
+    }
+
     func session(for activity: IslandActivity) -> SessionSnapshot? {
         monitoredSessions.first(where: { $0.id == activity.sourceID })
             ?? Self.debugSession(for: activity)
@@ -362,7 +378,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
             ? NSLocalizedString("Reinstall Fantastic Island Hooks?", comment: "")
             : NSLocalizedString("Install Fantastic Island Hooks?", comment: "")
         alert.informativeText = NSLocalizedString(
-            "This will update ~/.codex/config.toml and ~/.codex/hooks.json so the codex module can receive SessionStart, PreToolUse, PostToolUse, UserPromptSubmit, and Stop events.",
+            "This will update ~/.codex/config.toml and ~/.codex/hooks.json so the codex module can receive SessionStart, PreToolUse, PermissionRequest, PostToolUse, UserPromptSubmit, and Stop events.",
             comment: ""
         )
         alert.alertStyle = .warning
@@ -678,9 +694,16 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     }
 
     nonisolated private func handleHookBridgePayload(_ payload: CodexHookPayload) -> CodexHookDirective? {
-        let needsInteractiveApproval = payload.hookEventName == .preToolUse
-            && payload.permissionMode != .dontAsk
-            && payload.permissionMode != .bypassPermissions
+        let needsInteractiveApproval =
+            payload.sessionSurface != .codexApp
+            && (
+                payload.hookEventName == .permissionRequest
+                    || (
+                        payload.hookEventName == .preToolUse
+                            && payload.permissionMode != .dontAsk
+                            && payload.permissionMode != .bypassPermissions
+                    )
+            )
 
         guard needsInteractiveApproval else {
             Task { @MainActor [weak self] in
@@ -690,7 +713,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
         }
 
         let requestID = "hook:\(UUID().uuidString)"
-        let pendingDecision = PendingHookApprovalDecision()
+        let pendingDecision = PendingHookApprovalDecision(eventName: payload.hookEventName)
 
         Task { @MainActor [weak self] in
             self?.registerHookApproval(payload: payload, requestID: requestID, decision: pendingDecision)
@@ -709,9 +732,13 @@ final class CodexModuleModel: ObservableObject, IslandModule {
 
     private func registerHookApproval(payload: CodexHookPayload, requestID: String, decision: PendingHookApprovalDecision) {
         pendingHookApprovals[requestID] = decision
-        handleHookPayload(payload)
-
-        let summary = payload.toolInput?.command ?? payload.prompt ?? "\(payload.toolName ?? "Tool") needs approval."
+        let summary =
+            firstNonEmpty([
+                payload.toolInput?.description,
+                payload.toolInput?.command,
+                payload.prompt,
+                "\(payload.toolName ?? "Tool") needs approval.",
+            ]) ?? "Approval required."
         let request = CodexPermissionRequest(
             title: "Approval Required",
             summary: clipped(summary, limit: 260) ?? "Approval required.",
@@ -720,7 +747,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
             toolUseID: payload.toolUseID,
             requiresTerminalApproval: true
         )
-        handleAgentEvent(.permissionRequested(
+        let event = CodexAgentEvent.permissionRequested(
             PermissionRequestedEvent(
                 sessionID: payload.sessionID,
                 request: request,
@@ -728,7 +755,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
                     requestID: requestID,
                     source: .hook,
                     kind: .permission,
-                    method: "hook/preToolUse",
+                    method: payload.hookEventName == .permissionRequest ? "hook/permissionRequest" : "hook/preToolUse",
                     itemID: payload.toolUseID,
                     turnID: payload.turnID,
                     threadID: payload.sessionID,
@@ -736,7 +763,13 @@ final class CodexModuleModel: ObservableObject, IslandModule {
                 ),
                 timestamp: .now
             )
-        ))
+        )
+
+        refreshHooksStatus()
+        monitoringEngine.applyHookPayload(payload, followedBy: event) { [weak self] snapshot in
+            self?.applyMonitoringSnapshot(snapshot, refreshedAt: .now)
+            self?.presentActionableSurfaceIfNeeded(for: event)
+        }
     }
 
     private func resolveHookApproval(requestID: String, sessionID: String, action: CodexApprovalAction) {
@@ -745,7 +778,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
         }
 
         if action.isApproved {
-            pendingDecision.resolve(nil)
+            pendingDecision.resolve(CodexHookDirective.allow(for: pendingDecision.eventName))
             handleAgentEvent(.actionableStateResolved(
                 ActionableStateResolvedEvent(
                     sessionID: sessionID,
@@ -754,7 +787,10 @@ final class CodexModuleModel: ObservableObject, IslandModule {
                 )
             ))
         } else {
-            pendingDecision.resolve(.deny(reason: "Permission denied in Fantastic Island."))
+            pendingDecision.resolve(CodexHookDirective.deny(
+                reason: "Permission denied in Fantastic Island.",
+                for: pendingDecision.eventName
+            ))
             handleAgentEvent(.sessionCompleted(
                 SessionCompletedEvent(
                     sessionID: sessionID,
@@ -792,18 +828,22 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     }
 
     private func handleAgentEvent(_ event: CodexAgentEvent) {
-        if let notificationSurface = CodexIslandSurface.notificationSurface(for: event),
-           case .permissionRequested = event {
-            sessionSurface = notificationSurface
-            isNotificationMode = true
-        } else if let notificationSurface = CodexIslandSurface.notificationSurface(for: event),
-                  case .questionAsked = event {
-            sessionSurface = notificationSurface
-            isNotificationMode = true
-        }
-
         monitoringEngine.applyEvent(event) { [weak self] snapshot in
             self?.applyMonitoringSnapshot(snapshot, refreshedAt: .now)
+            self?.presentActionableSurfaceIfNeeded(for: event)
+        }
+    }
+
+    private func presentActionableSurfaceIfNeeded(for event: CodexAgentEvent) {
+        switch event {
+        case .permissionRequested, .questionAsked:
+            guard let notificationSurface = CodexIslandSurface.notificationSurface(for: event) else {
+                return
+            }
+            sessionSurface = notificationSurface
+            isNotificationMode = true
+        default:
+            break
         }
     }
 

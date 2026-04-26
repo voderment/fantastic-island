@@ -170,6 +170,20 @@ final class CodexSessionReducer {
                     timestamp: now
                 )
             ))
+        case .permissionRequest:
+            let toolName = payload.toolName ?? "Tool"
+            let summary = payload.toolInput?.description
+                ?? payload.toolInput?.command
+                ?? payload.prompt
+                ?? "\(toolName) needs approval."
+            apply(.activityUpdated(
+                SessionActivityUpdatedEvent(
+                    sessionID: payload.sessionID,
+                    summary: summary,
+                    phase: .busy,
+                    timestamp: now
+                )
+            ))
         case .postToolUse:
             let summary = payload.assistantSummary ?? "\(payload.toolName ?? "Tool") completed."
             apply(.activityUpdated(

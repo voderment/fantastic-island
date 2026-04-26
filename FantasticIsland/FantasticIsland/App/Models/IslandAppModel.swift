@@ -490,7 +490,7 @@ final class IslandAppModel: ObservableObject {
 
         objectWillChange.send()
 
-        if islandExpanded {
+        if islandExpanded || islandPeeking {
             shellController.reposition()
         }
     }
@@ -1164,7 +1164,17 @@ final class IslandAppModel: ObservableObject {
         let measurementKey = moduleContentMeasurementKey(for: module.id, presentation: resolvedPresentation)
         let measuredContentHeight = measuredModuleContentHeights[measurementKey] ?? 0
         let minimumHeight = minimumExpandedContentHeight(for: resolvedPresentation)
-        let maximumHeight = max(preferredHeightWithStandardBottomPadding, minimumHeight)
+        let maximumHeight: CGFloat
+        switch resolvedPresentation {
+        case .standard, .peek:
+            maximumHeight = max(preferredHeightWithStandardBottomPadding, minimumHeight)
+        case .activity:
+            maximumHeight = max(
+                CodexIslandChromeMetrics.preferredTallModuleOpenedContentHeight,
+                preferredHeightWithStandardBottomPadding,
+                minimumHeight
+            )
+        }
 
         guard measuredContentHeight > 0 else {
             return maximumHeight
