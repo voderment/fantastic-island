@@ -26,7 +26,11 @@ final class CodexMonitoringEngine {
         }
     }
 
-    func applyHookPayload(_ payload: CodexHookPayload, completion: @escaping (CodexMonitoringSnapshot) -> Void) {
+    func applyHookPayload(
+        _ payload: CodexHookPayload,
+        followedBy event: CodexAgentEvent? = nil,
+        completion: @escaping (CodexMonitoringSnapshot) -> Void
+    ) {
         queue.async { [self] in
             reducer.applyHookPayload(payload)
 
@@ -42,6 +46,10 @@ final class CodexMonitoringEngine {
                 )
                 let sessions = discovery.discoverRecentSessions() + [discovered]
                 tailer.sync(with: sessions, reducer: reducer)
+            }
+
+            if let event {
+                reducer.apply(event)
             }
 
             publishSnapshot(completion)

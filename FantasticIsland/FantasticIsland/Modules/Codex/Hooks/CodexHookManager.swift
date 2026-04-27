@@ -78,6 +78,15 @@ struct CodexHookManager {
         shellQuote(Self.helperURL.path)
     }
 
+    private static let managedEventNames = [
+        "SessionStart",
+        "PreToolUse",
+        "PermissionRequest",
+        "PostToolUse",
+        "UserPromptSubmit",
+        "Stop",
+    ]
+
     private func hasManagedHooks(command: String) throws -> Bool {
         guard FileManager.default.fileExists(atPath: hooksURL.path) else {
             return false
@@ -89,7 +98,7 @@ struct CodexHookManager {
             throw CodexHookManagerError.invalidHooksJSON
         }
 
-        for event in ["SessionStart", "PreToolUse", "PostToolUse", "UserPromptSubmit", "Stop"] {
+        for event in Self.managedEventNames {
             guard let groups = hooks[event] as? [[String: Any]] else {
                 return false
             }
@@ -137,7 +146,7 @@ struct CodexHookManager {
             if not payload:
                 raise SystemExit(0)
             sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            sock.settimeout(1.0)
+            sock.settimeout(40.0)
             sock.connect(sys.argv[1])
             sock.sendall(payload)
             sock.shutdown(socket.SHUT_WR)
@@ -176,6 +185,7 @@ struct CodexHookManager {
         let eventSpecs: [(name: String, matcher: String?)] = [
             ("SessionStart", "startup|resume"),
             ("PreToolUse", nil),
+            ("PermissionRequest", nil),
             ("PostToolUse", nil),
             ("UserPromptSubmit", nil),
             ("Stop", nil),
@@ -198,7 +208,7 @@ struct CodexHookManager {
         var root = try loadRootObject(from: existingData)
         var hooksObject = root["hooks"] as? [String: Any] ?? [:]
 
-        for event in ["SessionStart", "PreToolUse", "PostToolUse", "UserPromptSubmit", "Stop"] {
+        for event in Self.managedEventNames {
             let groups = hooksObject[event] as? [Any] ?? []
             let cleaned = sanitize(groups: groups, managedCommand: managedCommand)
             if cleaned.isEmpty {

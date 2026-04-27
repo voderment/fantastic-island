@@ -5,9 +5,17 @@ final class HookBridgeServer {
     var onPayload: ((CodexHookPayload) -> CodexHookDirective?)?
 
     private let queue = DispatchQueue(label: "fantastic-island.hook-bridge")
+    private let workerQueue = DispatchQueue(label: "fantastic-island.hook-bridge.worker", attributes: .concurrent)
+    private let connectionLock = NSLock()
     private var acceptSource: DispatchSourceRead?
+    private var activeConnections: [ObjectIdentifier: ClientConnection] = [:]
     private var listenFD: Int32 = -1
     private let socketURL = CodexHookManager.socketURL
+    private var isAcceptingConnections = false
+
+    deinit {
+        stop()
+    }
 
     func start() throws {
         stop()
@@ -55,6 +63,7 @@ final class HookBridgeServer {
             throw POSIXError(code)
         }
 
+        isAcceptingConnections = true
         acceptSource = DispatchSource.makeReadSource(fileDescriptor: listenFD, queue: queue)
         acceptSource?.setEventHandler { [weak self] in
             self?.acceptPendingConnections()
@@ -69,19 +78,27 @@ final class HookBridgeServer {
     }
 
     func stop() {
+        isAcceptingConnections = false
         if let acceptSource {
             self.acceptSource = nil
+            listenFD = -1
             acceptSource.cancel()
         } else if listenFD >= 0 {
             close(listenFD)
             listenFD = -1
         }
+        cancelActiveConnections()
         _ = socketURL.path.withCString { unlink($0) }
     }
 
     private func acceptPendingConnections() {
         while true {
-            let clientFD = accept(listenFD, nil, nil)
+            let serverFD = listenFD
+            guard serverFD >= 0 else {
+                return
+            }
+
+            let clientFD = accept(serverFD, nil, nil)
             if clientFD < 0 {
                 if errno == EWOULDBLOCK || errno == EAGAIN {
                     break
@@ -89,17 +106,35 @@ final class HookBridgeServer {
                 return
             }
 
-            handleConnection(clientFD)
+            guard isAcceptingConnections else {
+                close(clientFD)
+                continue
+            }
+
+            let connection = ClientConnection(fileDescriptor: clientFD)
+            registerConnection(connection)
+            workerQueue.async { [weak self] in
+                guard let self else {
+                    connection.close()
+                    return
+                }
+                self.handleConnection(connection)
+            }
         }
     }
 
-    private func handleConnection(_ clientFD: Int32) {
-        defer { close(clientFD) }
+    private func handleConnection(_ connection: ClientConnection) {
+        defer {
+            unregisterConnection(connection)
+            connection.close()
+        }
 
         var payload = Data()
         var buffer = [UInt8](repeating: 0, count: 4096)
         while true {
-            let count = read(clientFD, &buffer, buffer.count)
+            let count = buffer.withUnsafeMutableBytes { rawBuffer in
+                connection.read(into: rawBuffer.baseAddress, count: rawBuffer.count)
+            }
             if count > 0 {
                 payload.append(contentsOf: buffer.prefix(count))
                 continue
@@ -116,11 +151,95 @@ final class HookBridgeServer {
         let directive = onPayload?(decoded)
         if let directive,
            let encoded = try? JSONEncoder().encode(directive) {
-            _ = encoded.withUnsafeBytes { bytes in
-                write(clientFD, bytes.baseAddress, bytes.count)
+            var response = encoded
+            response.append(contentsOf: [0x0A])
+            connection.write(response)
+        }
+    }
+
+    private func registerConnection(_ connection: ClientConnection) {
+        connectionLock.lock()
+        activeConnections[ObjectIdentifier(connection)] = connection
+        connectionLock.unlock()
+    }
+
+    private func unregisterConnection(_ connection: ClientConnection) {
+        connectionLock.lock()
+        activeConnections.removeValue(forKey: ObjectIdentifier(connection))
+        connectionLock.unlock()
+    }
+
+    private func cancelActiveConnections() {
+        connectionLock.lock()
+        let connections = Array(activeConnections.values)
+        connectionLock.unlock()
+
+        for connection in connections {
+            connection.cancel()
+        }
+    }
+
+    private final class ClientConnection {
+        private let lock = NSLock()
+        private var fileDescriptor: Int32
+        private var isCancelled = false
+
+        init(fileDescriptor: Int32) {
+            self.fileDescriptor = fileDescriptor
+        }
+
+        deinit {
+            close()
+        }
+
+        func read(into buffer: UnsafeMutableRawPointer?, count: Int) -> Int {
+            lock.lock()
+            let fd = fileDescriptor
+            let cancelled = isCancelled
+            lock.unlock()
+
+            guard fd >= 0, !cancelled else {
+                return 0
             }
-            _ = "\n".withCString { newlinePointer in
-                write(clientFD, newlinePointer, 1)
+
+            return Darwin.read(fd, buffer, count)
+        }
+
+        func write(_ data: Data) {
+            data.withUnsafeBytes { bytes in
+                guard let baseAddress = bytes.baseAddress else {
+                    return
+                }
+
+                lock.lock()
+                defer { lock.unlock() }
+
+                guard fileDescriptor >= 0, !isCancelled else {
+                    return
+                }
+
+                _ = Darwin.write(fileDescriptor, baseAddress, bytes.count)
+            }
+        }
+
+        func cancel() {
+            lock.lock()
+            isCancelled = true
+            if fileDescriptor >= 0 {
+                _ = Darwin.shutdown(fileDescriptor, SHUT_RDWR)
+            }
+            lock.unlock()
+        }
+
+        func close() {
+            lock.lock()
+            let fd = fileDescriptor
+            fileDescriptor = -1
+            isCancelled = true
+            lock.unlock()
+
+            if fd >= 0 {
+                Darwin.close(fd)
             }
         }
     }
