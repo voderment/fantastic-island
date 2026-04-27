@@ -8,6 +8,7 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
     static let moduleID = "player"
     private static let transientNotificationAutoDismissDelay: TimeInterval = 1.5
     private static let trackSwitchActivityPriority = 240
+    private static let minimumRefreshInterval: TimeInterval = 0.18
     private static let estimatedArtworkBlockHeight: CGFloat = 112
     private static let estimatedProgressSectionHeight: CGFloat = 30
     private static let estimatedOuterSpacing: CGFloat = 18
@@ -67,6 +68,10 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
     private var artworkLoadTask: Task<Void, Never>?
     private var artworkLoadIdentity: TrackIdentity?
     private var isRefreshing = false
+    private var needsRefreshAfterCurrentPass = false
+    private var pendingRefreshWorkItem: DispatchWorkItem?
+    private var pendingRefreshDeadline: Date?
+    private var lastRefreshCompletedAt: Date = .distantPast
     private var lastObservedTrackIdentity: TrackIdentity?
     private var workspaceObservers: [NSObjectProtocol] = []
     private var distributedObservers: [NSObjectProtocol] = []
@@ -92,6 +97,7 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
     deinit {
         pollingTask?.cancel()
         artworkLoadTask?.cancel()
+        pendingRefreshWorkItem?.cancel()
         for observer in workspaceObservers {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
         }
@@ -182,10 +188,6 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
         joinedSourceNames(from: defaultSourceOptions.map(\.displayName))
     }
 
-    func makeContentView(presentation: IslandModulePresentationContext) -> AnyView {
-        AnyView(PlayerModuleContentView(model: self, presentation: presentation))
-    }
-
     func preferredOpenedContentHeight(for presentation: IslandModulePresentationContext) -> CGFloat {
         switch presentation {
         case .peek:
@@ -197,21 +199,80 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
         }
     }
 
+    func makeRenderSnapshot(presentation: IslandModulePresentationContext) -> IslandModuleRenderSnapshot {
+        IslandModuleRenderSnapshot(
+            id: "\(id)::\(presentation.cacheKey)",
+            moduleID: id,
+            presentation: presentation,
+            preferredHeight: preferredOpenedContentHeight(for: presentation),
+            allowsInternalScrolling: allowsInternalScrolling,
+            view: AnyView(PlayerModuleContentView(state: makeRenderState(for: presentation)))
+        )
+    }
+
+    func makeLiveContentView(presentation: IslandModulePresentationContext) -> AnyView {
+        AnyView(PlayerModuleLiveContentView(model: self, presentation: presentation))
+    }
+
+    func makeRenderState(for presentation: IslandModulePresentationContext) -> PlayerModuleRenderState {
+        let resolvedNotification: TrackSwitchNotification?
+        switch presentation {
+        case let .peek(activity):
+            resolvedNotification = trackSwitchNotification(for: activity)
+        case .standard, .activity:
+            resolvedNotification = nil
+        }
+
+        let sourceBadgeImage: NSImage?
+        if nowPlayingState.track != nil, let source = nowPlayingState.source {
+            sourceBadgeImage = PlayerSourceRegistry.appIcon(for: source)
+        } else {
+            sourceBadgeImage = nil
+        }
+
+        return PlayerModuleRenderState(
+            presentation: presentation,
+            nowPlayingState: nowPlayingState,
+            trackSwitchNotification: resolvedNotification,
+            supportsTransportControls: supportsTransportControls,
+            canActivateCurrentSource: canActivateCurrentSource,
+            automationIssue: automationIssue,
+            canRequestAutomationAccess: canRequestAutomationAccess,
+            isResolvingAutomationAccess: isResolvingAutomationAccess,
+            sourceBadgeImage: sourceBadgeImage,
+            previousTrack: { [weak self] in Task { @MainActor in self?.previousTrack() } },
+            togglePlayPause: { [weak self] in Task { @MainActor in self?.togglePlayPause() } },
+            nextTrack: { [weak self] in Task { @MainActor in self?.nextTrack() } },
+            seek: { [weak self] progress in Task { @MainActor in self?.seek(toProgress: progress) } },
+            toggleShuffle: { [weak self] in Task { @MainActor in self?.toggleShuffle() } },
+            cycleRepeat: { [weak self] in Task { @MainActor in self?.cycleRepeat() } },
+            requestAutomationAccess: { [weak self] in Task { @MainActor in self?.requestAutomationAccess() } },
+            openAutomationSettings: { [weak self] in Task { @MainActor in self?.openAutomationSettings() } },
+            refresh: { [weak self] in Task { @MainActor in self?.refresh() } },
+            activateCurrentSource: { [weak self] in Task { @MainActor in self?.activateCurrentSource() } }
+        )
+    }
+
     func refresh() {
         guard !isRefreshing else {
+            needsRefreshAfterCurrentPass = true
             return
         }
 
+        pendingRefreshWorkItem?.cancel()
+        pendingRefreshWorkItem = nil
+        pendingRefreshDeadline = nil
         isRefreshing = true
-        defer { isRefreshing = false }
         syncSourceAvailability()
 
-        let nextState = mediaCoordinator.fetchCurrentState()
-        processTrackSwitch(from: nowPlayingState, to: nextState)
-        if nextState != nowPlayingState {
-            nowPlayingState = nextState
+        Task { @MainActor [weak self] in
+            guard let self else {
+                return
+            }
+
+            let nextState = await self.mediaCoordinator.fetchCurrentState()
+            self.finishRefresh(with: nextState)
         }
-        requestArtworkLoadIfNeeded(for: nowPlayingState)
     }
 
     func previousTrack() {
@@ -295,9 +356,52 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
     }
 
     private func refreshSoon(after delay: TimeInterval = 0.25) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            self?.refresh()
+        let now = Date()
+        let earliestDeadline = max(
+            now.addingTimeInterval(delay),
+            lastRefreshCompletedAt.addingTimeInterval(Self.minimumRefreshInterval)
+        )
+
+        if let pendingRefreshDeadline,
+           pendingRefreshDeadline <= earliestDeadline {
+            return
         }
+
+        pendingRefreshWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else {
+                return
+            }
+
+            self.pendingRefreshWorkItem = nil
+            self.pendingRefreshDeadline = nil
+            self.refresh()
+        }
+
+        pendingRefreshWorkItem = workItem
+        pendingRefreshDeadline = earliestDeadline
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + max(0, earliestDeadline.timeIntervalSince(now)),
+            execute: workItem
+        )
+    }
+
+    private func finishRefresh(with nextState: PlayerNowPlayingState) {
+        defer {
+            isRefreshing = false
+            lastRefreshCompletedAt = Date()
+            if needsRefreshAfterCurrentPass {
+                needsRefreshAfterCurrentPass = false
+                refreshSoon(after: Self.minimumRefreshInterval)
+            }
+        }
+
+        processTrackSwitch(from: nowPlayingState, to: nextState)
+        if nextState != nowPlayingState {
+            nowPlayingState = nextState
+        }
+        requestArtworkLoadIfNeeded(for: nowPlayingState)
     }
 
     private func configureWorkspaceObservers() {
@@ -496,25 +600,7 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
             }
 
             self.nowPlayingState.artworkImage = artworkImage
-            self.updateTrackSwitchNotificationArtworkIfNeeded(artworkImage, for: identity)
         }
-    }
-
-    private func updateTrackSwitchNotificationArtworkIfNeeded(_ artworkImage: NSImage, for identity: TrackIdentity) {
-        guard let trackSwitchNotification,
-              trackSwitchNotification.artworkImage == nil,
-              TrackIdentity(source: trackSwitchNotification.source, track: trackSwitchNotification.track) == identity else {
-            return
-        }
-
-        self.trackSwitchNotification = TrackSwitchNotification(
-            activityID: trackSwitchNotification.activityID,
-            source: trackSwitchNotification.source,
-            track: trackSwitchNotification.track,
-            artworkImage: artworkImage,
-            createdAt: trackSwitchNotification.createdAt,
-            updatedAt: Date()
-        )
     }
 
     private func runPollingLoop() async {

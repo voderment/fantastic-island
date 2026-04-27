@@ -1,9 +1,18 @@
 import AppKit
 import Carbon
 import Foundation
+import ImageIO
+
+private actor PlayerAppleScriptWorker {
+    func execute(_ lines: [String]) -> PlayerMediaCoordinator.AppleScriptExecutionResult {
+        PlayerMediaCoordinator.runAppleScript(lines)
+    }
+}
 
 @MainActor
 final class PlayerMediaCoordinator {
+    private static let artworkThumbnailMaxPixelSize: CGFloat = 192
+
     private enum AppleEventError {
         static let noError: OSStatus = 0
         static let eventNotPermitted: OSStatus = -1743
@@ -42,7 +51,7 @@ final class PlayerMediaCoordinator {
         case unavailable
     }
 
-    private struct AppleScriptExecutionResult {
+    fileprivate struct AppleScriptExecutionResult {
         let descriptor: NSAppleEventDescriptor?
         let error: NSDictionary?
 
@@ -64,7 +73,7 @@ final class PlayerMediaCoordinator {
 
     private struct ScriptSource {
         let kind: PlayerSourceKind
-        let fetchState: () -> FetchResult
+        let fetchState: () async -> FetchResult
         let previousTrack: () -> Void
         let togglePlayPause: () -> Void
         let nextTrack: () -> Void
@@ -81,50 +90,49 @@ final class PlayerMediaCoordinator {
     private var artworkCache: [String: NSImage] = [:]
     private var artworkCacheOrder: [String] = []
     private var musicArtworkURLCache: [String: URL] = [:]
+    private let scriptWorker = PlayerAppleScriptWorker()
     private let artworkCacheLimit = 8
     private let launchedCommandDelay: TimeInterval = 0.8
     private let immediateRefreshDelay: TimeInterval = 0.25
     private let launchedRefreshDelay: TimeInterval = 1.15
 
-    func fetchCurrentState() -> PlayerNowPlayingState {
-        autoreleasepool {
-            let frontmostBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-            var pausedCandidate: PlayerSnapshot?
-            var automationIssueCandidate: PlayerAutomationIssue?
+    func fetchCurrentState() async -> PlayerNowPlayingState {
+        let frontmostBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        var pausedCandidate: PlayerSnapshot?
+        var automationIssueCandidate: PlayerAutomationIssue?
 
-            for source in prioritizedSources(frontmostBundleID: frontmostBundleID) {
-                switch source.fetchState() {
-                case let .snapshot(snapshot):
-                    if snapshot.playbackStatus == .playing {
-                        lastPreferredSourceKind = snapshot.source
-                        return toState(snapshot)
-                    }
-
-                    if pausedCandidate == nil {
-                        pausedCandidate = snapshot
-                    }
-                case let .automationIssue(issue):
-                    if automationIssueCandidate == nil {
-                        automationIssueCandidate = issue
-                    }
-                case .unavailable:
-                    continue
+        for source in prioritizedSources(frontmostBundleID: frontmostBundleID) {
+            switch await source.fetchState() {
+            case let .snapshot(snapshot):
+                if snapshot.playbackStatus == .playing {
+                    lastPreferredSourceKind = snapshot.source
+                    return toState(snapshot)
                 }
-            }
 
-            if let pausedCandidate {
-                lastPreferredSourceKind = pausedCandidate.source
-                return toState(pausedCandidate)
+                if pausedCandidate == nil {
+                    pausedCandidate = snapshot
+                }
+            case let .automationIssue(issue):
+                if automationIssueCandidate == nil {
+                    automationIssueCandidate = issue
+                }
+            case .unavailable:
+                continue
             }
-
-            if let automationIssueCandidate {
-                lastPreferredSourceKind = nil
-                return .issueState(automationIssueCandidate)
-            }
-
-            lastPreferredSourceKind = nil
-            return .empty
         }
+
+        if let pausedCandidate {
+            lastPreferredSourceKind = pausedCandidate.source
+            return toState(pausedCandidate)
+        }
+
+        if let automationIssueCandidate {
+            lastPreferredSourceKind = nil
+            return .issueState(automationIssueCandidate)
+        }
+
+        lastPreferredSourceKind = nil
+        return .empty
     }
 
     func previousTrack(for sourceKind: PlayerSourceKind?) -> TimeInterval? {
@@ -322,7 +330,7 @@ final class PlayerMediaCoordinator {
         ScriptSource(
             kind: .music,
             fetchState: { [weak self] in
-                self?.fetchMusicState() ?? .unavailable
+                await self?.fetchMusicState() ?? .unavailable
             },
             previousTrack: {
                 Self.runAppleScript([
@@ -374,7 +382,7 @@ final class PlayerMediaCoordinator {
         ScriptSource(
             kind: .spotify,
             fetchState: { [weak self] in
-                self?.fetchSpotifyState() ?? .unavailable
+                await self?.fetchSpotifyState() ?? .unavailable
             },
             previousTrack: {
                 Self.runAppleScript([
@@ -401,151 +409,147 @@ final class PlayerMediaCoordinator {
         )
     }
 
-    private func fetchMusicState() -> FetchResult {
-        autoreleasepool {
-            guard Self.isApplicationRunning(bundleIdentifier: PlayerSourceKind.music.bundleIdentifier) else {
-                return .unavailable
-            }
+    private func fetchMusicState() async -> FetchResult {
+        guard Self.isApplicationRunning(bundleIdentifier: PlayerSourceKind.music.bundleIdentifier) else {
+            return .unavailable
+        }
 
-            if let permissionIssue = permissionIssue(for: .music) {
-                return .automationIssue(permissionIssue)
-            }
+        if let permissionIssue = permissionIssue(for: .music) {
+            return .automationIssue(permissionIssue)
+        }
 
-            let result = Self.runAppleScript([
-                #"tell application "Music""#,
-                #"set currentState to player state as text"#,
-                #"if currentState is "stopped" then return "stopped""#,
-                #"set currentTrack to current track"#,
-                #"set trackName to name of currentTrack"#,
-                #"set artistName to artist of currentTrack"#,
-                #"set albumName to album of currentTrack"#,
-                #"set durationSeconds to duration of currentTrack"#,
-                #"set elapsedSeconds to player position"#,
-                #"set shuffleEnabled to shuffle enabled"#,
-                #"set repeatMode to song repeat as text"#,
-                #"set AppleScript's text item delimiters to (ASCII character 31)"#,
-                #"return {currentState, trackName, artistName, albumName, (durationSeconds as text), (elapsedSeconds as text), (shuffleEnabled as text), repeatMode} as text"#,
-                #"end tell"#,
-            ])
+        let result = await scriptWorker.execute([
+            #"tell application "Music""#,
+            #"set currentState to player state as text"#,
+            #"if currentState is "stopped" then return "stopped""#,
+            #"set currentTrack to current track"#,
+            #"set trackName to name of currentTrack"#,
+            #"set artistName to artist of currentTrack"#,
+            #"set albumName to album of currentTrack"#,
+            #"set durationSeconds to duration of currentTrack"#,
+            #"set elapsedSeconds to player position"#,
+            #"set shuffleEnabled to shuffle enabled"#,
+            #"set repeatMode to song repeat as text"#,
+            #"set AppleScript's text item delimiters to (ASCII character 31)"#,
+            #"return {currentState, trackName, artistName, albumName, (durationSeconds as text), (elapsedSeconds as text), (shuffleEnabled as text), repeatMode} as text"#,
+            #"end tell"#,
+        ])
 
-            guard let output = result.stringValue else {
-                return .unavailable
-            }
+        guard let output = result.stringValue else {
+            return .unavailable
+        }
 
-            if output == "stopped" {
-                return .snapshot(PlayerSnapshot(
-                    source: .music,
-                    playbackStatus: .stopped,
-                    track: nil,
-                    shuffleMode: .unsupported,
-                    repeatMode: .unsupported,
-                    artworkImage: nil
-                ))
-            }
-
-            let parts = output.components(separatedBy: "\u{1F}")
-            guard parts.count >= 8 else {
-                return .unavailable
-            }
-
-            let title = fallback(parts[1], default: "Unknown Track")
-            let artist = fallback(parts[2], default: "Unknown Artist")
-            let album = parts[3].nilIfEmpty
-            let duration = Double(parts[4]) ?? 0
-            let elapsed = Double(parts[5]) ?? 0
-
-            let cacheKey = [
-                "music",
-                title,
-                artist,
-                album ?? "",
-            ].joined(separator: "\u{1F}")
-
-            let track = PlayerTrackMetadata(
-                title: title,
-                artist: artist,
-                album: album,
-                duration: duration,
-                elapsed: elapsed,
-                artworkURL: musicArtworkURLCache[cacheKey]
-            )
-
+        if output == "stopped" {
             return .snapshot(PlayerSnapshot(
                 source: .music,
-                playbackStatus: playbackStatus(for: parts[0]),
-                track: track,
-                shuffleMode: shuffleMode(for: parts[6]),
-                repeatMode: repeatMode(for: parts[7]),
-                artworkImage: cachedArtworkImage(for: cacheKey) ?? loadMusicArtworkFromAppleScript(cacheKey: cacheKey)
-            ))
-        }
-    }
-
-    private func fetchSpotifyState() -> FetchResult {
-        autoreleasepool {
-            guard Self.isApplicationRunning(bundleIdentifier: PlayerSourceKind.spotify.bundleIdentifier) else {
-                return .unavailable
-            }
-
-            if let permissionIssue = permissionIssue(for: .spotify) {
-                return .automationIssue(permissionIssue)
-            }
-
-            let result = Self.runAppleScript([
-                #"tell application "Spotify""#,
-                #"set currentState to player state as text"#,
-                #"if currentState is "stopped" then return "stopped""#,
-                #"set currentTrack to current track"#,
-                #"set trackName to name of currentTrack"#,
-                #"set artistName to artist of currentTrack"#,
-                #"set albumName to album of currentTrack"#,
-                #"set durationMs to duration of currentTrack"#,
-                #"set elapsedSeconds to player position"#,
-                #"set artworkURL to artwork url of currentTrack"#,
-                #"set AppleScript's text item delimiters to (ASCII character 31)"#,
-                #"return {currentState, trackName, artistName, albumName, (durationMs as text), (elapsedSeconds as text), artworkURL} as text"#,
-                #"end tell"#,
-            ])
-
-            guard let output = result.stringValue else {
-                return .unavailable
-            }
-
-            if output == "stopped" {
-                return .snapshot(PlayerSnapshot(
-                    source: .spotify,
-                    playbackStatus: .stopped,
-                    track: nil,
-                    shuffleMode: .unsupported,
-                    repeatMode: .unsupported,
-                    artworkImage: nil
-                ))
-            }
-
-            let parts = output.components(separatedBy: "\u{1F}")
-            guard parts.count >= 7 else {
-                return .unavailable
-            }
-
-            let artworkURL = URL(string: parts[6])
-            let track = PlayerTrackMetadata(
-                title: fallback(parts[1], default: "Unknown Track"),
-                artist: fallback(parts[2], default: "Unknown Artist"),
-                album: parts[3].nilIfEmpty,
-                duration: (Double(parts[4]) ?? 0) / 1000,
-                elapsed: Double(parts[5]) ?? 0,
-                artworkURL: artworkURL
-            )
-
-            return .snapshot(PlayerSnapshot(
-                source: .spotify,
-                playbackStatus: playbackStatus(for: parts[0]),
-                track: track,
+                playbackStatus: .stopped,
+                track: nil,
                 shuffleMode: .unsupported,
                 repeatMode: .unsupported,
-                artworkImage: cachedArtworkImage(for: spotifyArtworkCacheKey(for: track, artworkURL: artworkURL))
+                artworkImage: nil
             ))
         }
+
+        let parts = output.components(separatedBy: "\u{1F}")
+        guard parts.count >= 8 else {
+            return .unavailable
+        }
+
+        let title = fallback(parts[1], default: "Unknown Track")
+        let artist = fallback(parts[2], default: "Unknown Artist")
+        let album = parts[3].nilIfEmpty
+        let duration = Double(parts[4]) ?? 0
+        let elapsed = Double(parts[5]) ?? 0
+
+        let cacheKey = [
+            "music",
+            title,
+            artist,
+            album ?? "",
+        ].joined(separator: "\u{1F}")
+
+        let track = PlayerTrackMetadata(
+            title: title,
+            artist: artist,
+            album: album,
+            duration: duration,
+            elapsed: elapsed,
+            artworkURL: musicArtworkURLCache[cacheKey]
+        )
+
+        return .snapshot(PlayerSnapshot(
+            source: .music,
+            playbackStatus: playbackStatus(for: parts[0]),
+            track: track,
+            shuffleMode: shuffleMode(for: parts[6]),
+            repeatMode: repeatMode(for: parts[7]),
+            artworkImage: cachedArtworkImage(for: cacheKey)
+        ))
+    }
+
+    private func fetchSpotifyState() async -> FetchResult {
+        guard Self.isApplicationRunning(bundleIdentifier: PlayerSourceKind.spotify.bundleIdentifier) else {
+            return .unavailable
+        }
+
+        if let permissionIssue = permissionIssue(for: .spotify) {
+            return .automationIssue(permissionIssue)
+        }
+
+        let result = await scriptWorker.execute([
+            #"tell application "Spotify""#,
+            #"set currentState to player state as text"#,
+            #"if currentState is "stopped" then return "stopped""#,
+            #"set currentTrack to current track"#,
+            #"set trackName to name of currentTrack"#,
+            #"set artistName to artist of currentTrack"#,
+            #"set albumName to album of currentTrack"#,
+            #"set durationMs to duration of currentTrack"#,
+            #"set elapsedSeconds to player position"#,
+            #"set artworkURL to artwork url of currentTrack"#,
+            #"set AppleScript's text item delimiters to (ASCII character 31)"#,
+            #"return {currentState, trackName, artistName, albumName, (durationMs as text), (elapsedSeconds as text), artworkURL} as text"#,
+            #"end tell"#,
+        ])
+
+        guard let output = result.stringValue else {
+            return .unavailable
+        }
+
+        if output == "stopped" {
+            return .snapshot(PlayerSnapshot(
+                source: .spotify,
+                playbackStatus: .stopped,
+                track: nil,
+                shuffleMode: .unsupported,
+                repeatMode: .unsupported,
+                artworkImage: nil
+            ))
+        }
+
+        let parts = output.components(separatedBy: "\u{1F}")
+        guard parts.count >= 7 else {
+            return .unavailable
+        }
+
+        let artworkURL = URL(string: parts[6])
+        let track = PlayerTrackMetadata(
+            title: fallback(parts[1], default: "Unknown Track"),
+            artist: fallback(parts[2], default: "Unknown Artist"),
+            album: parts[3].nilIfEmpty,
+            duration: (Double(parts[4]) ?? 0) / 1000,
+            elapsed: Double(parts[5]) ?? 0,
+            artworkURL: artworkURL
+        )
+
+        return .snapshot(PlayerSnapshot(
+            source: .spotify,
+            playbackStatus: playbackStatus(for: parts[0]),
+            track: track,
+            shuffleMode: .unsupported,
+            repeatMode: .unsupported,
+            artworkImage: cachedArtworkImage(for: spotifyArtworkCacheKey(for: track, artworkURL: artworkURL))
+        ))
     }
 
     private func permissionIssue(for source: PlayerSourceKind) -> PlayerAutomationIssue? {
@@ -640,36 +644,6 @@ final class PlayerMediaCoordinator {
         }
     }
 
-    private func loadMusicArtworkFromAppleScript(cacheKey: String) -> NSImage? {
-        let result = Self.runAppleScriptDescriptor([
-            #"tell application "Music""#,
-            #"set currentTrack to current track"#,
-            #"if (count of artworks of currentTrack) is 0 then return missing value"#,
-            #"return data of artwork 1 of currentTrack"#,
-            #"end tell"#,
-        ])
-
-        guard let descriptor = result.descriptor else {
-            return nil
-        }
-
-        guard descriptor.descriptorType != typeNull else {
-            return nil
-        }
-
-        let data = descriptor.data
-        guard !data.isEmpty else {
-            return nil
-        }
-
-        guard let image = NSImage(data: data) else {
-            return nil
-        }
-
-        storeArtwork(image, for: cacheKey)
-        return image
-    }
-
     private static func loadArtworkImage(from url: URL) async -> NSImage? {
         var request = URLRequest(url: url)
         request.timeoutInterval = 2.5
@@ -678,19 +652,47 @@ final class PlayerMediaCoordinator {
             return nil
         }
 
+        return await decodeArtworkImage(from: data)
+    }
+
+    private static func decodeArtworkImage(from data: Data) async -> NSImage? {
+        let maxPixelSize = artworkThumbnailMaxPixelSize
+        let cgImage = await Task.detached(priority: .utility) { () -> CGImage? in
+            let sourceOptions = [
+                kCGImageSourceShouldCache: false,
+            ] as CFDictionary
+            guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else {
+                return nil
+            }
+
+            let thumbnailOptions = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+            ] as CFDictionary
+
+            return CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions)
+                ?? CGImageSourceCreateImageAtIndex(source, 0, thumbnailOptions)
+        }.value
+
+        guard let cgImage else {
+            return nil
+        }
+
         return await MainActor.run {
-            NSImage(data: data)
+            NSImage(cgImage: cgImage, size: .zero)
         }
     }
 
     @discardableResult
-    private static func runAppleScript(_ lines: [String]) -> AppleScriptExecutionResult {
+    nonisolated fileprivate static func runAppleScript(_ lines: [String]) -> AppleScriptExecutionResult {
         autoreleasepool {
             runAppleScriptDescriptor(lines)
         }
     }
 
-    private static func runAppleScriptDescriptor(_ lines: [String]) -> AppleScriptExecutionResult {
+    nonisolated private static func runAppleScriptDescriptor(_ lines: [String]) -> AppleScriptExecutionResult {
         autoreleasepool {
             let source = lines.joined(separator: "\n")
             guard let script = NSAppleScript(source: source) else {

@@ -1,11 +1,5 @@
 import SwiftUI
 
-private let islandOpenAnimation = CodexIslandPeekMetrics.openAnimation
-private let islandCloseAnimation = CodexIslandPeekMetrics.closeAnimation
-private let openedChromeRevealAnimation = CodexIslandPeekMetrics.chromeRevealAnimation
-private let peekBodyCloseFadeAnimation = CodexIslandPeekMetrics.bodyCloseFadeAnimation
-private let closedHeaderRevealAnimation = CodexIslandPeekMetrics.closedHeaderRevealAnimation
-
 private struct ModuleContentHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
 
@@ -39,16 +33,6 @@ private struct PeekContentHeightKey: PreferenceKey {
     }
 }
 
-private enum IslandShellVisualMode: Equatable {
-    case closed
-    case peek
-    case expanded
-}
-
-private struct PeekRenderState {
-    let activity: IslandActivity
-}
-
 // Copyright 2026 Fantastic Island contributors
 // Portions adapted from open-vibe-island contributors
 //
@@ -80,31 +64,14 @@ struct IslandShellView: View {
     let closedContentNotchExclusionWidth: CGFloat
 
     @State private var isHovering = false
-    @State private var visualMode: IslandShellVisualMode = .closed
-    @State private var peekRenderState: PeekRenderState?
-    @State private var showsClosedHeader = true
-    @State private var showsPeekBody = false
-    @State private var showsExpandedBody = false
-    @State private var pendingExpandedBodyReveal: DispatchWorkItem?
-    @State private var pendingClosedHeaderReveal: DispatchWorkItem?
-    @State private var pendingRenderCleanup: DispatchWorkItem?
-    @State private var moduleScrollOffset: CGFloat = 0
+    @State private var moduleScrollOffsets: [String: CGFloat] = [:]
 
     private var usesOpenedVisualState: Bool {
         visualMode != .closed
     }
 
     private var usesExpandedLayoutBounds: Bool {
-        usesOpenedVisualState || model.islandExpansionAnimationInFlight || model.islandCollapseAnimationInFlight
-    }
-
-    private var islandTransitionAnimation: Animation {
-        switch visualMode {
-        case .closed:
-            return islandCloseAnimation
-        case .peek, .expanded:
-            return islandOpenAnimation
-        }
+        usesOpenedVisualState || model.islandLayoutTransitionInFlight
     }
 
     private var closedContentWidth: CGFloat {
@@ -114,16 +81,188 @@ struct IslandShellView: View {
         )
     }
 
-    private var renderedPeekActivity: IslandActivity? {
-        peekRenderState?.activity ?? model.presentedPeekActivity
+    private var transitionPlan: IslandTransitionPlan? {
+        model.currentTransitionPlan
+    }
+
+    private var visualMode: IslandPresentationVisualMode {
+        if let transitionPlan {
+            switch model.transitionPhase {
+            case .morphing, .revealingContent:
+                return transitionPlan.to.visualMode
+            case .preparing, .stable:
+                return transitionPlan.from.visualMode
+            }
+        }
+
+        return model.renderedPresentationState.visualMode
+    }
+
+    private var outgoingPeekSnapshot: IslandModuleRenderSnapshot? {
+        guard let transitionPlan,
+              transitionPlan.from.visualMode == .peek,
+              transitionPlan.to.visualMode != .closed else {
+            return nil
+        }
+
+        return model.activePeekSnapshot
+    }
+
+    private var incomingPeekSnapshot: IslandModuleRenderSnapshot? {
+        if transitionPlan?.to.visualMode == .peek {
+            return model.frozenPeekSnapshot
+        }
+
+        return transitionPlan == nil ? model.currentPeekSnapshot : nil
+    }
+
+    private var outgoingExpandedSnapshot: IslandModuleRenderSnapshot? {
+        guard transitionPlan?.from.visualMode == .expanded else {
+            return nil
+        }
+
+        return model.activeExpandedSnapshot
+    }
+
+    private var incomingExpandedSnapshot: IslandModuleRenderSnapshot? {
+        if transitionPlan?.to.visualMode == .expanded {
+            return model.frozenExpandedSnapshot
+        }
+
+        return transitionPlan == nil && model.islandExpanded ? model.currentExpandedSnapshot : nil
     }
 
     private var renderedPeekContentHeight: CGFloat {
-        guard let activity = renderedPeekActivity else {
-            return closedHeight
+        if let transitionPlan,
+           transitionPlan.to.visualMode == .peek || transitionPlan.from.visualMode == .peek {
+            return transitionPlan.lockedHeight
         }
 
-        return model.peekContentHeight(for: activity)
+        return model.peekContentHeight
+    }
+
+    private var showsClosedHeader: Bool {
+        guard let transitionPlan else {
+            return visualMode == .closed
+        }
+
+        if transitionPlan.to == .closed {
+            return model.transitionPhase == .revealingContent || model.transitionPhase == .stable
+        }
+
+        return model.transitionPhase == .preparing && transitionPlan.from == .closed
+    }
+
+    private var stableLiveExpandedVisible: Bool {
+        model.islandExpanded && transitionPlan == nil && model.transitionPhase == .stable
+    }
+
+    private var expandedLiveHostsMounted: Bool {
+        if stableLiveExpandedVisible {
+            return true
+        }
+
+        guard let transitionPlan else {
+            return false
+        }
+
+        return transitionPlan.from.visualMode == .expanded
+            && transitionPlan.to.visualMode == .expanded
+    }
+
+    private var showsExpandedChrome: Bool {
+        guard let transitionPlan else {
+            return model.islandExpanded
+        }
+
+        return transitionPlan.from.visualMode == .expanded
+            || transitionPlan.to.visualMode == .expanded
+    }
+
+    private var expandedChromeOpacity: Double {
+        guard let transitionPlan else {
+            return model.islandExpanded ? 1 : 0
+        }
+
+        if transitionPlan.from.visualMode == .expanded,
+           transitionPlan.to.visualMode == .expanded {
+            return 1
+        }
+
+        if transitionPlan.to.visualMode == .expanded {
+            return model.transitionPhase == .revealingContent || model.transitionPhase == .stable ? 1 : 0
+        }
+
+        if transitionPlan.from.visualMode == .expanded,
+           transitionPlan.to.visualMode == .peek {
+            return model.transitionPhase == .revealingContent || model.transitionPhase == .stable ? 0 : 1
+        }
+
+        return 0
+    }
+
+    private var expandedContentAllowsHitTesting: Bool {
+        if stableLiveExpandedVisible {
+            return true
+        }
+
+        if let transitionPlan,
+           transitionPlan.from.visualMode == .expanded,
+           transitionPlan.to.visualMode == .expanded {
+            return true
+        }
+
+        return model.peekCapturesMouseEvents && transitionPlan == nil && visualMode == .peek
+    }
+
+    private var outgoingPeekOpacity: Double {
+        guard let transitionPlan, transitionPlan.from.visualMode == .peek else {
+            return 0
+        }
+
+        switch transitionPlan.to.visualMode {
+        case .peek, .expanded:
+            return model.transitionPhase == .revealingContent || model.transitionPhase == .stable ? 0 : 1
+        case .closed:
+            return 0
+        }
+    }
+
+    private var incomingPeekOpacity: Double {
+        guard incomingPeekSnapshot != nil else {
+            return 0
+        }
+
+        if transitionPlan == nil {
+            return visualMode == .peek ? 1 : 0
+        }
+
+        return model.transitionPhase == .revealingContent || model.transitionPhase == .stable ? 1 : 0
+    }
+
+    private var outgoingExpandedOpacity: Double {
+        guard let transitionPlan, transitionPlan.from.visualMode == .expanded else {
+            return 0
+        }
+
+        switch transitionPlan.to.visualMode {
+        case .expanded, .peek:
+            return model.transitionPhase == .revealingContent || model.transitionPhase == .stable ? 0 : 1
+        case .closed:
+            return 0
+        }
+    }
+
+    private var incomingExpandedOpacity: Double {
+        guard incomingExpandedSnapshot != nil else {
+            return 0
+        }
+
+        if transitionPlan == nil {
+            return 0
+        }
+
+        return model.transitionPhase == .revealingContent || model.transitionPhase == .stable ? 1 : 0
     }
 
     var body: some View {
@@ -194,6 +333,29 @@ struct IslandShellView: View {
         let surfaceHeight = surfaceMetrics.height
 
         let openBodyWidth = max(0, surfaceWidth - (openSurfaceHorizontalInset * 2))
+        let targetOpenBodyWidth = max(0, expandedSurfaceWidth - (openSurfaceHorizontalInset * 2))
+        let expandedContentFrameWidth: CGFloat = {
+            guard let transitionPlan else {
+                return visualMode == .expanded ? targetOpenBodyWidth : openBodyWidth
+            }
+
+            if transitionPlan.from.visualMode == .expanded || transitionPlan.to.visualMode == .expanded {
+                return targetOpenBodyWidth
+            }
+
+            return openBodyWidth
+        }()
+        let stableLayerWidth: CGFloat = {
+            guard let transitionPlan else {
+                return surfaceWidth
+            }
+
+            if transitionPlan.from.visualMode == .expanded || transitionPlan.to.visualMode == .expanded {
+                return expandedSurfaceWidth
+            }
+
+            return surfaceWidth
+        }()
         let premeasuredModuleColumnWidth = expandedModuleColumnWidth(for: resolvedExpandedContentWidth)
         let surfaceShape = CodexNotchShape(
             topCornerRadius: usesOpenedVisualState ? CodexNotchShape.openedTopRadius : CodexNotchShape.closedTopRadius,
@@ -212,7 +374,7 @@ struct IslandShellView: View {
                         .frame(height: closedHeight)
                         .frame(maxWidth: .infinity, alignment: .top)
 
-                    expandedContent
+                    peekContentLayer
                         .frame(width: openBodyWidth, height: surfaceHeight, alignment: .top)
                         .clipped()
                 }
@@ -228,13 +390,21 @@ struct IslandShellView: View {
                     surfaceShape
                         .strokeBorder(Color.white.opacity(usesOpenedVisualState ? 0.07 : 0.04), lineWidth: 1)
                 }
+
+                if showsExpandedChrome {
+                    expandedChromeContentLayer
+                        .frame(width: expandedContentFrameWidth, height: surfaceHeight, alignment: .top)
+                        .mask {
+                            surfaceShape
+                                .frame(width: surfaceWidth, height: surfaceHeight)
+                        }
+                }
             }
-            .frame(width: surfaceWidth, height: surfaceHeight, alignment: .top)
+            .frame(width: stableLayerWidth, height: surfaceHeight, alignment: .top)
         }
         .scaleEffect(usesOpenedVisualState ? 1 : (isHovering ? CodexIslandChromeMetrics.closedHoverScale : 1), anchor: .top)
         .padding(.horizontal, panelShadowHorizontalInset)
         .padding(.bottom, panelShadowBottomInset)
-        .animation(islandTransitionAnimation, value: visualMode)
         .overlay(alignment: .topLeading) {
             collapsedModulePremeasurementView(width: premeasuredModuleColumnWidth)
         }
@@ -247,28 +417,6 @@ struct IslandShellView: View {
             )
         }
         .contentShape(Rectangle())
-        .onAppear {
-            syncRenderState(immediate: true)
-        }
-        .onChange(of: model.islandExpanded) { _, _ in
-            syncRenderState(immediate: false)
-        }
-        .onChange(of: model.islandPeeking) { _, _ in
-            syncRenderState(immediate: false)
-        }
-        .onChange(of: model.presentedActivity?.id) { _, _ in
-            if model.islandPeeking {
-                syncRenderState(immediate: false)
-            }
-        }
-        .onDisappear {
-            cancelPendingRenderWork()
-            visualMode = .closed
-            showsExpandedBody = false
-            showsClosedHeader = true
-            showsPeekBody = false
-            peekRenderState = nil
-        }
         .onHover { hovering in
             withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {
                 isHovering = hovering
@@ -279,164 +427,6 @@ struct IslandShellView: View {
                 model.expandIsland(reason: .manualTap)
             }
         }
-    }
-
-    private func cancelPendingRenderWork() {
-        pendingExpandedBodyReveal?.cancel()
-        pendingExpandedBodyReveal = nil
-        pendingClosedHeaderReveal?.cancel()
-        pendingClosedHeaderReveal = nil
-        pendingRenderCleanup?.cancel()
-        pendingRenderCleanup = nil
-    }
-
-    private func syncRenderState(immediate: Bool) {
-        cancelPendingRenderWork()
-
-        if model.islandExpanded {
-            transitionToExpanded(immediate: immediate)
-            return
-        }
-
-        if model.islandPeeking, let activity = model.presentedPeekActivity {
-            transitionToPeek(activity: activity, immediate: immediate)
-            return
-        }
-
-        transitionToClosed(immediate: immediate)
-    }
-
-    private func transitionToPeek(activity: IslandActivity, immediate: Bool) {
-        let isSameActivity = peekRenderState?.activity.id == activity.id
-        peekRenderState = PeekRenderState(activity: activity)
-        showsExpandedBody = false
-
-        guard !immediate else {
-            visualMode = .peek
-            showsClosedHeader = false
-            showsPeekBody = true
-            return
-        }
-
-        if visualMode == .peek, isSameActivity {
-            showsClosedHeader = false
-            showsPeekBody = true
-            return
-        }
-
-        withAnimation(islandOpenAnimation) {
-            visualMode = .peek
-            showsClosedHeader = false
-            showsPeekBody = true
-        }
-    }
-
-    private func transitionToExpanded(immediate: Bool) {
-        guard !immediate else {
-            visualMode = .expanded
-            showsClosedHeader = false
-            showsPeekBody = false
-            showsExpandedBody = true
-            peekRenderState = nil
-            return
-        }
-
-        if visualMode == .expanded, showsExpandedBody, peekRenderState == nil {
-            showsClosedHeader = false
-            showsPeekBody = false
-            return
-        }
-
-        withAnimation(islandOpenAnimation) {
-            visualMode = .expanded
-            showsClosedHeader = false
-            showsPeekBody = false
-        }
-
-        let reveal = DispatchWorkItem {
-            withAnimation(openedChromeRevealAnimation) {
-                showsExpandedBody = true
-            }
-
-            guard peekRenderState != nil else {
-                return
-            }
-
-            let cleanup = DispatchWorkItem {
-                if visualMode == .expanded {
-                    peekRenderState = nil
-                }
-            }
-
-            pendingRenderCleanup = cleanup
-            DispatchQueue.main.asyncAfter(
-                deadline: .now() + CodexIslandPeekMetrics.chromeRevealAnimationDuration,
-                execute: cleanup
-            )
-        }
-
-        pendingExpandedBodyReveal = reveal
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + CodexIslandChromeMetrics.openedChromeRevealDelay,
-            execute: reveal
-        )
-    }
-
-    private func transitionToClosed(immediate: Bool) {
-        let hadPeekSnapshot = peekRenderState != nil
-        let wasOpen = visualMode != .closed || showsExpandedBody || hadPeekSnapshot || !showsClosedHeader || showsPeekBody
-
-        guard !immediate else {
-            visualMode = .closed
-            showsClosedHeader = true
-            showsPeekBody = false
-            showsExpandedBody = false
-            peekRenderState = nil
-            return
-        }
-
-        guard wasOpen else {
-            visualMode = .closed
-            showsClosedHeader = true
-            showsPeekBody = false
-            showsExpandedBody = false
-            peekRenderState = nil
-            return
-        }
-
-        showsExpandedBody = false
-        withAnimation(peekBodyCloseFadeAnimation) {
-            showsPeekBody = false
-        }
-        withAnimation(islandCloseAnimation) {
-            visualMode = .closed
-            showsClosedHeader = false
-        }
-
-        let headerReveal = DispatchWorkItem {
-            if visualMode == .closed {
-                withAnimation(closedHeaderRevealAnimation) {
-                    showsClosedHeader = true
-                }
-            }
-        }
-        pendingClosedHeaderReveal = headerReveal
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + max(0, CodexIslandPeekMetrics.closeAnimationDuration - CodexIslandPeekMetrics.closedHeaderRevealLeadTime),
-            execute: headerReveal
-        )
-
-        let completion = DispatchWorkItem {
-            if visualMode == .closed {
-                peekRenderState = nil
-            }
-        }
-
-        pendingRenderCleanup = completion
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + CodexIslandPeekMetrics.renderCleanupDelay,
-            execute: completion
-        )
     }
 
     @ViewBuilder
@@ -454,19 +444,20 @@ struct IslandShellView: View {
             .clipped()
     }
 
-    private var expandedContent: some View {
+    private var peekContentLayer: some View {
         ZStack(alignment: .topLeading) {
-            if let peekRenderState,
-               let module = model.peekModule(for: peekRenderState.activity) {
-                peekContent(activity: peekRenderState.activity, module: module)
-                    .opacity(showsPeekBody ? 1 : 0)
+            if let snapshot = outgoingPeekSnapshot {
+                peekContent(snapshot: snapshot)
+                    .opacity(outgoingPeekOpacity)
                     .padding(.horizontal, CodexIslandPeekMetrics.contentHorizontalInset) // peek 内容的左右边距由壳层统一提供
                     .padding(.bottom, CodexIslandPeekMetrics.contentBottomPadding) // peek 内容的底部留白由容器统一控制
             }
 
-            if showsExpandedBody || visualMode == .expanded {
-                mainContentSection
-                    .opacity(showsExpandedBody && visualMode == .expanded ? 1 : 0)
+            if let snapshot = incomingPeekSnapshot {
+                peekContent(snapshot: snapshot)
+                    .opacity(incomingPeekOpacity)
+                    .padding(.horizontal, CodexIslandPeekMetrics.contentHorizontalInset)
+                    .padding(.bottom, CodexIslandPeekMetrics.contentBottomPadding)
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -477,14 +468,30 @@ struct IslandShellView: View {
                 : CodexIslandChromeMetrics.expandedContentTopPadding + expandedContentTopClearance
         ) // peek 与 expanded 分别使用各自的顶部留白；带硬件刘海时让 opened 内容整体下移
         .foregroundStyle(.white)
-        .allowsHitTesting(
-            (model.islandExpanded && visualMode == .expanded && showsExpandedBody)
-                || (model.isInteractivePeeking && visualMode == .peek)
-        )
+        .allowsHitTesting(model.peekCapturesMouseEvents && transitionPlan == nil && visualMode == .peek)
     }
 
-    private func peekContent(activity: IslandActivity, module: any IslandModule) -> some View {
-        module.makeContentView(presentation: .peek(activity))
+    private var expandedChromeContentLayer: some View {
+        ZStack(alignment: .topLeading) {
+            expandedChromeSection
+                .opacity(expandedChromeOpacity)
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .padding(
+            .top,
+            CodexIslandChromeMetrics.expandedContentTopPadding + expandedContentTopClearance
+        )
+        .foregroundStyle(.white)
+        .allowsHitTesting(expandedContentAllowsHitTesting)
+        .transaction { transaction in
+            if model.islandLayoutTransitionInFlight {
+                transaction.animation = nil
+            }
+        }
+    }
+
+    private func peekContent(snapshot: IslandModuleRenderSnapshot) -> some View {
+        snapshot.view
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
             .background {
@@ -495,23 +502,61 @@ struct IslandShellView: View {
             .onPreferenceChange(PeekContentHeightKey.self) { height in
                 model.updateMeasuredModuleContentHeight(
                     height,
-                    for: module.id,
-                    presentation: .peek(activity)
+                    for: snapshot.moduleID,
+                    presentation: snapshot.presentation
                 )
+            }
+            .transaction { transaction in
+                if model.islandLayoutTransitionInFlight {
+                    transaction.animation = nil
+                }
             }
     }
 
-    private var mainContentSection: some View {
+    private var expandedChromeSection: some View {
+        expandedChromeSection {
+            expandedModuleContentSwitcher
+        }
+    }
+
+    private func expandedChromeSection<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         HStack(alignment: .top, spacing: model.showsExpandedWindDrivePanel ? CodexIslandChromeMetrics.moduleColumnSpacing : 0) { // Wind Drive 与右侧内容列的间距
             if model.showsExpandedWindDrivePanel {
                 fanColumn
                     .frame(width: CodexIslandChromeMetrics.windDrivePanelWidth, alignment: .top)
             }
-            rightColumn
+            rightColumn(content: content)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .padding(.horizontal, CodexIslandChromeMetrics.expandedContentHorizontalInset) // 展开态主容器统一左右边距，模块自己不要再加外层 horizontal padding
         .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private var expandedModuleContentSwitcher: some View {
+        ZStack(alignment: .topLeading) {
+            if let snapshot = outgoingExpandedSnapshot {
+                snapshotModuleContentViewport(snapshot: snapshot)
+                    .opacity(outgoingExpandedOpacity)
+            }
+
+            if let snapshot = incomingExpandedSnapshot {
+                snapshotModuleContentViewport(snapshot: snapshot)
+                    .opacity(incomingExpandedOpacity)
+            }
+
+            if expandedLiveHostsMounted {
+                liveModuleContentViewport
+                    .opacity(stableLiveExpandedVisible ? 1 : 0)
+                    .allowsHitTesting(stableLiveExpandedVisible)
+            }
+        }
+        .frame(
+            maxWidth: .infinity,
+            minHeight: model.selectedModuleViewportHeight,
+            maxHeight: model.selectedModuleViewportHeight,
+            alignment: .topLeading
+        )
+        .clipped()
     }
 
     private var fanColumn: some View {
@@ -528,86 +573,142 @@ struct IslandShellView: View {
         )
     }
 
-    private var rightColumn: some View {
+    private func rightColumn<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: CodexIslandChromeMetrics.moduleColumnSpacing) { // tab/header 行与模块内容区的纵向间距
             expandedNavigationRow
 
-            moduleContentViewport
+            content()
                 .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
-    private var moduleContentViewport: some View {
-        let selectedModule = model.selectedModule
-        let presentation = model.selectedModulePresentationContext
+    private var liveModuleContentViewport: some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(model.enabledModules, id: \.id) { module in
+                let moduleID = module.id
+                let presentation = model.expandedLivePresentationContext(for: moduleID)
+                let isSelected = moduleID == model.selectedModuleID
+
+                liveModuleContentHost(module: module, presentation: presentation)
+                    .opacity(isSelected ? 1 : 0)
+                    .allowsHitTesting(isSelected && stableLiveExpandedVisible)
+                    .accessibilityHidden(!isSelected)
+            }
+        }
+        .frame(
+            maxWidth: .infinity,
+            minHeight: model.selectedModuleViewportHeight,
+            maxHeight: model.selectedModuleViewportHeight,
+            alignment: .topLeading
+        )
+        .clipped()
+    }
+
+    private func liveModuleContentHost(
+        module: any IslandModule,
+        presentation: IslandModulePresentationContext
+    ) -> some View {
+        let moduleID = module.id
+        let needsScrolling = model.moduleNeedsScrolling(for: moduleID, presentation: presentation)
+        let viewportHeight = model.moduleViewportHeight(for: moduleID, presentation: presentation)
 
         return Group {
-            if model.selectedModuleNeedsScrolling {
+            if needsScrolling {
                 ScrollViewReader { proxy in
                     ScrollView {
                         moduleContentStack(
-                            selectedModule: selectedModule,
+                            contentView: module.makeLiveContentView(presentation: presentation),
                             presentation: presentation,
                             scrollAction: IslandModuleScrollAction { id, anchor in
                                 withAnimation(.easeInOut(duration: 0.18)) {
                                     proxy.scrollTo(id, anchor: anchor)
                                 }
                             },
-                            scrollOffset: moduleScrollOffset
+                            scrollOffset: moduleScrollOffset(for: moduleID)
                         )
                     }
                     .coordinateSpace(name: IslandModuleScrollCoordinateSpace.name)
                     .onScrollGeometryChange(for: CGFloat.self, of: { geometry in
                         max(0, geometry.contentOffset.y)
                     }, action: { _, newValue in
-                        moduleScrollOffset = newValue
+                        guard !model.islandLayoutTransitionInFlight else {
+                            return
+                        }
+                        setModuleScrollOffset(newValue, for: moduleID)
                     })
                     .scrollIndicators(.automatic)
                     .frame(
                         maxWidth: .infinity,
-                        minHeight: model.selectedModuleViewportHeight,
-                        maxHeight: model.selectedModuleViewportHeight,
+                        minHeight: viewportHeight,
+                        maxHeight: viewportHeight,
                         alignment: .topLeading
                     )
                 }
             } else {
                 moduleContentStack(
-                    selectedModule: selectedModule,
+                    contentView: module.makeLiveContentView(presentation: presentation),
                     presentation: presentation,
                     scrollAction: IslandModuleScrollAction(),
                     scrollOffset: 0
                 )
                 .onAppear {
-                    moduleScrollOffset = 0
+                    setModuleScrollOffset(0, for: moduleID, force: true)
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .onChange(of: selectedModule.id) { _, _ in
-            moduleScrollOffset = 0
-        }
-        .onChange(of: model.selectedModuleNeedsScrolling) { _, needsScrolling in
+        .onChange(of: needsScrolling) { _, needsScrolling in
             if !needsScrolling {
-                moduleScrollOffset = 0
+                setModuleScrollOffset(0, for: moduleID, force: true)
             }
         }
         .onPreferenceChange(ModuleContentHeightKey.self) { height in
             model.updateMeasuredModuleContentHeight(
                 height,
-                for: selectedModule.id,
+                for: moduleID,
                 presentation: presentation
             )
         }
     }
 
+    private func moduleScrollOffset(for moduleID: String) -> CGFloat {
+        moduleScrollOffsets[moduleID] ?? 0
+    }
+
+    private func setModuleScrollOffset(_ offset: CGFloat, for moduleID: String, force: Bool = false) {
+        let resolvedOffset = max(0, offset)
+        let previousOffset = moduleScrollOffsets[moduleID] ?? 0
+        guard force || abs(previousOffset - resolvedOffset) >= 0.5 else {
+            return
+        }
+
+        moduleScrollOffsets[moduleID] = resolvedOffset
+    }
+
+    private func snapshotModuleContentViewport(snapshot: IslandModuleRenderSnapshot) -> some View {
+        moduleContentStack(
+            contentView: snapshot.view,
+            presentation: snapshot.presentation,
+            scrollAction: IslandModuleScrollAction(),
+            scrollOffset: 0
+        )
+        .onPreferenceChange(ModuleContentHeightKey.self) { height in
+            model.updateMeasuredModuleContentHeight(
+                height,
+                for: snapshot.moduleID,
+                presentation: snapshot.presentation
+            )
+        }
+    }
+
     private func moduleContentStack(
-        selectedModule: any IslandModule,
+        contentView: AnyView,
         presentation: IslandModulePresentationContext,
         scrollAction: IslandModuleScrollAction,
         scrollOffset: CGFloat
     ) -> some View {
-        selectedModule.makeContentView(presentation: presentation)
+        contentView
             .environment(\.islandModuleScrollAction, scrollAction)
             .environment(\.islandModuleScrollOffset, scrollOffset)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -619,6 +720,11 @@ struct IslandShellView: View {
             }
             .padding(.bottom, CodexIslandChromeMetrics.expandedContentBottomPadding) // 模块内容容器自己的底部留白，不再使用假 spacer 撑高度
             .frame(maxWidth: .infinity, alignment: .leading)
+            .transaction { transaction in
+                if model.islandLayoutTransitionInFlight {
+                    transaction.animation = nil
+                }
+            }
     }
 
     @ViewBuilder
@@ -628,7 +734,7 @@ struct IslandShellView: View {
 
         if shouldPremeasureModuleContent(width: width) {
             VStack(alignment: .leading, spacing: 0) {
-                selectedModule.makeContentView(presentation: presentation)
+                selectedModule.makeRenderSnapshot(presentation: presentation).view
             }
             .frame(width: width, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)

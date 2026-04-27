@@ -10,9 +10,12 @@ struct IslandExpandedNavigationView: View {
                     Button(action: tab.action) {
                         HStack(spacing: 8) {
                             tabIcon(tab)
+                                .frame(width: 14, height: 14, alignment: .center)
 
                             Text(tab.title)
                                 .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
 
                             if tab.showsPendingBadge {
                                 Circle()
@@ -29,6 +32,10 @@ struct IslandExpandedNavigationView: View {
                                 : Color.white.opacity(0.06),
                             in: Capsule()
                         )
+                        .frame(height: max(32, CodexIslandChromeMetrics.moduleNavigationRowHeight - 4))
+                        .transaction { transaction in
+                            transaction.animation = nil
+                        }
                     }
                     .buttonStyle(.plain)
                 }

@@ -2,9 +2,14 @@ import AppKit
 import Combine
 import Foundation
 import ServiceManagement
+import SwiftUI
 import UniformTypeIdentifiers
 
 private let islandFanRotationRetuneThreshold: Double = 0.03
+private let islandOpenTransitionAnimation = CodexIslandPeekMetrics.openAnimation
+private let islandCloseTransitionAnimation = CodexIslandPeekMetrics.closeAnimation
+private let islandOpenedRevealAnimation = CodexIslandPeekMetrics.chromeRevealAnimation
+private let islandClosedHeaderRevealAnimation = CodexIslandPeekMetrics.closedHeaderRevealAnimation
 
 struct CompactModuleSummary: Identifiable, Equatable {
     enum Content: Equatable {
@@ -68,11 +73,17 @@ final class IslandAppModel: ObservableObject {
     @Published private(set) var islandPeeking = false
     @Published private(set) var islandExpansionAnimationInFlight = false
     @Published private(set) var islandCollapseAnimationInFlight = false
+    @Published private(set) var transitionPhase: IslandTransitionPhase = .stable
+    @Published private(set) var currentTransitionPlan: IslandTransitionPlan?
     @Published var selectedModuleID: String
     @Published private(set) var allActivities: [IslandActivity] = []
     @Published private(set) var frontmostActivity: IslandActivity?
     @Published private(set) var presentedActivity: IslandActivity?
     @Published private(set) var openReason: IslandOpenReason?
+    @Published private(set) var currentPeekSnapshot: IslandModuleRenderSnapshot?
+    @Published private(set) var currentExpandedSnapshot: IslandModuleRenderSnapshot?
+    @Published private(set) var frozenPeekSnapshot: IslandModuleRenderSnapshot?
+    @Published private(set) var frozenExpandedSnapshot: IslandModuleRenderSnapshot?
 
     let codexFanModule: CodexModuleModel
     let clashModule: ClashModuleModel
@@ -103,12 +114,16 @@ final class IslandAppModel: ObservableObject {
     private var lockedExpandedContentHeight: CGFloat?
     private var pendingExpandedLayoutRefresh = false
     private var pendingAggregateRefresh = false
+    private var pendingDirtyModules: Set<String> = []
+    private var pendingActivityReconcile = false
+    private var pendingMeasuredHeights: [String: CGFloat] = [:]
     private var spinAnchorDate = Date()
     private var spinAnchorDegrees = 0.0
     private var lastAggregateRefreshAt = Date()
     private var displayedScore = 0.0
     private var hasPrimedAudioState = false
-    private var pendingExpansionSettleWorkItem: DispatchWorkItem?
+    private var pendingTransitionRevealWorkItem: DispatchWorkItem?
+    private var pendingTransitionSettleWorkItem: DispatchWorkItem?
     private var dismissedActivityIDs: Set<String> = []
     private var notificationAutoCollapseTask: Task<Void, Never>?
     private var notificationAutoCollapseActivityID: String?
@@ -168,8 +183,33 @@ final class IslandAppModel: ObservableObject {
             ?? codexFanModule
     }
 
+    var logicalPresentationState: IslandPresentationState {
+        if islandExpanded {
+            let activityID = presentedActivity?.moduleID == selectedModuleID ? presentedActivity?.id : nil
+            return .expanded(moduleID: selectedModuleID, activityID: activityID)
+        }
+
+        if islandPeeking, let activity = presentedPeekActivity {
+            return .peek(activityID: activity.id)
+        }
+
+        return .closed
+    }
+
+    var renderedPresentationState: IslandPresentationState {
+        currentTransitionPlan?.to ?? logicalPresentationState
+    }
+
+    var activePeekSnapshot: IslandModuleRenderSnapshot? {
+        frozenPeekSnapshot ?? currentPeekSnapshot
+    }
+
+    var activeExpandedSnapshot: IslandModuleRenderSnapshot? {
+        frozenExpandedSnapshot ?? currentExpandedSnapshot
+    }
+
     var islandUsesOpenedVisualState: Bool {
-        islandExpanded || islandPeeking
+        logicalPresentationState != .closed || currentTransitionPlan != nil
     }
 
     var presentedPeekActivity: IslandActivity? {
@@ -193,8 +233,8 @@ final class IslandAppModel: ObservableObject {
         return moduleRegistry.module(id: presentedPeekActivity.moduleID)
     }
 
-    var isInteractivePeeking: Bool {
-        islandPeeking && presentedPeekActivity?.kind == .actionRequired
+    var peekCapturesMouseEvents: Bool {
+        islandPeeking
     }
 
     var selectedModulePresentationContext: IslandModulePresentationContext {
@@ -277,12 +317,24 @@ final class IslandAppModel: ObservableObject {
         isAudioMuted ? "speaker.slash.circle.fill" : "speaker.wave.2.circle.fill"
     }
     var islandLayoutTransitionInFlight: Bool {
-        islandExpansionAnimationInFlight || islandCollapseAnimationInFlight
+        currentTransitionPlan != nil
+            || islandExpansionAnimationInFlight
+            || islandCollapseAnimationInFlight
+            || transitionPhase != .stable
     }
     var closedSurfaceHeight: CGFloat {
         IslandShellController.defaultNotchSize.height
     }
     var peekContentHeight: CGFloat {
+        if let plan = currentTransitionPlan {
+            switch (plan.from.visualMode, plan.to.visualMode) {
+            case (.peek, _), (_, .peek):
+                return plan.lockedHeight
+            default:
+                break
+            }
+        }
+
         guard let activity = presentedPeekActivity else {
             return closedSurfaceHeight
         }
@@ -290,7 +342,16 @@ final class IslandAppModel: ObservableObject {
         return peekContentHeight(for: activity)
     }
     var selectedModuleContentHeight: CGFloat {
-        if islandCollapseAnimationInFlight, let lockedExpandedContentHeight {
+        if let plan = currentTransitionPlan {
+            switch (plan.from.visualMode, plan.to.visualMode) {
+            case (.expanded, _), (_, .expanded):
+                return plan.lockedHeight
+            default:
+                break
+            }
+        }
+
+        if islandLayoutTransitionInFlight, let lockedExpandedContentHeight {
             return lockedExpandedContentHeight
         }
 
@@ -303,13 +364,39 @@ final class IslandAppModel: ObservableObject {
         max(0, selectedModuleContentHeight - CodexIslandChromeMetrics.moduleChromeHeight)
     }
     var selectedModuleNeedsScrolling: Bool {
-        guard selectedModule.allowsInternalScrolling else {
+        moduleNeedsScrolling(for: selectedModule.id, presentation: selectedModulePresentationContext)
+    }
+
+    func expandedLivePresentationContext(for moduleID: String) -> IslandModulePresentationContext {
+        let activityID = presentedActivity?.moduleID == moduleID ? presentedActivity?.id : nil
+        return expandedPresentationContext(for: moduleID, activityID: activityID)
+    }
+
+    func moduleViewportHeight(
+        for moduleID: String,
+        presentation: IslandModulePresentationContext? = nil
+    ) -> CGFloat {
+        max(0, resolvedExpandedContentHeight(for: moduleID, presentation: presentation) - CodexIslandChromeMetrics.moduleChromeHeight)
+    }
+
+    func moduleNeedsScrolling(
+        for moduleID: String,
+        presentation: IslandModulePresentationContext? = nil
+    ) -> Bool {
+        let module =
+            enabledModules.first(where: { $0.id == moduleID })
+            ?? moduleRegistry.module(id: moduleID)
+            ?? selectedModule
+        guard module.allowsInternalScrolling else {
             return false
         }
 
+        let resolvedPresentation =
+            presentation
+            ?? (module.id == selectedModuleID ? selectedModulePresentationContext : .standard)
         let measurementKey = moduleContentMeasurementKey(
-            for: selectedModule.id,
-            presentation: selectedModulePresentationContext
+            for: module.id,
+            presentation: resolvedPresentation
         )
         guard let measuredContentHeight = measuredModuleContentHeights[measurementKey], measuredContentHeight > 0 else {
             return false
@@ -317,7 +404,7 @@ final class IslandAppModel: ObservableObject {
 
         return measuredContentHeight
             + CodexIslandChromeMetrics.expandedContentBottomPadding
-            - selectedModuleViewportHeight >= 2
+            - moduleViewportHeight(for: module.id, presentation: resolvedPresentation) >= 2
     }
     func moduleHasPendingBadge(_ moduleID: String) -> Bool {
         allActivities.contains { activity in
@@ -369,14 +456,19 @@ final class IslandAppModel: ObservableObject {
             return
         }
 
-        beginIslandExpansionAnimation()
-        islandPeeking = false
-        shellController.prepareForExpansion(using: self)
+        let fromState = logicalPresentationState
         openReason = reason
         if !reason.isNotification {
             presentedActivity = nil
         }
-        setIslandExpanded(true)
+        islandPeeking = false
+        setIslandExpanded(true, shouldReposition: false)
+        startTransition(from: fromState, to: logicalPresentationState) { [weak self] in
+            guard let self else {
+                return
+            }
+            self.shellController.prepareForExpansion(using: self)
+        }
         updateNotificationAutoCollapse()
     }
 
@@ -386,15 +478,17 @@ final class IslandAppModel: ObservableObject {
             return
         }
 #endif
+        let fromState = logicalPresentationState
         notificationAutoCollapseTask?.cancel()
         notificationAutoCollapseTask = nil
         openReason = nil
+        startTransition(from: fromState, to: .closed)
         islandPeeking = false
         presentedActivity = nil
 #if DEBUG
         debugActiveMockScenario = nil
 #endif
-        setIslandExpanded(false)
+        setIslandExpanded(false, shouldReposition: false)
     }
 
     func presentPeek(for activity: IslandActivity) {
@@ -402,11 +496,16 @@ final class IslandAppModel: ObservableObject {
             return
         }
 
-        beginIslandExpansionAnimation()
+        let fromState = logicalPresentationState
         presentedActivity = activity
         openReason = nil
         islandPeeking = true
-        shellController.prepareForPeek(using: self)
+        startTransition(from: fromState, to: logicalPresentationState) { [weak self] in
+            guard let self else {
+                return
+            }
+            self.shellController.prepareForPeek(using: self)
+        }
         updateNotificationAutoCollapse()
     }
 
@@ -448,17 +547,36 @@ final class IslandAppModel: ObservableObject {
 
     func selectModule(id: String) {
         if enabledModuleIDs.contains(id) || moduleRegistry.module(id: id) != nil {
+            let fromState = logicalPresentationState
             let didChange = selectedModuleID != id
             selectedModuleID = id
             if didChange {
                 reconcileActivities(allowAutoPresentation: false)
             }
-            if didChange, islandLayoutTransitionInFlight {
-                lockExpandedLayoutHeight()
-                pendingExpandedLayoutRefresh = true
-            }
-            if didChange, islandExpanded, !islandLayoutTransitionInFlight {
-                shellController.reposition()
+            if didChange, islandExpanded {
+                if islandLayoutTransitionInFlight {
+                    if let plan = currentTransitionPlan,
+                       plan.from.visualMode == .expanded,
+                       plan.to.visualMode == .expanded {
+                        startTransition(from: plan.to, to: logicalPresentationState) { [weak self] in
+                            guard let self else {
+                                return
+                            }
+                            self.shellController.prepareForExpansion(using: self)
+                        }
+                    } else {
+                        pendingExpandedLayoutRefresh = true
+                    }
+                } else {
+                    startTransition(from: fromState, to: logicalPresentationState) { [weak self] in
+                        guard let self else {
+                            return
+                        }
+                        self.shellController.prepareForExpansion(using: self)
+                    }
+                }
+            } else if didChange {
+                rebuildStableRenderSnapshots()
             }
         }
     }
@@ -479,11 +597,19 @@ final class IslandAppModel: ObservableObject {
         }
 
         measuredModuleContentHeights[measurementKey] = height
-        guard moduleID == selectedModuleID else {
+        let updatesVisiblePresentation: Bool
+        switch presentation {
+        case .standard, .activity:
+            updatesVisiblePresentation = moduleID == selectedModuleID
+        case let .peek(activity):
+            updatesVisiblePresentation = islandPeeking && presentedPeekActivity?.id == activity.id
+        }
+        guard updatesVisiblePresentation else {
             return
         }
 
-        if islandCollapseAnimationInFlight {
+        if islandLayoutTransitionInFlight {
+            pendingMeasuredHeights[measurementKey] = height
             pendingExpandedLayoutRefresh = true
             return
         }
@@ -653,25 +779,9 @@ final class IslandAppModel: ObservableObject {
     }
 
     private func bindModules() {
-        [codexFanModule.objectWillChange, clashModule.objectWillChange, playerModule.objectWillChange].forEach { publisher in
-            publisher
-                .sink { [weak self] _ in
-                    DispatchQueue.main.async { [weak self] in
-                        guard let self else {
-                            return
-                        }
-
-                        if self.islandLayoutTransitionInFlight {
-                            self.pendingAggregateRefresh = true
-                            return
-                        }
-
-                        self.objectWillChange.send()
-                        self.refreshFromModules(now: .now)
-                    }
-                }
-                .store(in: &cancellables)
-        }
+        bindModule(codexFanModule)
+        bindModule(clashModule)
+        bindModule(playerModule)
 
         designTokenStore.objectWillChange
             .sink { [weak self] _ in
@@ -689,7 +799,31 @@ final class IslandAppModel: ObservableObject {
             .store(in: &cancellables)
     }
 
-    private func setIslandExpanded(_ expanded: Bool) {
+    private func bindModule<Module: IslandModule & ObservableObject>(_ module: Module)
+        where Module.ObjectWillChangePublisher == ObservableObjectPublisher {
+        module.objectWillChange
+            .sink { [weak self] _ in
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else {
+                        return
+                    }
+
+                    if self.islandLayoutTransitionInFlight {
+                        IslandTransitionDiagnostics.publish("defer module publish id=\(module.id)")
+                        self.pendingDirtyModules.insert(module.id)
+                        self.pendingAggregateRefresh = true
+                        self.pendingActivityReconcile = true
+                        return
+                    }
+
+                    self.objectWillChange.send()
+                    self.refreshFromModules(now: .now)
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    private func setIslandExpanded(_ expanded: Bool, shouldReposition: Bool = true) {
         guard islandExpanded != expanded else {
             return
         }
@@ -700,46 +834,223 @@ final class IslandAppModel: ObservableObject {
         }
 
         islandExpanded = expanded
-        shellController.reposition()
+        if expanded, islandExpansionAnimationInFlight {
+            lockExpandedLayoutHeight()
+        }
+        if shouldReposition {
+            shellController.reposition()
+        }
     }
 
-    private func beginIslandExpansionAnimation() {
-        pendingExpansionSettleWorkItem?.cancel()
+    private func startTransition(
+        from explicitFrom: IslandPresentationState? = nil,
+        to target: IslandPresentationState,
+        panelPreparation: (() -> Void)? = nil
+    ) {
+        cancelPendingTransitionWork()
         pendingExpandedLayoutRefresh = false
-        islandExpansionAnimationInFlight = true
+        let fromState = explicitFrom ?? logicalPresentationState
+        let preparedTransition = prepareTransitionState(from: fromState, to: target)
+        let plan = IslandTransitionPlan(
+            id: UUID(),
+            from: fromState,
+            to: target,
+            targetEnvelope: IslandTransitionEnvelope(
+                presentation: target,
+                lockedHeight: preparedTransition.lockedHeight
+            ),
+            lockedHeight: preparedTransition.lockedHeight,
+            startedAt: .now
+        )
 
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.finishIslandExpansionAnimation()
+        islandExpansionAnimationInFlight = target != .closed
+        islandCollapseAnimationInFlight = target == .closed
+        if fromState.visualMode == .expanded || target.visualMode == .expanded {
+            lockedExpandedContentHeight = preparedTransition.lockedHeight
         }
 
-        pendingExpansionSettleWorkItem = workItem
+        frozenPeekSnapshot = preparedTransition.peekSnapshot
+        frozenExpandedSnapshot = preparedTransition.expandedSnapshot
+        currentTransitionPlan = plan
+        transitionPhase = .preparing
+        IslandTransitionDiagnostics.transition(
+            "start token=\(plan.id.uuidString) from=\(String(describing: fromState)) to=\(String(describing: target)) lockedHeight=\(plan.lockedHeight)"
+        )
+
+        panelPreparation?()
+        advanceTransitionToMorph(planID: plan.id)
+
+        let revealWorkItem = DispatchWorkItem { [weak self, planID = plan.id] in
+            self?.advanceTransitionToReveal(planID: planID)
+        }
+        pendingTransitionRevealWorkItem = revealWorkItem
         DispatchQueue.main.asyncAfter(
-            deadline: .now() + CodexIslandChromeMetrics.openLayoutSettleDuration,
-            execute: workItem
+            deadline: .now() + revealDelay(from: fromState, to: target),
+            execute: revealWorkItem
+        )
+
+        let settleWorkItem = DispatchWorkItem { [weak self, planID = plan.id] in
+            self?.completeTransition(planID: planID)
+        }
+        pendingTransitionSettleWorkItem = settleWorkItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + settleDelay(from: fromState, to: target),
+            execute: settleWorkItem
         )
     }
 
-    private func finishIslandExpansionAnimation() {
-        pendingExpansionSettleWorkItem?.cancel()
-        pendingExpansionSettleWorkItem = nil
-
-        guard islandExpansionAnimationInFlight else {
+    private func advanceTransitionToMorph(planID: UUID) {
+        guard let plan = currentTransitionPlan,
+              plan.id == planID,
+              transitionPhase == .preparing else {
             return
         }
 
+        IslandTransitionDiagnostics.transition("morph token=\(planID.uuidString)")
+        withAnimation(plan.to == .closed ? islandCloseTransitionAnimation : islandOpenTransitionAnimation) {
+            transitionPhase = .morphing
+        }
+    }
+
+    private func advanceTransitionToReveal(planID: UUID) {
+        guard currentTransitionPlan?.id == planID else {
+            return
+        }
+
+        IslandTransitionDiagnostics.transition("reveal token=\(planID.uuidString)")
+        withAnimation(
+            currentTransitionPlan?.to == .closed
+                ? islandClosedHeaderRevealAnimation
+                : islandOpenedRevealAnimation
+        ) {
+            transitionPhase = .revealingContent
+        }
+    }
+
+    private func completeTransition(planID: UUID) {
+        guard let plan = currentTransitionPlan, plan.id == planID else {
+            return
+        }
+
+        IslandTransitionDiagnostics.transition("settle token=\(planID.uuidString)")
+        cancelPendingTransitionWork()
+        currentTransitionPlan = nil
+        transitionPhase = .stable
         islandExpansionAnimationInFlight = false
-        if !islandCollapseAnimationInFlight {
+        islandCollapseAnimationInFlight = false
+        frozenPeekSnapshot = nil
+        frozenExpandedSnapshot = nil
+
+        if !islandExpanded {
             lockedExpandedContentHeight = nil
-            flushDeferredAggregateRefreshIfNeeded()
         }
 
-        guard islandExpanded, pendingExpandedLayoutRefresh else {
+        if (islandExpanded || islandPeeking) && pendingExpandedLayoutRefresh {
             pendingExpandedLayoutRefresh = false
-            return
+            shellController.reposition()
+        } else {
+            pendingExpandedLayoutRefresh = false
         }
 
-        pendingExpandedLayoutRefresh = false
-        shellController.reposition()
+        if plan.to == .closed {
+            shellController.reposition()
+        }
+
+        rebuildStableRenderSnapshots()
+        flushDeferredAggregateRefreshIfNeeded()
+    }
+
+    private func cancelPendingTransitionWork() {
+        pendingTransitionRevealWorkItem?.cancel()
+        pendingTransitionRevealWorkItem = nil
+        pendingTransitionSettleWorkItem?.cancel()
+        pendingTransitionSettleWorkItem = nil
+    }
+
+    private func revealDelay(from: IslandPresentationState, to target: IslandPresentationState) -> TimeInterval {
+        if target == .closed {
+            return max(0, CodexIslandPeekMetrics.closeAnimationDuration - CodexIslandPeekMetrics.closedHeaderRevealLeadTime)
+        }
+
+        if from.visualMode == .expanded, target.visualMode == .expanded {
+            return 0
+        }
+
+        if target.visualMode == .expanded {
+            return CodexIslandChromeMetrics.openedChromeRevealDelay
+        }
+
+        return CodexIslandChromeMetrics.openedChromeRevealDelay
+    }
+
+    private func settleDelay(from: IslandPresentationState, to target: IslandPresentationState) -> TimeInterval {
+        if target == .closed {
+            return max(CodexIslandChromeMetrics.closeLayoutSettleDuration, CodexIslandPeekMetrics.renderCleanupDelay)
+        }
+
+        if from.visualMode == .expanded, target.visualMode == .expanded {
+            return max(0.08, CodexIslandPeekMetrics.chromeRevealAnimationDuration)
+        }
+
+        return max(
+            CodexIslandChromeMetrics.openLayoutSettleDuration,
+            CodexIslandChromeMetrics.openedChromeRevealDelay + CodexIslandPeekMetrics.chromeRevealAnimationDuration
+        )
+    }
+
+    private func prepareTransitionState(
+        from: IslandPresentationState,
+        to target: IslandPresentationState
+    ) -> (peekSnapshot: IslandModuleRenderSnapshot?, expandedSnapshot: IslandModuleRenderSnapshot?, lockedHeight: CGFloat) {
+        var nextPeekSnapshot = from.visualMode == .peek ? activePeekSnapshot : nil
+        var nextExpandedSnapshot = from.visualMode == .expanded ? activeExpandedSnapshot : nil
+        var lockedHeight = closedSurfaceHeight
+
+        switch target {
+        case let .peek(activityID):
+            if let activity = activity(withID: activityID),
+               let module = moduleRegistry.module(id: activity.moduleID) {
+                nextPeekSnapshot = module.makeRenderSnapshot(presentation: .peek(activity))
+                lockedHeight = resolvedExpandedContentHeight(for: module.id, presentation: .peek(activity))
+            }
+        case let .expanded(moduleID, activityID):
+            let presentation = expandedPresentationContext(for: moduleID, activityID: activityID)
+            let module = moduleRegistry.module(id: moduleID) ?? selectedModule
+            nextExpandedSnapshot = module.makeRenderSnapshot(presentation: presentation)
+            lockedHeight = resolvedExpandedContentHeight(for: moduleID, presentation: presentation)
+            if from.visualMode == .peek {
+                nextPeekSnapshot = activePeekSnapshot
+            }
+        case .closed:
+            switch from.visualMode {
+            case .peek:
+                lockedHeight = peekContentHeight
+            case .expanded:
+                lockedHeight = selectedModuleContentHeight
+            case .closed:
+                lockedHeight = closedSurfaceHeight
+            }
+        }
+
+        return (nextPeekSnapshot, nextExpandedSnapshot, lockedHeight)
+    }
+
+    private func activity(withID id: String?) -> IslandActivity? {
+        guard let id else {
+            return nil
+        }
+
+        return allActivities.first(where: { $0.id == id })
+            ?? presentedActivity.flatMap { $0.id == id ? $0 : nil }
+            ?? frontmostActivity.flatMap { $0.id == id ? $0 : nil }
+    }
+
+    private func expandedPresentationContext(for moduleID: String, activityID: String?) -> IslandModulePresentationContext {
+        guard let activity = activity(withID: activityID), activity.moduleID == moduleID else {
+            return .standard
+        }
+
+        return .activity(activity)
     }
 
     private func refreshFromModules(now: Date) {
@@ -780,6 +1091,7 @@ final class IslandAppModel: ObservableObject {
             now: now
         )
         reconcileActivities(allowAutoPresentation: true)
+        rebuildStableRenderSnapshots()
         syncAudioState()
     }
 
@@ -1025,15 +1337,20 @@ final class IslandAppModel: ObservableObject {
     }
 
     private func dismissActivity(id: String, collapseIfNeeded: Bool) {
-        dismissedActivityIDs.insert(id)
-        reconcileActivities(allowAutoPresentation: false)
+        let shouldAnimatePeekCollapse = collapseIfNeeded && islandPeeking && presentedActivity?.id == id
+        let fromState = logicalPresentationState
 
-        if collapseIfNeeded, islandPeeking, presentedActivity?.id == id {
+        dismissedActivityIDs.insert(id)
+
+        if shouldAnimatePeekCollapse {
+            startTransition(from: fromState, to: .closed)
             islandPeeking = false
             presentedActivity = nil
-            shellController.reposition()
+            reconcileActivities(allowAutoPresentation: false)
             return
         }
+
+        reconcileActivities(allowAutoPresentation: false)
 
         if collapseIfNeeded, openReason?.notificationActivityID == id {
             collapseIsland()
@@ -1071,20 +1388,27 @@ final class IslandAppModel: ObservableObject {
 
     private func presentPeekIgnoringExpansionGuard(for activity: IslandActivity) {
         resetNotificationAutoCollapse()
-        beginIslandExpansionAnimation()
+        let fromState = logicalPresentationState
         presentedActivity = activity
         openReason = nil
         islandPeeking = true
-        setIslandExpanded(false)
-        shellController.prepareForPeek(using: self)
+        setIslandExpanded(false, shouldReposition: false)
+        startTransition(from: fromState, to: logicalPresentationState) { [weak self] in
+            guard let self else {
+                return
+            }
+            self.shellController.prepareForPeek(using: self)
+        }
     }
 
     private func collapseIslandFromDebugTool() {
+        let fromState = logicalPresentationState
         resetNotificationAutoCollapse()
         openReason = nil
+        startTransition(from: fromState, to: .closed)
         islandPeeking = false
         presentedActivity = nil
-        setIslandExpanded(false)
+        setIslandExpanded(false, shouldReposition: false)
     }
 #endif
 
@@ -1126,13 +1450,51 @@ final class IslandAppModel: ObservableObject {
     }
 
     private func flushDeferredAggregateRefreshIfNeeded() {
-        guard pendingAggregateRefresh else {
+        let hadPendingHeights = applyPendingMeasuredHeights()
+        let shouldRefresh = pendingAggregateRefresh || pendingActivityReconcile || !pendingDirtyModules.isEmpty
+
+        guard shouldRefresh || hadPendingHeights else {
             return
         }
 
         pendingAggregateRefresh = false
+        pendingActivityReconcile = false
+        pendingDirtyModules.removeAll()
         objectWillChange.send()
         refreshFromModules(now: .now)
+
+        if (islandExpanded || islandPeeking) && !islandLayoutTransitionInFlight {
+            shellController.reposition()
+        }
+    }
+
+    private func applyPendingMeasuredHeights() -> Bool {
+        guard !pendingMeasuredHeights.isEmpty else {
+            return false
+        }
+
+        var didChange = false
+        for (key, height) in pendingMeasuredHeights {
+            let previousHeight = measuredModuleContentHeights[key] ?? 0
+            if abs(previousHeight - height) >= 2 {
+                measuredModuleContentHeights[key] = height
+                didChange = true
+            }
+        }
+        pendingMeasuredHeights.removeAll()
+        return didChange
+    }
+
+    private func rebuildStableRenderSnapshots() {
+        if let activity = presentedPeekActivity,
+           let module = moduleRegistry.module(id: activity.moduleID) {
+            currentPeekSnapshot = module.makeRenderSnapshot(presentation: .peek(activity))
+        } else {
+            currentPeekSnapshot = nil
+        }
+
+        let expandedPresentation = selectedModulePresentationContext
+        currentExpandedSnapshot = selectedModule.makeRenderSnapshot(presentation: expandedPresentation)
     }
 
     private func lockExpandedLayoutHeight() {

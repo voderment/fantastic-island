@@ -168,7 +168,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     var globalInfoLiveCountText: String { "\(activityState.inProgressSessionCount)" }
     var globalInfoFiveHourValueText: String { quotaValueText(quotaSnapshot?.fiveHourRemainingPercent) }
     var globalInfoWeekValueText: String { quotaValueText(quotaSnapshot?.weekRemainingPercent) }
-    var globalInfoFiveHourResetCompactText: String { quotaResetCompactText(quotaSnapshot?.fiveHourResetAt) }
+    var globalInfoFiveHourResetCompactText: String { quotaResetTimeCompactText(quotaSnapshot?.fiveHourResetAt) }
     var globalInfoWeekResetCompactText: String { quotaResetCompactText(quotaSnapshot?.weekResetAt) }
     var expandedFiveHourQuotaText: String { expandedQuotaText(title: "5H Left", value: quotaSnapshot?.fiveHourRemainingPercent) }
     var expandedWeekQuotaText: String { expandedQuotaText(title: "Week Left", value: quotaSnapshot?.weekRemainingPercent) }
@@ -357,8 +357,76 @@ final class CodexModuleModel: ObservableObject, IslandModule {
         }
     }
 
-    func makeContentView(presentation: IslandModulePresentationContext) -> AnyView {
-        AnyView(CodexModuleContentView(model: self, presentation: presentation))
+    func makeRenderSnapshot(presentation: IslandModulePresentationContext) -> IslandModuleRenderSnapshot {
+        IslandModuleRenderSnapshot(
+            id: "\(id)::\(presentation.cacheKey)",
+            moduleID: id,
+            presentation: presentation,
+            preferredHeight: preferredOpenedContentHeight(for: presentation),
+            allowsInternalScrolling: allowsInternalScrolling,
+            view: AnyView(CodexModuleContentView(state: makeRenderState(for: presentation)))
+        )
+    }
+
+    func makeLiveContentView(presentation: IslandModulePresentationContext) -> AnyView {
+        AnyView(CodexModuleLiveContentView(model: self, presentation: presentation))
+    }
+
+    func makeRenderState(for presentation: IslandModulePresentationContext) -> CodexModuleRenderState {
+        let presentedSession: SessionSnapshot?
+        switch presentation {
+        case let .activity(activity), let .peek(activity):
+            presentedSession = session(for: activity)
+        case .standard:
+            presentedSession = nil
+        }
+
+        return CodexModuleRenderState(
+            presentation: presentation,
+            activityState: activityState,
+            sessionSurface: sessionSurface,
+            isNotificationMode: isNotificationMode,
+            islandListSessions: islandListSessions,
+            activeNotificationSession: activeNotificationSession,
+            presentedSession: presentedSession,
+            shouldShowShowAllButton: shouldShowShowAllButton,
+            canCollapseSessionList: canCollapseSessionList,
+            globalInfoLiveCountText: globalInfoLiveCountText,
+            globalInfoFiveHourValueText: globalInfoFiveHourValueText,
+            globalInfoWeekValueText: globalInfoWeekValueText,
+            globalInfoFiveHourResetCompactText: globalInfoFiveHourResetCompactText,
+            globalInfoWeekResetCompactText: globalInfoWeekResetCompactText,
+            approvePermission: { [weak self] sessionID, action in
+                Task { @MainActor in
+                    self?.approvePermission(for: sessionID, action: action)
+                }
+            },
+            answerQuestion: { [weak self] sessionID, response in
+                Task { @MainActor in
+                    self?.answerQuestion(for: sessionID, response: response)
+                }
+            },
+            replyToSession: { [weak self] sessionID, text in
+                Task { @MainActor in
+                    _ = self?.replyToSession(sessionID, text: text)
+                }
+            },
+            jumpToSession: { [weak self] sessionID in
+                Task { @MainActor in
+                    self?.jumpToSession(sessionID)
+                }
+            },
+            showAllSessions: { [weak self] in
+                Task { @MainActor in
+                    self?.showAllSessions()
+                }
+            },
+            collapseSessionList: { [weak self] in
+                Task { @MainActor in
+                    self?.collapseSessionList()
+                }
+            }
+        )
     }
 
     private func estimatedActionableSessionHeight(for session: SessionSnapshot?) -> CGFloat {
@@ -930,5 +998,13 @@ final class CodexModuleModel: ObservableObject, IslandModule {
         }
 
         return date.formatted(.dateTime.year().month().day())
+    }
+
+    private func quotaResetTimeCompactText(_ date: Date?) -> String {
+        guard let date else {
+            return "--"
+        }
+
+        return date.formatted(date: .omitted, time: .shortened)
     }
 }

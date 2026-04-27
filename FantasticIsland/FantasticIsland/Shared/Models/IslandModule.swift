@@ -1,4 +1,7 @@
 import SwiftUI
+#if DEBUG
+import OSLog
+#endif
 
 enum IslandActivityKind: Int, Equatable, Codable {
     case actionRequired
@@ -52,6 +55,17 @@ enum IslandModulePresentationContext: Equatable {
     case standard
     case activity(IslandActivity)
     case peek(IslandActivity)
+
+    var cacheKey: String {
+        switch self {
+        case .standard:
+            return "standard"
+        case let .activity(activity):
+            return "activity::\(activity.id)"
+        case let .peek(activity):
+            return "peek::\(activity.id)"
+        }
+    }
 }
 
 enum IslandOpenReason: Equatable {
@@ -73,6 +87,91 @@ enum IslandOpenReason: Equatable {
     }
 }
 
+enum IslandPresentationState: Equatable {
+    case closed
+    case peek(activityID: String)
+    case expanded(moduleID: String, activityID: String?)
+
+    var visualMode: IslandPresentationVisualMode {
+        switch self {
+        case .closed:
+            return .closed
+        case .peek:
+            return .peek
+        case .expanded:
+            return .expanded
+        }
+    }
+}
+
+enum IslandPresentationVisualMode: Equatable {
+    case closed
+    case peek
+    case expanded
+}
+
+enum IslandTransitionPhase: Equatable {
+    case preparing
+    case morphing
+    case revealingContent
+    case stable
+}
+
+struct IslandTransitionEnvelope: Equatable {
+    let presentation: IslandPresentationState
+    let lockedHeight: CGFloat
+}
+
+struct IslandTransitionPlan: Identifiable {
+    let id: UUID
+    let from: IslandPresentationState
+    let to: IslandPresentationState
+    let targetEnvelope: IslandTransitionEnvelope
+    let lockedHeight: CGFloat
+    let startedAt: Date
+}
+
+struct IslandModuleRenderSnapshot: Identifiable {
+    let id: String
+    let moduleID: String
+    let presentation: IslandModulePresentationContext
+    let preferredHeight: CGFloat
+    let allowsInternalScrolling: Bool
+    let view: AnyView
+}
+
+#if DEBUG
+enum IslandTransitionDiagnostics {
+    private static let transitionLogger = Logger(subsystem: "io.github.fantasticisland", category: "transition")
+    private static let panelLogger = Logger(subsystem: "io.github.fantasticisland", category: "panel")
+    private static let publishLogger = Logger(subsystem: "io.github.fantasticisland", category: "publish")
+    private static let playerLogger = Logger(subsystem: "io.github.fantasticisland", category: "player")
+
+    static func transition(_ message: String) {
+        transitionLogger.debug("\(message, privacy: .public)")
+    }
+
+    static func panel(_ message: String) {
+        panelLogger.debug("\(message, privacy: .public)")
+    }
+
+    static func publish(_ message: String) {
+        publishLogger.debug("\(message, privacy: .public)")
+    }
+
+    static func player(_ message: String) {
+        playerLogger.debug("\(message, privacy: .public)")
+    }
+}
+#else
+enum IslandTransitionDiagnostics {
+    static func transition(_ message: String) {}
+    static func panel(_ message: String) {}
+    static func publish(_ message: String) {}
+    static func player(_ message: String) {}
+}
+#endif
+
 @MainActor
 protocol IslandModule: AnyObject {
     var id: String { get }
@@ -86,7 +185,8 @@ protocol IslandModule: AnyObject {
     var allowsInternalScrolling: Bool { get }
 
     func preferredOpenedContentHeight(for presentation: IslandModulePresentationContext) -> CGFloat
-    func makeContentView(presentation: IslandModulePresentationContext) -> AnyView
+    func makeRenderSnapshot(presentation: IslandModulePresentationContext) -> IslandModuleRenderSnapshot
+    func makeLiveContentView(presentation: IslandModulePresentationContext) -> AnyView
 }
 
 extension IslandModule {
@@ -98,8 +198,15 @@ extension IslandModule {
         preferredOpenedContentHeight
     }
 
-    func makeContentView() -> AnyView {
-        makeContentView(presentation: .standard)
+    func makeRenderSnapshot(presentation: IslandModulePresentationContext) -> IslandModuleRenderSnapshot {
+        IslandModuleRenderSnapshot(
+            id: "\(id)::\(presentation.cacheKey)",
+            moduleID: id,
+            presentation: presentation,
+            preferredHeight: preferredOpenedContentHeight(for: presentation),
+            allowsInternalScrolling: allowsInternalScrolling,
+            view: makeLiveContentView(presentation: presentation)
+        )
     }
 }
 

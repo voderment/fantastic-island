@@ -450,8 +450,47 @@ final class ClashModuleModel: ObservableObject, IslandModule {
         logStreamTask?.cancel()
     }
 
-    func makeContentView(presentation: IslandModulePresentationContext) -> AnyView {
-        AnyView(ClashModuleContentView(model: self))
+    func makeRenderSnapshot(presentation: IslandModulePresentationContext) -> IslandModuleRenderSnapshot {
+        IslandModuleRenderSnapshot(
+            id: "\(id)::\(presentation.cacheKey)",
+            moduleID: id,
+            presentation: presentation,
+            preferredHeight: preferredOpenedContentHeight(for: presentation),
+            allowsInternalScrolling: allowsInternalScrolling,
+            view: AnyView(ClashModuleContentView(state: makeRenderState()))
+        )
+    }
+
+    func makeLiveContentView(presentation: IslandModulePresentationContext) -> AnyView {
+        AnyView(ClashModuleLiveContentView(model: self))
+    }
+
+    func makeRenderState() -> ClashModuleRenderState {
+        ClashModuleRenderState(
+            proxyGroups: proxyGroups,
+            moduleMode: moduleMode,
+            status: status,
+            controlState: controlState,
+            managedSystemProxyEnabled: managedSystemProxyEnabled,
+            isTrafficRateAvailable: isTrafficRateAvailable,
+            uploadRateText: uploadRateText,
+            downloadRateText: downloadRateText,
+            updateConnectionMode: { [weak self] mode in
+                Task { @MainActor in self?.updateConnectionMode(mode) }
+            },
+            updateManagedSystemProxyEnabled: { [weak self] enabled in
+                Task { @MainActor in self?.updateManagedSystemProxyEnabled(enabled) }
+            },
+            updateSystemProxyEnabled: { [weak self] enabled in
+                Task { @MainActor in self?.updateSystemProxyEnabled(enabled) }
+            },
+            testLatency: { [weak self] groupName in
+                Task { @MainActor in self?.testLatency(in: groupName) }
+            },
+            selectProxy: { [weak self] proxyName, groupName in
+                Task { @MainActor in self?.selectProxy(proxyName, in: groupName) }
+            }
+        )
     }
 
     func updateModuleMode(_ mode: ClashModuleMode) {

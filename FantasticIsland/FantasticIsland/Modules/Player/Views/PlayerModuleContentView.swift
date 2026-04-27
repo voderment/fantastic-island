@@ -1,17 +1,47 @@
 import AppKit
 import SwiftUI
 
-struct PlayerModuleContentView: View {
+struct PlayerModuleRenderState {
+    let presentation: IslandModulePresentationContext
+    let nowPlayingState: PlayerNowPlayingState
+    let trackSwitchNotification: PlayerModuleModel.TrackSwitchNotification?
+    let supportsTransportControls: Bool
+    let canActivateCurrentSource: Bool
+    let automationIssue: PlayerAutomationIssue?
+    let canRequestAutomationAccess: Bool
+    let isResolvingAutomationAccess: Bool
+    let sourceBadgeImage: NSImage?
+    let previousTrack: () -> Void
+    let togglePlayPause: () -> Void
+    let nextTrack: () -> Void
+    let seek: (Double) -> Void
+    let toggleShuffle: () -> Void
+    let cycleRepeat: () -> Void
+    let requestAutomationAccess: () -> Void
+    let openAutomationSettings: () -> Void
+    let refresh: () -> Void
+    let activateCurrentSource: () -> Void
+}
+
+struct PlayerModuleLiveContentView: View {
     @ObservedObject var model: PlayerModuleModel
     let presentation: IslandModulePresentationContext
+
+    var body: some View {
+        PlayerModuleContentView(state: model.makeRenderState(for: presentation))
+    }
+}
+
+struct PlayerModuleContentView: View {
+    let state: PlayerModuleRenderState
 
     @State private var scrubProgress: Double?
 
     var body: some View {
         Group {
-            switch presentation {
+            switch state.presentation {
             case let .peek(activity):
-                if let notification = model.trackSwitchNotification(for: activity) {
+                if let notification = state.trackSwitchNotification, notification.activityID == activity.id {
                     peekContent(notification: notification)
                 } else {
                     EmptyView()
@@ -102,12 +132,12 @@ struct PlayerModuleContentView: View {
 
     private var artworkView: some View {
         Group {
-            if model.canActivateCurrentSource {
-                Button(action: model.activateCurrentSource) {
+            if state.canActivateCurrentSource {
+                Button(action: state.activateCurrentSource) {
                     artworkBody
                 }
                 .buttonStyle(PlayerArtworkButtonStyle())
-                .help("Open \(model.nowPlayingState.sourceLabel)")
+                .help("Open \(state.nowPlayingState.sourceLabel)")
             } else {
                 artworkBody
             }
@@ -117,7 +147,7 @@ struct PlayerModuleContentView: View {
     private var artworkBody: some View {
         artworkThumbnail
             .overlay(alignment: .bottomLeading) {
-                if let badgeImage = sourceBadgeImage {
+                if let badgeImage = state.sourceBadgeImage {
                     PlayerSourceBadgeView(image: badgeImage)
                         .offset(x: -5, y: 5)
                 }
@@ -136,9 +166,9 @@ struct PlayerModuleContentView: View {
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
-                )
+                    )
 
-            if let artworkImage = model.nowPlayingState.artworkImage {
+            if let artworkImage = state.nowPlayingState.artworkImage {
                 Image(nsImage: artworkImage)
                     .resizable()
                     .scaledToFill()
@@ -155,7 +185,7 @@ struct PlayerModuleContentView: View {
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: PlayerExpandedMetrics.titleBlockSpacing) {
             HStack(alignment: .center, spacing: 16) {
-                Text(model.nowPlayingState.titleText)
+                Text(state.nowPlayingState.titleText)
                     .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(.white.opacity(0.96))
                     .lineLimit(showsAutomationIssue ? 2 : 1)
@@ -168,7 +198,7 @@ struct PlayerModuleContentView: View {
                 }
             }
 
-            Text(model.nowPlayingState.artistText)
+            Text(state.nowPlayingState.artistText)
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(.white.opacity(0.56))
                 .lineLimit(showsAutomationIssue ? 2 : 1)
@@ -178,35 +208,35 @@ struct PlayerModuleContentView: View {
 
     private var automationIssueActionRow: some View {
         HStack(spacing: 10) {
-            if model.canRequestAutomationAccess {
+            if state.canRequestAutomationAccess {
                 issueActionButton(
-                    title: model.isResolvingAutomationAccess ? "Requesting…" : "Grant Access",
-                    action: model.requestAutomationAccess
+                    title: state.isResolvingAutomationAccess ? "Requesting…" : "Grant Access",
+                    action: state.requestAutomationAccess
                 )
-                .disabled(model.isResolvingAutomationAccess)
+                .disabled(state.isResolvingAutomationAccess)
             }
 
-            issueActionButton(title: "Open Settings", action: model.openAutomationSettings)
-            issueActionButton(title: "Refresh", action: model.refresh)
+            issueActionButton(title: "Open Settings", action: state.openAutomationSettings)
+            issueActionButton(title: "Refresh", action: state.refresh)
         }
     }
 
     private var playbackModeControls: some View {
         HStack(spacing: 8) {
             modeButton(
-                systemName: model.nowPlayingState.shuffleMode.symbolName,
-                isActive: model.nowPlayingState.shuffleMode == .on,
-                isEnabled: model.nowPlayingState.supportsShuffleControl,
-                accessibilityLabel: model.nowPlayingState.shuffleMode == .on ? "Disable shuffle" : "Enable shuffle",
-                action: model.toggleShuffle
+                systemName: state.nowPlayingState.shuffleMode.symbolName,
+                isActive: state.nowPlayingState.shuffleMode == .on,
+                isEnabled: state.nowPlayingState.supportsShuffleControl,
+                accessibilityLabel: state.nowPlayingState.shuffleMode == .on ? "Disable shuffle" : "Enable shuffle",
+                action: state.toggleShuffle
             )
 
             modeButton(
-                systemName: model.nowPlayingState.repeatMode.symbolName,
-                isActive: model.nowPlayingState.repeatMode != .off && model.nowPlayingState.repeatMode != .unsupported,
-                isEnabled: model.nowPlayingState.supportsRepeatControl,
+                systemName: state.nowPlayingState.repeatMode.symbolName,
+                isActive: state.nowPlayingState.repeatMode != .off && state.nowPlayingState.repeatMode != .unsupported,
+                isEnabled: state.nowPlayingState.supportsRepeatControl,
                 accessibilityLabel: repeatAccessibilityLabel,
-                action: model.cycleRepeat
+                action: state.cycleRepeat
             )
         }
         .frame(height: 24)
@@ -216,13 +246,13 @@ struct PlayerModuleContentView: View {
         VStack(alignment: .leading, spacing: PlayerExpandedMetrics.progressSectionSpacing) {
             PlayerProgressBar(
                 progress: displayedProgress,
-                isEnabled: model.nowPlayingState.supportsSeeking,
+                isEnabled: state.nowPlayingState.supportsSeeking,
                 onChanged: { progress in
                     scrubProgress = progress
                 },
                 onEnded: { progress in
                     scrubProgress = nil
-                    model.seek(toProgress: progress)
+                    state.seek(progress)
                 }
             )
             .frame(height: 12)
@@ -239,22 +269,22 @@ struct PlayerModuleContentView: View {
 
     private var controlsRow: some View {
         HStack(spacing: PlayerExpandedMetrics.controlsSpacing) {
-            controlButton(systemName: "backward.fill", iconSize: 24, frameWidth: 42, frameHeight: 32, action: model.previousTrack)
-                .disabled(!model.supportsTransportControls)
+            controlButton(systemName: "backward.fill", iconSize: 24, frameWidth: 42, frameHeight: 32, action: state.previousTrack)
+                .disabled(!state.supportsTransportControls)
 
             controlButton(
-                systemName: model.nowPlayingState.playbackStatus.isPlaying ? "pause.fill" : "play.fill",
+                systemName: state.nowPlayingState.playbackStatus.isPlaying ? "pause.fill" : "play.fill",
                 iconSize: 28,
                 frameWidth: 36,
                 frameHeight: 36,
-                action: model.togglePlayPause
+                action: state.togglePlayPause
             )
-            .disabled(!model.supportsTransportControls)
+            .disabled(!state.supportsTransportControls)
 
-            controlButton(systemName: "forward.fill", iconSize: 24, frameWidth: 42, frameHeight: 32, action: model.nextTrack)
-                .disabled(!model.supportsTransportControls)
+            controlButton(systemName: "forward.fill", iconSize: 24, frameWidth: 42, frameHeight: 32, action: state.nextTrack)
+                .disabled(!state.supportsTransportControls)
         }
-        .opacity(model.supportsTransportControls ? 1 : PlayerExpandedMetrics.controlButtonOpacityDisabled)
+        .opacity(state.supportsTransportControls ? 1 : PlayerExpandedMetrics.controlButtonOpacityDisabled)
     }
 
     private func controlButton(
@@ -323,22 +353,11 @@ struct PlayerModuleContentView: View {
     }
 
     private var displayedProgress: Double {
-        scrubProgress ?? model.nowPlayingState.progress
+        scrubProgress ?? state.nowPlayingState.progress
     }
 
     private var showsAutomationIssue: Bool {
-        model.automationIssue != nil
-    }
-
-    private var sourceBadgeImage: NSImage? {
-        guard
-            model.nowPlayingState.track != nil,
-            let source = model.nowPlayingState.source
-        else {
-            return nil
-        }
-
-        return PlayerSourceRegistry.appIcon(for: source)
+        state.automationIssue != nil
     }
 
     private var displayedElapsedText: String {
@@ -350,7 +369,7 @@ struct PlayerModuleContentView: View {
     }
 
     private var displayedElapsed: TimeInterval {
-        guard let track = model.nowPlayingState.track else {
+        guard let track = state.nowPlayingState.track else {
             return 0
         }
 
@@ -358,7 +377,7 @@ struct PlayerModuleContentView: View {
     }
 
     private var displayedRemaining: TimeInterval {
-        guard let track = model.nowPlayingState.track else {
+        guard let track = state.nowPlayingState.track else {
             return 0
         }
 
@@ -366,7 +385,7 @@ struct PlayerModuleContentView: View {
     }
 
     private var repeatAccessibilityLabel: String {
-        switch model.nowPlayingState.repeatMode {
+        switch state.nowPlayingState.repeatMode {
         case .off:
             return "Enable repeat all"
         case .all:

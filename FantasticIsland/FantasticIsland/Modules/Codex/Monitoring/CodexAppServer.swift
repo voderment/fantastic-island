@@ -295,7 +295,7 @@ final class CodexAppServerClient {
                 method: "initialize",
                 params: InitializeParams(
                     clientInfo: InitializeParams.ClientInfo(
-                        name: "CodexFan",
+                        name: "FantasticIsland",
                         version: "1.0.0"
                     ),
                     enabledExperimentalMethods: true

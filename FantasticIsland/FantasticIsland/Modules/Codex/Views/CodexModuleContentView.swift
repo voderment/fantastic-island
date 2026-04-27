@@ -8,9 +8,40 @@ private struct GlobalInfoCardHeightKey: PreferenceKey {
     }
 }
 
-struct CodexModuleContentView: View {
+struct CodexModuleRenderState {
+    let presentation: IslandModulePresentationContext
+    let activityState: FanActivityState
+    let sessionSurface: CodexIslandSurface
+    let isNotificationMode: Bool
+    let islandListSessions: [SessionSnapshot]
+    let activeNotificationSession: SessionSnapshot?
+    let presentedSession: SessionSnapshot?
+    let shouldShowShowAllButton: Bool
+    let canCollapseSessionList: Bool
+    let globalInfoLiveCountText: String
+    let globalInfoFiveHourValueText: String
+    let globalInfoWeekValueText: String
+    let globalInfoFiveHourResetCompactText: String
+    let globalInfoWeekResetCompactText: String
+    let approvePermission: (String, CodexApprovalAction) -> Void
+    let answerQuestion: (String, CodexQuestionResponse) -> Void
+    let replyToSession: (String, String) -> Void
+    let jumpToSession: (String) -> Void
+    let showAllSessions: () -> Void
+    let collapseSessionList: () -> Void
+}
+
+struct CodexModuleLiveContentView: View {
     @ObservedObject var model: CodexModuleModel
     let presentation: IslandModulePresentationContext
+
+    var body: some View {
+        CodexModuleContentView(state: model.makeRenderState(for: presentation))
+    }
+}
+
+struct CodexModuleContentView: View {
+    let state: CodexModuleRenderState
     @State private var measuredGlobalInfoCardHeight = Self.estimatedGlobalInfoCardHeight
 
     private static let estimatedGlobalInfoCardHeight: CGFloat = 58
@@ -20,12 +51,12 @@ struct CodexModuleContentView: View {
         - CodexIslandChromeMetrics.moduleColumnSpacing
 
     var body: some View {
-        switch presentation {
+        switch state.presentation {
         case .standard:
             VStack(alignment: .leading, spacing: CodexExpandedMetrics.contentSpacing) {
                 globalInfoCard
 
-                if model.islandListSessions.isEmpty {
+                if state.islandListSessions.isEmpty {
                     emptyStateCard
                 } else {
                     sessionList
@@ -40,7 +71,7 @@ struct CodexModuleContentView: View {
 
     @ViewBuilder
     private func activityContent(for activity: IslandActivity) -> some View {
-        if let session = model.session(for: activity) {
+        if let session = state.presentedSession {
             if activity.kind == .transientNotification, session.phase == .completed {
                 completedActivityCard(for: session)
             } else {
@@ -49,10 +80,10 @@ struct CodexModuleContentView: View {
                     referenceDate: .now,
                     isActionable: true,
                     surfaceStyle: .peek,
-                    onApprove: { model.approvePermission(for: session.id, action: $0) },
-                    onAnswer: { model.answerQuestion(for: session.id, response: $0) },
-                    onReply: { _ = model.replyToSession(session.id, text: $0) },
-                    onJump: { model.jumpToSession(session.id) }
+                    onApprove: { state.approvePermission(session.id, $0) },
+                    onAnswer: { state.answerQuestion(session.id, $0) },
+                    onReply: { state.replyToSession(session.id, $0) },
+                    onJump: { state.jumpToSession(session.id) }
                 )
             }
         } else {
@@ -62,17 +93,17 @@ struct CodexModuleContentView: View {
 
     @ViewBuilder
     private func peekContent(for activity: IslandActivity) -> some View {
-        if let session = model.session(for: activity) {
+        if let session = state.presentedSession {
             if activity.kind == .actionRequired {
                 CodexIslandSessionRow(
                     session: session,
                     referenceDate: .now,
                     isActionable: true,
                     surfaceStyle: .peek,
-                    onApprove: { model.approvePermission(for: session.id, action: $0) },
-                    onAnswer: { model.answerQuestion(for: session.id, response: $0) },
-                    onReply: { _ = model.replyToSession(session.id, text: $0) },
-                    onJump: { model.jumpToSession(session.id) }
+                    onApprove: { state.approvePermission(session.id, $0) },
+                    onAnswer: { state.answerQuestion(session.id, $0) },
+                    onReply: { state.replyToSession(session.id, $0) },
+                    onJump: { state.jumpToSession(session.id) }
                 )
             } else {
                 peekNotificationCard(for: session)
@@ -191,26 +222,26 @@ struct CodexModuleContentView: View {
         }
         .contentShape(RoundedRectangle(cornerRadius: CodexExpandedMetrics.cardCornerRadius, style: .continuous))
         .onTapGesture {
-            model.jumpToSession(session.id)
+            state.jumpToSession(session.id)
         }
     }
 
     @ViewBuilder
     private var sessionList: some View {
-        if model.isNotificationMode, let session = model.activeNotificationSession {
+        if state.isNotificationMode, let session = state.activeNotificationSession {
             CodexIslandSessionRow(
                 session: session,
                 referenceDate: .now,
                 isActionable: true,
-                onApprove: { model.approvePermission(for: session.id, action: $0) },
-                onAnswer: { model.answerQuestion(for: session.id, response: $0) },
-                onReply: { _ = model.replyToSession(session.id, text: $0) },
-                onJump: { model.jumpToSession(session.id) }
+                onApprove: { state.approvePermission(session.id, $0) },
+                onAnswer: { state.answerQuestion(session.id, $0) },
+                onReply: { state.replyToSession(session.id, $0) },
+                onJump: { state.jumpToSession(session.id) }
             )
 
-            if model.shouldShowShowAllButton {
-                Button("Show all \(model.islandListSessions.count) sessions") {
-                    model.showAllSessions()
+            if state.shouldShowShowAllButton {
+                Button("Show all \(state.islandListSessions.count) sessions") {
+                    state.showAllSessions()
                 }
                 .buttonStyle(.plain)
                 .font(.system(size: 11, weight: .medium))
@@ -220,22 +251,22 @@ struct CodexModuleContentView: View {
             }
         } else {
             VStack(spacing: CodexExpandedMetrics.sectionRowSpacing) {
-                ForEach(model.islandListSessions) { session in
+                ForEach(state.islandListSessions) { session in
                     CodexIslandSessionRow(
                         session: session,
                         referenceDate: .now,
-                        isActionable: session.phase.requiresAttention || session.id == model.sessionSurface.sessionID,
-                        onApprove: { model.approvePermission(for: session.id, action: $0) },
-                        onAnswer: { model.answerQuestion(for: session.id, response: $0) },
-                        onReply: { _ = model.replyToSession(session.id, text: $0) },
-                        onJump: { model.jumpToSession(session.id) }
+                        isActionable: session.phase.requiresAttention || session.id == state.sessionSurface.sessionID,
+                        onApprove: { state.approvePermission(session.id, $0) },
+                        onAnswer: { state.answerQuestion(session.id, $0) },
+                        onReply: { state.replyToSession(session.id, $0) },
+                        onJump: { state.jumpToSession(session.id) }
                     )
                 }
             }
 
-            if model.canCollapseSessionList {
+            if state.canCollapseSessionList {
                 Button("Collapse") {
-                    model.collapseSessionList()
+                    state.collapseSessionList()
                 }
                 .buttonStyle(.plain)
                 .font(.system(size: 11, weight: .medium))
@@ -259,13 +290,13 @@ struct CodexModuleContentView: View {
                 HStack(spacing: CodexExpandedMetrics.globalInfoBadgeSpacing) {
                     quotaBadge(
                         title: "5H",
-                        value: model.globalInfoFiveHourValueText,
-                        resetText: model.globalInfoFiveHourResetCompactText
+                        value: state.globalInfoFiveHourValueText,
+                        resetText: state.globalInfoFiveHourResetCompactText
                     )
                     quotaBadge(
                         title: "W",
-                        value: model.globalInfoWeekValueText,
-                        resetText: model.globalInfoWeekResetCompactText
+                        value: state.globalInfoWeekValueText,
+                        resetText: state.globalInfoWeekResetCompactText
                     )
                     liveCountBadge
                 }
@@ -289,12 +320,12 @@ struct CodexModuleContentView: View {
     private var liveCountBadge: some View {
         HStack(spacing: 6) {
             Circle()
-                .fill(model.activityState.inProgressSessionCount > 0 ? Color.green.opacity(0.95) : Color.white.opacity(0.22))
+                .fill(state.activityState.inProgressSessionCount > 0 ? Color.green.opacity(0.95) : Color.white.opacity(0.22))
                 .frame(width: 7, height: 7)
 
-            Text("LIVE \(model.globalInfoLiveCountText)")
+            Text("LIVE \(state.globalInfoLiveCountText)")
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .foregroundStyle(model.activityState.inProgressSessionCount > 0 ? Color.green.opacity(0.95) : Color.white.opacity(0.52))
+                .foregroundStyle(state.activityState.inProgressSessionCount > 0 ? Color.green.opacity(0.95) : Color.white.opacity(0.52))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -377,14 +408,8 @@ struct CodexModuleContentView: View {
 
     @ViewBuilder
     private func completedAppIconAccessory(for session: SessionSnapshot) -> some View {
-        if let target = session.jumpTarget,
-           let icon = CodexTerminalAppRegistry.appIcon(for: target, size: 36) {
-            Image(nsImage: icon)
-                .resizable()
-                .interpolation(.high)
-                .frame(width: 18, height: 18)
-                .clipShape(.rect(cornerRadius: 4, style: .continuous))
-                .accessibilityLabel(target.displayLabel)
+        if let target = session.jumpTarget {
+            CodexSessionAppIconView(target: target)
         }
     }
 

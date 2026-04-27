@@ -26,6 +26,15 @@ private let islandDefaultNotchSize = CGSize(width: 224, height: 38)
 // Modified for Fantastic Island on 2026-04-14.
 @MainActor
 final class IslandShellController {
+    private struct RootViewMetrics: Equatable {
+        let compactWidth: CGFloat
+        let closedHeight: CGFloat
+        let expandedContentWidth: CGFloat
+        let peekContentWidth: CGFloat
+        let expandedContentTopClearance: CGFloat
+        let closedContentNotchExclusionWidth: CGFloat
+    }
+
     static let defaultNotchSize = islandDefaultNotchSize
     private static let minimumExpandedContentWidth: CGFloat = 720
     private static let maximumExpandedContentWidth: CGFloat = 780
@@ -39,6 +48,7 @@ final class IslandShellController {
     private var globalClickMonitor: Any?
     private var localClickMonitor: Any?
     private var pendingCloseResize: DispatchWorkItem?
+    private var rootViewMetrics: RootViewMetrics?
     private(set) var notchRect: NSRect = .zero
 
     init() {
@@ -64,13 +74,13 @@ final class IslandShellController {
         cancelPendingCloseResize(resetCollapseState: true)
         let panel = self.panel ?? makePanel(using: model)
         self.panel = panel
-        updateRootView(using: model)
+        refreshRootViewIfNeeded(using: model, on: resolvedPanelScreen(for: panel))
         guard let screen = resolvedPanelScreen(for: panel) else {
             return
         }
         let targetFrame = holdingPanelFrame(for: model, on: screen)
         if panel.frame != targetFrame {
-            panel.setFrame(targetFrame, display: true)
+            panel.setFrame(targetFrame, display: false)
         }
         computeNotchRect(screen: screen)
         panel.ignoresMouseEvents = !isPanelInteractive(for: model)
@@ -86,7 +96,7 @@ final class IslandShellController {
 
         let panel = self.panel ?? makePanel(using: model)
         self.panel = panel
-        updateRootView(using: model)
+        refreshRootViewIfNeeded(using: model, on: resolvedPanelScreen(for: panel))
 
         guard let screen = resolvedPanelScreen(for: panel) else {
             return
@@ -94,7 +104,8 @@ final class IslandShellController {
 
         let openedFrame = holdingPanelFrame(for: model, on: screen)
         if panel.frame != openedFrame {
-            panel.setFrame(openedFrame, display: true)
+            IslandTransitionDiagnostics.panel("prepare expansion frame=\(NSStringFromRect(openedFrame))")
+            panel.setFrame(openedFrame, display: false)
         }
 
         computeNotchRect(screen: screen)
@@ -111,7 +122,7 @@ final class IslandShellController {
 
         let panel = self.panel ?? makePanel(using: model)
         self.panel = panel
-        updateRootView(using: model)
+        refreshRootViewIfNeeded(using: model, on: resolvedPanelScreen(for: panel))
 
         guard let screen = resolvedPanelScreen(for: panel) else {
             return
@@ -119,12 +130,13 @@ final class IslandShellController {
 
         let targetFrame = holdingPanelFrame(for: model, on: screen)
         if panel.frame != targetFrame {
-            panel.setFrame(targetFrame, display: true)
+            IslandTransitionDiagnostics.panel("prepare peek frame=\(NSStringFromRect(targetFrame))")
+            panel.setFrame(targetFrame, display: false)
         }
 
         computeNotchRect(screen: screen)
         panel.orderFrontRegardless()
-        let isInteractive = model.isInteractivePeeking
+        let isInteractive = model.peekCapturesMouseEvents
         panel.ignoresMouseEvents = !isInteractive
         panel.acceptsMouseMovedEvents = isInteractive
         hideClosedActivationPanel()
@@ -145,9 +157,10 @@ final class IslandShellController {
             return
         }
 
-        if refreshRootView {
-            updateRootView(using: model)
-        }
+        refreshRootViewIfNeeded(using: model, on: screen, force: refreshRootView)
+        IslandTransitionDiagnostics.panel(
+            "reposition refreshRootView=\(refreshRootView) transitioning=\(model.islandLayoutTransitionInFlight)"
+        )
         updatePanelFrame(panel, using: model, on: screen)
         computeNotchRect(screen: screen)
         syncClosedActivationPanel(using: model, on: screen)
@@ -173,7 +186,7 @@ final class IslandShellController {
             return contentRect
         }
 
-        if model.isInteractivePeeking {
+        if model.peekCapturesMouseEvents {
             return centeredShellRect(
                 in: contentRect,
                 width: peekShellWidth(for: screen),
@@ -257,6 +270,7 @@ final class IslandShellController {
 
     private func makePanel(using model: IslandAppModel) -> IslandShellPanel {
         let screen = targetScreen ?? NSScreen.main ?? NSScreen.screens[0]
+        let metrics = resolvedRootViewMetrics(for: screen)
         let panel = IslandShellPanel(
             contentRect: holdingPanelFrame(for: model, on: screen),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -279,37 +293,53 @@ final class IslandShellController {
         panel.titlebarAppearsTransparent = true
         panel.ignoresMouseEvents = false
 
-        let hostingView = IslandShellHostingView(rootView: makeShellView(using: model, on: screen))
+        let hostingView = IslandShellHostingView(rootView: makeShellView(using: model, metrics: metrics))
         hostingView.notchController = self
         panel.contentView = hostingView
+        rootViewMetrics = metrics
 
         computeNotchRect(screen: screen)
         return panel
     }
 
-    private func updateRootView(using model: IslandAppModel) {
+    private func refreshRootViewIfNeeded(
+        using model: IslandAppModel,
+        on screen: NSScreen?,
+        force: Bool = false
+    ) {
         guard let hostingView = panel?.contentView as? NSHostingView<IslandShellView> else {
             return
         }
 
-        hostingView.rootView = makeShellView(using: model, on: resolvedPanelScreen(for: panel))
+        let metrics = resolvedRootViewMetrics(for: screen)
+        guard force || metrics != rootViewMetrics else {
+            return
+        }
+
+        rootViewMetrics = metrics
+        hostingView.rootView = makeShellView(using: model, metrics: metrics)
     }
 
-    private func makeShellView(using model: IslandAppModel, on screen: NSScreen?) -> IslandShellView {
-        let compactWidth = screen?.codexIslandCompactWidth ?? Self.defaultNotchSize.width
-        let closedHeight = closedNotchHeight(for: screen)
-        let expandedContentWidth = expandedContentWidth(for: screen)
-        let peekContentWidth = peekContentWidth(for: screen)
-        let expandedContentTopClearance = screen?.codexIslandExpandedContentTopClearance ?? 0
-        let closedContentNotchExclusionWidth = screen?.codexIslandClosedContentNotchExclusionWidth ?? 0
+    private func makeShellView(using model: IslandAppModel, metrics: RootViewMetrics) -> IslandShellView {
         return IslandShellView(
             model: model,
-            compactWidth: compactWidth,
-            closedHeight: closedHeight,
-            expandedContentWidth: expandedContentWidth,
-            peekContentWidth: peekContentWidth,
-            expandedContentTopClearance: expandedContentTopClearance,
-            closedContentNotchExclusionWidth: closedContentNotchExclusionWidth
+            compactWidth: metrics.compactWidth,
+            closedHeight: metrics.closedHeight,
+            expandedContentWidth: metrics.expandedContentWidth,
+            peekContentWidth: metrics.peekContentWidth,
+            expandedContentTopClearance: metrics.expandedContentTopClearance,
+            closedContentNotchExclusionWidth: metrics.closedContentNotchExclusionWidth
+        )
+    }
+
+    private func resolvedRootViewMetrics(for screen: NSScreen?) -> RootViewMetrics {
+        RootViewMetrics(
+            compactWidth: screen?.codexIslandCompactWidth ?? Self.defaultNotchSize.width,
+            closedHeight: closedNotchHeight(for: screen),
+            expandedContentWidth: expandedContentWidth(for: screen),
+            peekContentWidth: peekContentWidth(for: screen),
+            expandedContentTopClearance: screen?.codexIslandExpandedContentTopClearance ?? 0,
+            closedContentNotchExclusionWidth: screen?.codexIslandClosedContentNotchExclusionWidth ?? 0
         )
     }
 
@@ -326,11 +356,11 @@ final class IslandShellController {
     private func holdingPanelSize(for model: IslandAppModel, on screen: NSScreen) -> CGSize {
         let insets = panelShadowInsets
         let expandedPanelWidth = expandedShellWidth(for: model, on: screen)
-        let panelWidth = model.isInteractivePeeking
+        let panelWidth = model.peekCapturesMouseEvents
             ? max(expandedPanelWidth, peekShellWidth(for: screen))
             : expandedPanelWidth
         let targetOpenedContentHeight =
-            model.isInteractivePeeking
+            model.peekCapturesMouseEvents
             ? peekContentHeight(for: model, on: screen)
             : openedContentHeight(for: model, on: screen)
         let contentHeight = max(closedNotchHeight(for: screen), targetOpenedContentHeight)
@@ -397,8 +427,8 @@ final class IslandShellController {
     private func updatePanelFrame(_ panel: IslandShellPanel, using model: IslandAppModel, on screen: NSScreen) {
         let openedFrame = holdingPanelFrame(for: model, on: screen)
 
-        if panel.frame != openedFrame {
-            panel.setFrame(openedFrame, display: true)
+        if !model.islandLayoutTransitionInFlight, panel.frame != openedFrame {
+            panel.setFrame(openedFrame, display: false)
         }
 
         if model.islandUsesOpenedVisualState {
@@ -408,7 +438,7 @@ final class IslandShellController {
             return
         }
 
-        scheduleCloseResize(for: panel)
+        cancelPendingCloseResize(resetCollapseState: false)
         panel.ignoresMouseEvents = true
         panel.acceptsMouseMovedEvents = false
     }
@@ -424,7 +454,7 @@ final class IslandShellController {
         self.closedActivationPanel = activationPanel
 
         if activationPanel.frame != activationRect {
-            activationPanel.setFrame(activationRect, display: true)
+            activationPanel.setFrame(activationRect, display: false)
         }
 
         activationPanel.orderFrontRegardless()
@@ -454,32 +484,11 @@ final class IslandShellController {
     }
 
     private func isPanelInteractive(for model: IslandAppModel) -> Bool {
-        model.islandExpanded || model.isInteractivePeeking
+        model.islandExpanded || model.peekCapturesMouseEvents
     }
 
     private func scheduleCloseResize(for panel: IslandShellPanel) {
         cancelPendingCloseResize(resetCollapseState: false)
-        model?.beginIslandCollapseAnimation()
-
-        panel.ignoresMouseEvents = true
-        panel.acceptsMouseMovedEvents = false
-
-        let workItem = DispatchWorkItem { [weak self, weak panel] in
-            guard let self, let panel else {
-                return
-            }
-
-            panel.ignoresMouseEvents = true
-            panel.acceptsMouseMovedEvents = false
-            self.model?.finishIslandCollapseAnimation()
-            self.pendingCloseResize = nil
-        }
-
-        pendingCloseResize = workItem
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + CodexIslandChromeMetrics.closeLayoutSettleDuration,
-            execute: workItem
-        )
     }
 
     private func cancelPendingCloseResize(resetCollapseState: Bool) {
@@ -489,8 +498,6 @@ final class IslandShellController {
         guard resetCollapseState else {
             return
         }
-
-        model?.finishIslandCollapseAnimation()
     }
 
     private func startEventMonitoring() {

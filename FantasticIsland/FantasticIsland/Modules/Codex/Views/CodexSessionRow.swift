@@ -1,6 +1,67 @@
 import AppKit
 import SwiftUI
 
+struct CodexSessionAppIconView: View {
+    let target: CodexTerminalJumpTarget
+    let renderSize: CGFloat
+    let displaySize: CGFloat
+    let cornerRadius: CGFloat
+
+    @State private var icon: NSImage?
+    @State private var loadedKey = ""
+
+    init(
+        target: CodexTerminalJumpTarget,
+        renderSize: CGFloat = 36,
+        displaySize: CGFloat = 18,
+        cornerRadius: CGFloat = 4
+    ) {
+        self.target = target
+        self.renderSize = renderSize
+        self.displaySize = displaySize
+        self.cornerRadius = cornerRadius
+        let key = Self.iconKey(for: target, renderSize: renderSize)
+        _loadedKey = State(initialValue: key)
+        _icon = State(initialValue: CodexTerminalAppRegistry.appIcon(for: target, size: renderSize))
+    }
+
+    var body: some View {
+        Group {
+            if let icon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: displaySize, height: displaySize)
+                    .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
+                    .accessibilityLabel(target.displayLabel)
+            }
+        }
+        .onAppear(perform: refreshIconIfNeeded)
+        .onChange(of: iconKey) { _, _ in
+            refreshIconIfNeeded()
+        }
+    }
+
+    private var iconKey: String {
+        Self.iconKey(for: target, renderSize: renderSize)
+    }
+
+    private static func iconKey(for target: CodexTerminalJumpTarget, renderSize: CGFloat) -> String {
+        let appKey = CodexTerminalAppRegistry.normalizedBundleIdentifier(for: target)
+            ?? target.terminalApp.trimmingCharacters(in: .whitespacesAndNewlines)
+        return "\(appKey)|\(Int(max(1, renderSize.rounded())))"
+    }
+
+    private func refreshIconIfNeeded() {
+        guard loadedKey != iconKey else {
+            return
+        }
+
+        loadedKey = iconKey
+        icon = CodexTerminalAppRegistry.appIcon(for: target, size: renderSize)
+    }
+}
+
 struct CodexIslandSessionRow: View {
     enum SurfaceStyle {
         case standard
@@ -192,14 +253,8 @@ struct CodexIslandSessionRow: View {
 
     @ViewBuilder
     private var appIconAccessory: some View {
-        if let target = session.jumpTarget,
-           let icon = CodexTerminalAppRegistry.appIcon(for: target, size: 36) {
-            Image(nsImage: icon)
-                .resizable()
-                .interpolation(.high)
-                .frame(width: 18, height: 18)
-                .clipShape(.rect(cornerRadius: 4, style: .continuous))
-                .accessibilityLabel(target.displayLabel)
+        if let target = session.jumpTarget {
+            CodexSessionAppIconView(target: target)
         }
     }
 

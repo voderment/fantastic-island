@@ -11,7 +11,7 @@ final class PlaceholderModuleModel: ObservableObject, IslandModule {
     var taskActivityContribution = TaskActivityContribution()
     var preferredOpenedContentHeight: CGFloat { 196 }
 
-    func makeContentView(presentation: IslandModulePresentationContext) -> AnyView {
+    func makeLiveContentView(presentation: IslandModulePresentationContext) -> AnyView {
         AnyView(PlaceholderModuleContentView())
     }
 }

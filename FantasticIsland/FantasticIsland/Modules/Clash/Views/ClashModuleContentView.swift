@@ -1,7 +1,31 @@
 import SwiftUI
 
-struct ClashModuleContentView: View {
+struct ClashModuleRenderState {
+    let proxyGroups: [ClashProxyGroupSummary]
+    let moduleMode: ClashModuleMode
+    let status: ClashRuntimeStatus
+    let controlState: ClashControlState
+    let managedSystemProxyEnabled: Bool
+    let isTrafficRateAvailable: Bool
+    let uploadRateText: String
+    let downloadRateText: String
+    let updateConnectionMode: (ClashConnectionMode) -> Void
+    let updateManagedSystemProxyEnabled: (Bool) -> Void
+    let updateSystemProxyEnabled: (Bool) -> Void
+    let testLatency: (String) -> Void
+    let selectProxy: (String, String) -> Void
+}
+
+struct ClashModuleLiveContentView: View {
     @ObservedObject var model: ClashModuleModel
+
+    var body: some View {
+        ClashModuleContentView(state: model.makeRenderState())
+    }
+}
+
+struct ClashModuleContentView: View {
+    let state: ClashModuleRenderState
     @Environment(\.islandModuleScrollOffset) private var scrollOffset
     @State private var expandedGroupID: String?
     @State private var expandedGroupTopInContent: CGFloat?
@@ -13,7 +37,7 @@ struct ClashModuleContentView: View {
             controlCard
             sectionTitle("节点列表")
 
-            if model.proxyGroups.isEmpty {
+            if state.proxyGroups.isEmpty {
                 sectionCard {
                     Text("暂无可切换节点组。")
                         .font(.system(size: 12, weight: .medium))
@@ -22,7 +46,7 @@ struct ClashModuleContentView: View {
                 }
             } else {
                 VStack(spacing: ClashExpandedMetrics.cardSpacing) { // 与 Codex 模组列表保持一致的卡片间距
-                    ForEach(model.proxyGroups) { group in
+                    ForEach(state.proxyGroups) { group in
                         proxyGroupCard(group)
                     }
                 }
@@ -58,7 +82,7 @@ struct ClashModuleContentView: View {
     private var controlCard: some View {
         sectionCard {
             VStack(alignment: .leading, spacing: ClashExpandedMetrics.outerSpacing) {
-                if model.moduleMode == .managed {
+                if state.moduleMode == .managed {
                     managedCaptureControls
                 } else {
                     attachCaptureControls
@@ -91,16 +115,16 @@ struct ClashModuleContentView: View {
 
             trafficRateLabel(
                 symbol: "arrow.up",
-                text: model.status == .runningOwned ? model.uploadRateText : "-",
+                text: state.status == .runningOwned ? state.uploadRateText : "-",
                 activeColor: Color.green.opacity(0.92),
-                isEnabled: model.status == .runningOwned
+                isEnabled: state.status == .runningOwned
             )
 
             trafficRateLabel(
                 symbol: "arrow.down",
-                text: model.status == .runningOwned ? model.downloadRateText : "-",
+                text: state.status == .runningOwned ? state.downloadRateText : "-",
                 activeColor: Color.blue.opacity(0.95),
-                isEnabled: model.status == .runningOwned
+                isEnabled: state.status == .runningOwned
             )
 
             Toggle("", isOn: managedSystemProxyBinding)
@@ -122,16 +146,16 @@ struct ClashModuleContentView: View {
 
             trafficRateLabel(
                 symbol: "arrow.up",
-                text: model.isTrafficRateAvailable ? model.uploadRateText : "-",
+                text: state.isTrafficRateAvailable ? state.uploadRateText : "-",
                 activeColor: Color.green.opacity(0.92),
-                isEnabled: model.isTrafficRateAvailable
+                isEnabled: state.isTrafficRateAvailable
             )
 
             trafficRateLabel(
                 symbol: "arrow.down",
-                text: model.isTrafficRateAvailable ? model.downloadRateText : "-",
+                text: state.isTrafficRateAvailable ? state.downloadRateText : "-",
                 activeColor: Color.blue.opacity(0.95),
-                isEnabled: model.isTrafficRateAvailable
+                isEnabled: state.isTrafficRateAvailable
             )
 
             Toggle("", isOn: systemProxyBinding)
@@ -157,7 +181,7 @@ struct ClashModuleContentView: View {
 
     private func connectionModeButton(for mode: ClashConnectionMode) -> some View {
         Button {
-            model.updateConnectionMode(mode)
+            state.updateConnectionMode(mode)
         } label: {
             Text(LocalizedStringKey(mode.title))
                 .font(.system(size: 11, weight: .bold, design: .monospaced))
@@ -167,18 +191,18 @@ struct ClashModuleContentView: View {
         .buttonStyle(.plain)
         .background(
             RoundedRectangle(cornerRadius: ClashExpandedMetrics.actionPillCornerRadius, style: .continuous)
-                .fill(mode == model.controlState.connectionMode ? Color.white.opacity(0.24) : Color.white.opacity(0.10))
+                .fill(mode == state.controlState.connectionMode ? Color.white.opacity(0.24) : Color.white.opacity(0.10))
         )
         .overlay {
             RoundedRectangle(cornerRadius: ClashExpandedMetrics.actionPillCornerRadius, style: .continuous)
-                .stroke(mode == model.controlState.connectionMode ? Color.white.opacity(0.26) : Color.white.opacity(0.10), lineWidth: 1)
+                .stroke(mode == state.controlState.connectionMode ? Color.white.opacity(0.26) : Color.white.opacity(0.10), lineWidth: 1)
         }
-        .foregroundStyle(mode == model.controlState.connectionMode ? .white : .white.opacity(0.8))
+        .foregroundStyle(mode == state.controlState.connectionMode ? .white : .white.opacity(0.8))
     }
 
     private var expandedGroup: ClashProxyGroupSummary? {
         guard let expandedGroupID else { return nil }
-        return model.proxyGroups.first(where: { $0.id == expandedGroupID })
+        return state.proxyGroups.first(where: { $0.id == expandedGroupID })
     }
 
     private var shouldPinExpandedGroupHeader: Bool {
@@ -271,7 +295,7 @@ struct ClashModuleContentView: View {
                 HStack(spacing: 8) {
                     Button {
                         focusExpandedGroup(group)
-                        model.testLatency(in: group.name)
+                        state.testLatency(group.name)
                     } label: {
                         actionPillLabel(title: latencyButtonTitle(for: group))
                     }
@@ -305,7 +329,7 @@ struct ClashModuleContentView: View {
 
     private func latencyStatusText(for group: ClashProxyGroupSummary) -> some View {
         Group {
-            switch model.controlState.latencyTestState {
+            switch state.controlState.latencyTestState {
             case .idle:
                 EmptyView()
             case let .testing(testingGroup, testingProxy) where testingGroup == group.name:
@@ -336,8 +360,8 @@ struct ClashModuleContentView: View {
     }
 
     private func isTestingLatency(for group: ClashProxyGroupSummary) -> Bool {
-        model.controlState.latencyTestState.isTesting
-            && model.controlState.latencyTestState.currentGroup == group.name
+        state.controlState.latencyTestState.isTesting
+            && state.controlState.latencyTestState.currentGroup == group.name
     }
 
     private func proxyOptionsList(for group: ClashProxyGroupSummary) -> some View {
@@ -351,7 +375,7 @@ struct ClashModuleContentView: View {
 
     private func proxyOptionRow(_ option: ClashProxyOptionSummary, in group: ClashProxyGroupSummary) -> some View {
         Button {
-            model.selectProxy(option.name, in: group.name)
+            state.selectProxy(option.name, group.name)
             resetExpandedGroupPinningMetrics()
             withAnimation(.easeInOut(duration: 0.18)) {
                 expandedGroupID = nil
@@ -390,14 +414,14 @@ struct ClashModuleContentView: View {
 
     private func proxyLatencyBadge(for option: ClashProxyOptionSummary, in group: ClashProxyGroupSummary) -> some View {
         let isTestingCurrentOption: Bool
-        if case let .testing(testingGroup, testingProxy) = model.controlState.latencyTestState {
+        if case let .testing(testingGroup, testingProxy) = state.controlState.latencyTestState {
             isTestingCurrentOption = testingGroup == group.name && testingProxy == option.name
         } else {
             isTestingCurrentOption = false
         }
 
         let isFailedCurrentOption: Bool
-        if case let .failed(failedGroup, failedProxy, _) = model.controlState.latencyTestState {
+        if case let .failed(failedGroup, failedProxy, _) = state.controlState.latencyTestState {
             isFailedCurrentOption = failedGroup == group.name && failedProxy == option.name
         } else {
             isFailedCurrentOption = false
@@ -442,18 +466,18 @@ struct ClashModuleContentView: View {
 
     private var systemProxyBinding: Binding<Bool> {
         Binding(
-            get: { model.controlState.captureMode == .systemProxy && model.controlState.capturePhase == .active },
+            get: { state.controlState.captureMode == .systemProxy && state.controlState.capturePhase == .active },
             set: { newValue in
-                model.updateSystemProxyEnabled(newValue)
+                state.updateSystemProxyEnabled(newValue)
             }
         )
     }
 
     private var managedSystemProxyBinding: Binding<Bool> {
         Binding(
-            get: { model.managedSystemProxyEnabled },
+            get: { state.managedSystemProxyEnabled },
             set: { newValue in
-                model.updateManagedSystemProxyEnabled(newValue)
+                state.updateManagedSystemProxyEnabled(newValue)
             }
         )
     }
