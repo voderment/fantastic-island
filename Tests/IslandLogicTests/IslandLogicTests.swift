@@ -136,6 +136,14 @@ final class FakeTransport: CodexAppServerTransport, @unchecked Sendable {
 
 @MainActor
 final class IslandLogicTests: XCTestCase {
+    func testClashTrafficRateFormatterUsesBytesPerSecond() {
+        XCTAssertEqual(ClashConfigSupport.formatTrafficRate(0), "0 B/s")
+        XCTAssertEqual(ClashConfigSupport.formatTrafficRate(512), "512 B/s")
+        XCTAssertEqual(ClashConfigSupport.formatTrafficRate(1024), "1 KB/s")
+        XCTAssertEqual(ClashConfigSupport.formatTrafficRate(1536), "1.5 KB/s")
+        XCTAssertEqual(ClashConfigSupport.formatTrafficRate(1024 * 1024), "1 MB/s")
+    }
+
     func testCodexClientHandlesSynchronousResponseDuringWrite() async throws {
         let transport = FakeTransport()
         transport.onRequest = { request in

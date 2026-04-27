@@ -197,8 +197,16 @@ final class ClashModuleModel: ObservableObject, IslandModule {
         moduleMode == .managed && runtimePhase == .running
     }
     var proxyTestStatusText: String { controlState.latencyTestState.displayText }
-    var uploadRateText: String { ClashConfigSupport.formatTrafficRate(trafficSnapshot.upKbps) }
-    var downloadRateText: String { ClashConfigSupport.formatTrafficRate(trafficSnapshot.downKbps) }
+    var isTrafficRateAvailable: Bool {
+        switch status {
+        case .attached, .runningOwned:
+            return true
+        case .disconnected, .launching, .failed:
+            return false
+        }
+    }
+    var uploadRateText: String { ClashConfigSupport.formatTrafficRate(trafficSnapshot.upBytesPerSecond) }
+    var downloadRateText: String { ClashConfigSupport.formatTrafficRate(trafficSnapshot.downBytesPerSecond) }
     var connectionCountText: String { String(connectionOverview.activeConnectionCount) }
     var uploadTotalText: String { ClashConfigSupport.formatByteCount(connectionOverview.uploadTotalBytes) }
     var downloadTotalText: String { ClashConfigSupport.formatByteCount(connectionOverview.downloadTotalBytes) }
@@ -1447,9 +1455,12 @@ final class ClashModuleModel: ObservableObject, IslandModule {
                 continue
             }
 
-            let upKbps = ClashConfigSupport.doubleValue(for: "up", in: object)
-            let downKbps = ClashConfigSupport.doubleValue(for: "down", in: object)
-            return ClashTrafficSnapshot(upKbps: upKbps, downKbps: downKbps)
+            let upBytesPerSecond = ClashConfigSupport.doubleValue(for: "up", in: object)
+            let downBytesPerSecond = ClashConfigSupport.doubleValue(for: "down", in: object)
+            return ClashTrafficSnapshot(
+                upBytesPerSecond: upBytesPerSecond,
+                downBytesPerSecond: downBytesPerSecond
+            )
         }
 
         throw ClashModuleError.invalidResponse
