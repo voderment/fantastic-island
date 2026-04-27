@@ -197,6 +197,14 @@ final class ClashModuleModel: ObservableObject, IslandModule {
         moduleMode == .managed && runtimePhase == .running
     }
     var proxyTestStatusText: String { controlState.latencyTestState.displayText }
+    var isTrafficRateAvailable: Bool {
+        switch status {
+        case .attached, .runningOwned:
+            return true
+        case .disconnected, .launching, .failed:
+            return false
+        }
+    }
     var uploadRateText: String { ClashConfigSupport.formatTrafficRate(trafficSnapshot.upBytesPerSecond) }
     var downloadRateText: String { ClashConfigSupport.formatTrafficRate(trafficSnapshot.downBytesPerSecond) }
     var connectionCountText: String { String(connectionOverview.activeConnectionCount) }
