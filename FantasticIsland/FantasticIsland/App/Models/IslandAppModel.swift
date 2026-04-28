@@ -71,6 +71,7 @@ final class IslandAppModel: ObservableObject {
     @Published private(set) var enabledModuleIDs: Set<String> = []
     @Published var islandExpanded = false
     @Published private(set) var islandPeeking = false
+    @Published private(set) var islandClosedHovering = false
     @Published private(set) var islandExpansionAnimationInFlight = false
     @Published private(set) var islandCollapseAnimationInFlight = false
     @Published private(set) var transitionPhase: IslandTransitionPhase = .stable
@@ -521,6 +522,15 @@ final class IslandAppModel: ObservableObject {
         return resolvedExpandedContentHeight(for: module.id, presentation: .peek(activity))
     }
 
+    func setIslandClosedHovering(_ hovering: Bool) {
+        let resolvedHovering = hovering && !islandUsesOpenedVisualState
+        guard islandClosedHovering != resolvedHovering else {
+            return
+        }
+
+        islandClosedHovering = resolvedHovering
+    }
+
     func toggleIslandExpansionFromShortcut() {
         NSApplication.shared.activate(ignoringOtherApps: true)
 
@@ -848,6 +858,9 @@ final class IslandAppModel: ObservableObject {
         panelPreparation: (() -> Void)? = nil
     ) {
         cancelPendingTransitionWork()
+        if target.visualMode != .closed {
+            setIslandClosedHovering(false)
+        }
         pendingExpandedLayoutRefresh = false
         let fromState = explicitFrom ?? logicalPresentationState
         let preparedTransition = prepareTransitionState(from: fromState, to: target)

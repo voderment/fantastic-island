@@ -461,6 +461,7 @@ final class IslandShellController {
     }
 
     private func hideClosedActivationPanel() {
+        model?.setIslandClosedHovering(false)
         closedActivationPanel?.orderOut(nil)
     }
 
@@ -563,6 +564,10 @@ final class IslandShellController {
         model.expandIsland(reason: .manualTap)
     }
 
+    fileprivate func handleClosedActivationHover(_ hovering: Bool) {
+        model?.setIslandClosedHovering(hovering)
+    }
+
     private func screenPoint(for event: NSEvent) -> NSPoint {
         if let window = event.window {
             return window.convertPoint(toScreen: event.locationInWindow)
@@ -597,7 +602,7 @@ final class IslandShellController {
         panel.hasShadow = false
         panel.isMovable = false
         panel.hidesOnDeactivate = false
-        panel.acceptsMouseMovedEvents = false
+        panel.acceptsMouseMovedEvents = true
         panel.collectionBehavior = [.fullScreenAuxiliary, .stationary, .canJoinAllSpaces, .ignoresCycle]
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
@@ -663,6 +668,7 @@ private final class IslandShellHostingView<Content: View>: NSHostingView<Content
 
 private final class IslandClosedActivationView: NSView {
     weak var notchController: IslandShellController?
+    private var hoverTrackingArea: NSTrackingArea?
 
     override var isOpaque: Bool { false }
 
@@ -672,6 +678,39 @@ private final class IslandClosedActivationView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         notchController?.handleClosedActivationMouseDown()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        notchController?.handleClosedActivationHover(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        notchController?.handleClosedActivationHover(false)
+    }
+
+    override func updateTrackingAreas() {
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+            self.hoverTrackingArea = nil
+        }
+
+        super.updateTrackingAreas()
+
+        let trackingArea = NSTrackingArea(
+            rect: .zero,
+            options: [.activeAlways, .inVisibleRect, .mouseEnteredAndExited],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+        hoverTrackingArea = trackingArea
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            notchController?.handleClosedActivationHover(false)
+        }
     }
 }
 

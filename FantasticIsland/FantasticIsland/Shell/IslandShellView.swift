@@ -70,6 +70,10 @@ struct IslandShellView: View {
         visualMode != .closed
     }
 
+    private var isClosedHovering: Bool {
+        isHovering || model.islandClosedHovering
+    }
+
     private var usesExpandedLayoutBounds: Bool {
         usesOpenedVisualState || model.islandLayoutTransitionInFlight
     }
@@ -402,9 +406,10 @@ struct IslandShellView: View {
             }
             .frame(width: stableLayerWidth, height: surfaceHeight, alignment: .top)
         }
-        .scaleEffect(usesOpenedVisualState ? 1 : (isHovering ? CodexIslandChromeMetrics.closedHoverScale : 1), anchor: .top)
+        .scaleEffect(usesOpenedVisualState ? 1 : (isClosedHovering ? CodexIslandChromeMetrics.closedHoverScale : 1), anchor: .top)
         .padding(.horizontal, panelShadowHorizontalInset)
         .padding(.bottom, panelShadowBottomInset)
+        .animation(.spring(response: 0.38, dampingFraction: 0.8), value: isClosedHovering)
         .overlay(alignment: .topLeading) {
             collapsedModulePremeasurementView(width: premeasuredModuleColumnWidth)
         }
@@ -418,9 +423,7 @@ struct IslandShellView: View {
         }
         .contentShape(Rectangle())
         .onHover { hovering in
-            withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {
-                isHovering = hovering
-            }
+            isHovering = hovering
         }
         .onTapGesture {
             if !model.islandExpanded {
