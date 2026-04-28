@@ -99,6 +99,11 @@ xcodebuild -project 'FantasticIsland/FantasticIsland.xcodeproj' -scheme 'Fantast
 swift test
 ```
 
+## 发布说明
+
+- [v0.2.0](./docs/releases/v0.2.0.md) - Island 动画与交互细节优化
+- [v0.1.0](./docs/releases/v0.1.0.md) - 首个公开源码版本
+
 ## 上游与许可证
 
 Fantastic Island 的刘海壳层交互部分继承并改编自 [open-vibe-island](https://github.com/Octane0411/open-vibe-island)。`Clash` 模组的源码侧集成面向 `mihomo` / `metacubexd` 生态，但当前仓库不分发它们的运行时发布产物。更多信息见 [LICENSE](./LICENSE) 和 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。

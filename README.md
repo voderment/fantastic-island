@@ -100,6 +100,11 @@ Run the lightweight logic checks with:
 swift test
 ```
 
+## Releases
+
+- [v0.2.0](./docs/releases/v0.2.0.md) - Island transition and interaction polish
+- [v0.1.0](./docs/releases/v0.1.0.md) - First public source release
+
 ## Upstream And License
 
 The notch shell interaction layer inherits and adapts parts of [open-vibe-island](https://github.com/Octane0411/open-vibe-island). The `Clash` module's source-side integration targets the `mihomo` / `metacubexd` ecosystem, but this repository does not redistribute their packaged runtime releases. See [LICENSE](./LICENSE) and [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) for details.
