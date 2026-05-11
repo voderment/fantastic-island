@@ -102,6 +102,7 @@ swift test
 
 ## Releases
 
+- [v0.3.0](./docs/releases/v0.3.0.md) - Player source switching and Codex question flow
 - [v0.2.0](./docs/releases/v0.2.0.md) - Island transition and interaction polish
 - [v0.1.0](./docs/releases/v0.1.0.md) - First public source release
 

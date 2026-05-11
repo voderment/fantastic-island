@@ -361,6 +361,7 @@ final class CodexSessionReducer {
         let source = payload
         switch payload["type"] as? String {
         case "task_started", "user_message":
+            clearActionableStateIfProgressed(timestamp: timestamp, snapshot: &snapshot)
             if !snapshot.phase.requiresAttention {
                 snapshot.phase = .running
                 snapshot.currentTool = nil
@@ -405,6 +406,7 @@ final class CodexSessionReducer {
            let role = payload["role"] as? String {
             switch role {
             case "user":
+                clearActionableStateIfProgressed(timestamp: timestamp, snapshot: &snapshot)
                 if !snapshot.phase.requiresAttention {
                     snapshot.phase = .running
                     snapshot.currentTool = nil
@@ -416,6 +418,7 @@ final class CodexSessionReducer {
                 }
                 snapshot.lastEventAt = timestamp
             case "assistant":
+                clearActionableStateIfProgressed(timestamp: timestamp, snapshot: &snapshot)
                 if snapshot.phase != .completed, !snapshot.phase.requiresAttention {
                     snapshot.phase = .running
                 }
@@ -456,6 +459,7 @@ final class CodexSessionReducer {
             return
         }
 
+        clearActionableStateIfProgressed(timestamp: timestamp, snapshot: &snapshot)
         if !snapshot.phase.requiresAttention {
             snapshot.phase = .busy
             snapshot.currentTool = toolName
@@ -530,6 +534,34 @@ final class CodexSessionReducer {
         let title = clipped(questions.first?.question, limit: 260) ?? "Codex is waiting for input."
         let options = questions.first?.options.map(\.label) ?? []
         return CodexQuestionPrompt(title: title, options: options, questions: questions)
+    }
+
+    @discardableResult
+    private func clearActionableStateIfProgressed(timestamp: Date, snapshot: inout SessionSnapshot) -> Bool {
+        guard snapshot.phase.requiresAttention else {
+            return false
+        }
+
+        guard snapshot.pendingRequestContext?.source != .hook else {
+            return false
+        }
+
+        if let lastEventAt = snapshot.lastEventAt,
+           timestamp < lastEventAt {
+            return false
+        }
+
+        if let createdAt = snapshot.pendingRequestContext?.createdAt,
+           timestamp < createdAt {
+            return false
+        }
+
+        snapshot.phase = .running
+        snapshot.currentTool = nil
+        snapshot.permissionRequest = nil
+        snapshot.questionPrompt = nil
+        snapshot.pendingRequestContext = nil
+        return true
     }
 
     private func cappedMarkdownMessage(_ message: String, cap: Int = 8_000) -> String {

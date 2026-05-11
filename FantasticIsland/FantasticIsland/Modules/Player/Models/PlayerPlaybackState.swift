@@ -125,6 +125,18 @@ struct PlayerNowPlayingState: Equatable {
         )
     }
 
+    static func idleState(source: PlayerSourceKind) -> PlayerNowPlayingState {
+        PlayerNowPlayingState(
+            source: source,
+            playbackStatus: .stopped,
+            track: nil,
+            shuffleMode: .unsupported,
+            repeatMode: .unsupported,
+            artworkImage: nil,
+            automationIssue: nil
+        )
+    }
+
     static func == (lhs: PlayerNowPlayingState, rhs: PlayerNowPlayingState) -> Bool {
         lhs.source == rhs.source
             && lhs.playbackStatus == rhs.playbackStatus

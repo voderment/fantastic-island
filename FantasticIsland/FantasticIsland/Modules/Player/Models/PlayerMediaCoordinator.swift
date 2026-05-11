@@ -9,6 +9,756 @@ private actor PlayerAppleScriptWorker {
     }
 }
 
+private nonisolated final class PlayerMediaRemoteBridge: @unchecked Sendable {
+    static let shared = PlayerMediaRemoteBridge()
+
+    enum Command: Int32, Sendable {
+        case play = 0
+        case pause = 1
+        case togglePlayPause = 2
+        case nextTrack = 4
+        case previousTrack = 5
+    }
+
+    struct Snapshot {
+        let playbackStatus: PlayerPlaybackStatus
+        let track: PlayerTrackMetadata?
+        let artworkImage: NSImage?
+    }
+
+    private struct HelperPayload: Decodable {
+        let displayID: String?
+        let title: String?
+        let artist: String?
+        let album: String?
+        let duration: Double?
+        let elapsed: Double?
+        let playbackRate: Double?
+        let isPlaying: Bool?
+        let artworkURL: String?
+        let artworkDataBase64: String?
+    }
+
+    private typealias GetStringCallback = @convention(block) (String?) -> Void
+    private typealias GetBoolCallback = @convention(block) (Bool) -> Void
+    private typealias GetInfoCallback = @convention(block) ([AnyHashable: Any]?) -> Void
+    private typealias GetStringFunction = @convention(c) (DispatchQueue, @escaping GetStringCallback) -> Void
+    private typealias GetBoolFunction = @convention(c) (DispatchQueue, @escaping GetBoolCallback) -> Void
+    private typealias GetInfoFunction = @convention(c) (DispatchQueue, @escaping GetInfoCallback) -> Void
+    private typealias SendCommandFunction = @convention(c) (Int32, CFDictionary?) -> Void
+
+    private final class ContinuationBox<Value>: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<Value, Never>?
+
+        init(_ continuation: CheckedContinuation<Value, Never>) {
+            self.continuation = continuation
+        }
+
+        func resume(returning value: Value) {
+            lock.lock()
+            guard let continuation else {
+                lock.unlock()
+                return
+            }
+            self.continuation = nil
+            lock.unlock()
+
+            continuation.resume(returning: value)
+        }
+    }
+
+    // In Fantastic Island's app process, MediaRemote may return nil for Podcasts
+    // metadata while still accepting transport commands. A single Apple-signed
+    // Swift helper keeps the now-playing read path alive without respawning per poll.
+    private actor SwiftHelper {
+        static let shared = SwiftHelper()
+
+        private static let snapshotCommand = "snapshot"
+        private static let quitCommand = "quit"
+        private static let requestTimeout: Duration = .seconds(3)
+        private static let executableURL = URL(fileURLWithPath: "/usr/bin/swift")
+        private static let source = #"""
+        import Dispatch
+        import Foundation
+
+        typealias GetStringCallback = @convention(block) (String?) -> Void
+        typealias GetBoolCallback = @convention(block) (Bool) -> Void
+        typealias GetInfoCallback = @convention(block) ([AnyHashable: Any]?) -> Void
+        typealias GetStringFunction = @convention(c) (DispatchQueue, @escaping GetStringCallback) -> Void
+        typealias GetBoolFunction = @convention(c) (DispatchQueue, @escaping GetBoolCallback) -> Void
+        typealias GetInfoFunction = @convention(c) (DispatchQueue, @escaping GetInfoCallback) -> Void
+
+        let mediaRemoteHandle = dlopen("/System/Library/PrivateFrameworks/MediaRemote.framework/MediaRemote", RTLD_NOW)
+
+        func loadFunction<T>(_ symbol: String, as type: T.Type) -> T? {
+            guard let mediaRemoteHandle,
+                  let pointer = dlsym(mediaRemoteHandle, symbol) else {
+                return nil
+            }
+
+            return unsafeBitCast(pointer, to: type)
+        }
+
+        func loadStringConstant(_ symbol: String) -> String {
+            guard let mediaRemoteHandle,
+                  let pointer = dlsym(mediaRemoteHandle, symbol) else {
+                return symbol
+            }
+
+            return pointer.assumingMemoryBound(to: CFString.self).pointee as String
+        }
+
+        let getNowPlayingApplicationDisplayID = loadFunction(
+            "MRMediaRemoteGetNowPlayingApplicationDisplayID",
+            as: GetStringFunction.self
+        )
+        let getNowPlayingApplicationIsPlaying = loadFunction(
+            "MRMediaRemoteGetNowPlayingApplicationIsPlaying",
+            as: GetBoolFunction.self
+        )
+        let getNowPlayingInfo = loadFunction(
+            "MRMediaRemoteGetNowPlayingInfo",
+            as: GetInfoFunction.self
+        )
+
+        let titleKey = loadStringConstant("kMRMediaRemoteNowPlayingInfoTitle")
+        let artistKey = loadStringConstant("kMRMediaRemoteNowPlayingInfoArtist")
+        let albumKey = loadStringConstant("kMRMediaRemoteNowPlayingInfoAlbum")
+        let durationKey = loadStringConstant("kMRMediaRemoteNowPlayingInfoDuration")
+        let elapsedKey = loadStringConstant("kMRMediaRemoteNowPlayingInfoElapsedTime")
+        let calculatedElapsedKey = loadStringConstant("kMRMediaRemoteNowPlayingInfoCalculatedElapsedTime")
+        let playbackRateKey = loadStringConstant("kMRMediaRemoteNowPlayingInfoPlaybackRate")
+        let timestampKey = loadStringConstant("kMRMediaRemoteNowPlayingInfoTimestamp")
+        let artworkDataKey = loadStringConstant("kMRMediaRemoteNowPlayingInfoArtworkData")
+        let artworkURLKey = loadStringConstant("kMRMediaRemoteNowPlayingInfoArtworkURL")
+        var lastArtworkIdentity: String?
+
+        func stringValue(_ key: String, in info: [AnyHashable: Any]) -> String? {
+            info[key] as? String
+        }
+
+        func doubleValue(_ key: String, in info: [AnyHashable: Any]) -> Double? {
+            if let doubleValue = info[key] as? Double {
+                return doubleValue
+            }
+
+            return (info[key] as? NSNumber)?.doubleValue
+        }
+
+        func dateValue(_ key: String, in info: [AnyHashable: Any]) -> Date? {
+            if let date = info[key] as? Date {
+                return date
+            }
+
+            if let date = info[key] as? NSDate {
+                return date as Date
+            }
+
+            return nil
+        }
+
+        func clampedElapsed(_ elapsed: TimeInterval, duration: TimeInterval) -> TimeInterval {
+            let lowerBoundedElapsed = max(elapsed, 0)
+            guard duration > 0 else {
+                return lowerBoundedElapsed
+            }
+
+            return min(lowerBoundedElapsed, duration)
+        }
+
+        func elapsedTime(in info: [AnyHashable: Any], duration: TimeInterval, playbackRate: Double?) -> TimeInterval {
+            if let calculatedElapsed = doubleValue(calculatedElapsedKey, in: info) {
+                return clampedElapsed(calculatedElapsed, duration: duration)
+            }
+
+            let baseElapsed = doubleValue(elapsedKey, in: info) ?? 0
+            guard let timestamp = dateValue(timestampKey, in: info),
+                  let playbackRate,
+                  playbackRate > 0 else {
+                return clampedElapsed(baseElapsed, duration: duration)
+            }
+
+            return clampedElapsed(
+                baseElapsed + Date().timeIntervalSince(timestamp) * playbackRate,
+                duration: duration
+            )
+        }
+
+        func setJSONValue(_ value: Any?, for key: String, in output: inout [String: Any]) {
+            output[key] = value ?? NSNull()
+        }
+
+        func snapshotLine() -> String {
+            guard let getNowPlayingInfo else {
+                return "{}"
+            }
+
+            let group = DispatchGroup()
+            var displayID: String?
+            var isPlaying: Bool?
+            var info: [AnyHashable: Any]?
+
+            if let getNowPlayingApplicationDisplayID {
+                group.enter()
+                getNowPlayingApplicationDisplayID(.global(qos: .userInitiated)) { value in
+                    displayID = value
+                    group.leave()
+                }
+            }
+
+            if let getNowPlayingApplicationIsPlaying {
+                group.enter()
+                getNowPlayingApplicationIsPlaying(.global(qos: .userInitiated)) { value in
+                    isPlaying = value
+                    group.leave()
+                }
+            }
+
+            group.enter()
+            getNowPlayingInfo(.global(qos: .userInitiated)) { value in
+                info = value
+                group.leave()
+            }
+
+            _ = group.wait(timeout: .now() + 2)
+
+            guard let info else {
+                return "{}"
+            }
+
+            let duration = doubleValue(durationKey, in: info) ?? 0
+            let playbackRate = doubleValue(playbackRateKey, in: info)
+            let title = stringValue(titleKey, in: info)
+            let artist = stringValue(artistKey, in: info)
+            let album = stringValue(albumKey, in: info)
+            let artworkURL = stringValue(artworkURLKey, in: info)
+            let artworkIdentity = [
+                displayID ?? "",
+                title ?? "",
+                artist ?? "",
+                album ?? "",
+                artworkURL ?? "",
+            ].joined(separator: "\u{1F}")
+
+            var output: [String: Any] = [:]
+            setJSONValue(displayID, for: "displayID", in: &output)
+            setJSONValue(title, for: "title", in: &output)
+            setJSONValue(artist, for: "artist", in: &output)
+            setJSONValue(album, for: "album", in: &output)
+            output["duration"] = duration
+            output["elapsed"] = elapsedTime(in: info, duration: duration, playbackRate: playbackRate)
+            setJSONValue(playbackRate, for: "playbackRate", in: &output)
+            setJSONValue(isPlaying, for: "isPlaying", in: &output)
+            setJSONValue(artworkURL, for: "artworkURL", in: &output)
+
+            if artworkIdentity != lastArtworkIdentity,
+               let artworkData = info[artworkDataKey] as? Data,
+               !artworkData.isEmpty {
+                output["artworkDataBase64"] = artworkData.base64EncodedString()
+                lastArtworkIdentity = artworkIdentity
+            } else {
+                output["artworkDataBase64"] = NSNull()
+            }
+
+            guard JSONSerialization.isValidJSONObject(output),
+                  let data = try? JSONSerialization.data(withJSONObject: output),
+                  let line = String(data: data, encoding: .utf8) else {
+                return "{}"
+            }
+
+            return line
+        }
+
+        while let command = readLine() {
+            switch command {
+            case "snapshot":
+                print(snapshotLine())
+                fflush(stdout)
+            case "quit":
+                exit(0)
+            default:
+                continue
+            }
+        }
+        """#
+
+        private var process: Process?
+        private var inputHandle: FileHandle?
+        private var outputReadHandle: FileHandle?
+        private var errorReadHandle: FileHandle?
+        private var outputBuffer = Data()
+        private var pendingContinuation: CheckedContinuation<String?, Never>?
+        private var pendingRequestID: UUID?
+
+        func snapshotLine() async -> String? {
+            guard startIfNeeded() else {
+                return nil
+            }
+
+            return await requestLine()
+        }
+
+        private func startIfNeeded() -> Bool {
+            if process?.isRunning == true,
+               inputHandle != nil {
+                return true
+            }
+
+            stop()
+
+            guard FileManager.default.isExecutableFile(atPath: Self.executableURL.path) else {
+                return false
+            }
+
+            let process = Process()
+            let inputPipe = Pipe()
+            let outputPipe = Pipe()
+            let errorPipe = Pipe()
+            process.executableURL = Self.executableURL
+            process.arguments = ["-e", Self.source]
+            process.standardInput = inputPipe
+            process.standardOutput = outputPipe
+            process.standardError = errorPipe
+            process.terminationHandler = { [weak self] _ in
+                Task { await self?.handleTermination() }
+            }
+
+            let outputReadHandle = outputPipe.fileHandleForReading
+            outputReadHandle.readabilityHandler = { [weak self] handle in
+                let data = handle.availableData
+                Task { await self?.consumeOutput(data) }
+            }
+
+            let errorReadHandle = errorPipe.fileHandleForReading
+            errorReadHandle.readabilityHandler = { handle in
+                _ = handle.availableData
+            }
+
+            do {
+                try process.run()
+            } catch {
+                outputReadHandle.readabilityHandler = nil
+                errorReadHandle.readabilityHandler = nil
+                return false
+            }
+
+            self.process = process
+            self.inputHandle = inputPipe.fileHandleForWriting
+            self.outputReadHandle = outputReadHandle
+            self.errorReadHandle = errorReadHandle
+            return true
+        }
+
+        private func requestLine() async -> String? {
+            guard pendingContinuation == nil,
+                  let inputHandle else {
+                return nil
+            }
+
+            return await withCheckedContinuation { continuation in
+                let requestID = UUID()
+                pendingContinuation = continuation
+                pendingRequestID = requestID
+
+                do {
+                    try inputHandle.write(contentsOf: Data("\(Self.snapshotCommand)\n".utf8))
+                } catch {
+                    resolvePending(requestID: requestID, with: nil)
+                    stop()
+                    return
+                }
+
+                Task { [weak self] in
+                    try? await Task.sleep(for: Self.requestTimeout)
+                    await self?.resolvePending(requestID: requestID, with: nil)
+                }
+            }
+        }
+
+        private func consumeOutput(_ data: Data) {
+            guard !data.isEmpty else {
+                handleTermination()
+                return
+            }
+
+            outputBuffer.append(data)
+            let newline = Data([0x0A])
+            while let range = outputBuffer.firstRange(of: newline) {
+                let lineData = outputBuffer.subdata(in: outputBuffer.startIndex..<range.lowerBound)
+                outputBuffer.removeSubrange(outputBuffer.startIndex..<range.upperBound)
+                resolvePending(with: String(data: lineData, encoding: .utf8))
+            }
+        }
+
+        private func resolvePending(requestID: UUID? = nil, with line: String?) {
+            if let requestID,
+               pendingRequestID != requestID {
+                return
+            }
+
+            guard let continuation = pendingContinuation else {
+                return
+            }
+
+            pendingContinuation = nil
+            pendingRequestID = nil
+            continuation.resume(returning: line)
+        }
+
+        private func handleTermination() {
+            resolvePending(with: nil)
+            stop()
+        }
+
+        private func stop() {
+            outputReadHandle?.readabilityHandler = nil
+            errorReadHandle?.readabilityHandler = nil
+
+            if process?.isRunning == true {
+                try? inputHandle?.write(contentsOf: Data("\(Self.quitCommand)\n".utf8))
+                process?.terminate()
+            }
+
+            process = nil
+            inputHandle = nil
+            outputReadHandle = nil
+            errorReadHandle = nil
+            outputBuffer = Data()
+            pendingRequestID = nil
+        }
+    }
+
+    private let getNowPlayingApplicationDisplayID: GetStringFunction?
+    private let getNowPlayingApplicationIsPlaying: GetBoolFunction?
+    private let getNowPlayingInfo: GetInfoFunction?
+    private let sendCommand: SendCommandFunction?
+    private let titleKey: String
+    private let artistKey: String
+    private let albumKey: String
+    private let durationKey: String
+    private let elapsedKey: String
+    private let calculatedElapsedKey: String
+    private let playbackRateKey: String
+    private let timestampKey: String
+    private let artworkDataKey: String
+    private let artworkURLKey: String
+
+    private init() {
+        let handle = dlopen(
+            "/System/Library/PrivateFrameworks/MediaRemote.framework/MediaRemote",
+            RTLD_NOW
+        )
+
+        getNowPlayingApplicationDisplayID = Self.loadFunction(
+            "MRMediaRemoteGetNowPlayingApplicationDisplayID",
+            from: handle,
+            as: GetStringFunction.self
+        )
+        getNowPlayingApplicationIsPlaying = Self.loadFunction(
+            "MRMediaRemoteGetNowPlayingApplicationIsPlaying",
+            from: handle,
+            as: GetBoolFunction.self
+        )
+        getNowPlayingInfo = Self.loadFunction(
+            "MRMediaRemoteGetNowPlayingInfo",
+            from: handle,
+            as: GetInfoFunction.self
+        )
+        sendCommand = Self.loadFunction(
+            "MRMediaRemoteSendCommand",
+            from: handle,
+            as: SendCommandFunction.self
+        )
+
+        titleKey = Self.loadStringConstant("kMRMediaRemoteNowPlayingInfoTitle", from: handle)
+        artistKey = Self.loadStringConstant("kMRMediaRemoteNowPlayingInfoArtist", from: handle)
+        albumKey = Self.loadStringConstant("kMRMediaRemoteNowPlayingInfoAlbum", from: handle)
+        durationKey = Self.loadStringConstant("kMRMediaRemoteNowPlayingInfoDuration", from: handle)
+        elapsedKey = Self.loadStringConstant("kMRMediaRemoteNowPlayingInfoElapsedTime", from: handle)
+        calculatedElapsedKey = Self.loadStringConstant("kMRMediaRemoteNowPlayingInfoCalculatedElapsedTime", from: handle)
+        playbackRateKey = Self.loadStringConstant("kMRMediaRemoteNowPlayingInfoPlaybackRate", from: handle)
+        timestampKey = Self.loadStringConstant("kMRMediaRemoteNowPlayingInfoTimestamp", from: handle)
+        artworkDataKey = Self.loadStringConstant("kMRMediaRemoteNowPlayingInfoArtworkData", from: handle)
+        artworkURLKey = Self.loadStringConstant("kMRMediaRemoteNowPlayingInfoArtworkURL", from: handle)
+    }
+
+    func snapshot(for sourceKind: PlayerSourceKind) async -> Snapshot? {
+        guard sourceKind == .podcasts else {
+            return nil
+        }
+
+        if let directSnapshot = await directSnapshot(for: sourceKind) {
+            return directSnapshot
+        }
+
+        guard let helperLine = await SwiftHelper.shared.snapshotLine() else {
+            return nil
+        }
+
+        return Self.snapshot(fromHelperLine: helperLine, sourceKind: sourceKind)
+    }
+
+    func send(_ command: Command) {
+        sendCommand?(command.rawValue, nil)
+    }
+
+    private func directSnapshot(for sourceKind: PlayerSourceKind) async -> Snapshot? {
+        async let displayID = nowPlayingApplicationDisplayID()
+        async let info = nowPlayingInfo()
+
+        let resolvedDisplayID = await displayID
+        guard resolvedDisplayID == nil || resolvedDisplayID == sourceKind.bundleIdentifier,
+              let info = await info else {
+            return nil
+        }
+
+        let playbackRate = doubleValue(for: playbackRateKey, in: info)
+        let duration = doubleValue(for: durationKey, in: info) ?? 0
+        let isPlayingFallback: Bool?
+        if playbackRate == nil {
+            isPlayingFallback = await nowPlayingApplicationIsPlaying()
+        } else {
+            isPlayingFallback = nil
+        }
+
+        return Self.makeSnapshot(
+            sourceKind: sourceKind,
+            displayID: resolvedDisplayID,
+            title: stringValue(for: titleKey, in: info),
+            artist: stringValue(for: artistKey, in: info),
+            album: stringValue(for: albumKey, in: info),
+            duration: duration,
+            elapsed: elapsedTime(in: info, duration: duration, playbackRate: playbackRate),
+            playbackRate: playbackRate,
+            isPlayingFallback: isPlayingFallback,
+            artworkURL: stringValue(for: artworkURLKey, in: info).flatMap(URL.init(string:)),
+            artworkImage: imageValue(for: artworkDataKey, in: info)
+        )
+    }
+
+    private static func snapshot(fromHelperLine line: String, sourceKind: PlayerSourceKind) -> Snapshot? {
+        guard let data = line.data(using: .utf8),
+              let payload = try? JSONDecoder().decode(HelperPayload.self, from: data) else {
+            return nil
+        }
+
+        let artworkImage = payload.artworkDataBase64
+            .flatMap { Data(base64Encoded: $0) }
+            .flatMap(NSImage.init(data:))
+
+        return makeSnapshot(
+            sourceKind: sourceKind,
+            displayID: payload.displayID,
+            title: payload.title,
+            artist: payload.artist,
+            album: payload.album,
+            duration: payload.duration ?? 0,
+            elapsed: payload.elapsed ?? 0,
+            playbackRate: payload.playbackRate,
+            isPlayingFallback: payload.isPlaying,
+            artworkURL: payload.artworkURL.flatMap(URL.init(string:)),
+            artworkImage: artworkImage
+        )
+    }
+
+    private static func makeSnapshot(
+        sourceKind: PlayerSourceKind,
+        displayID: String?,
+        title: String?,
+        artist: String?,
+        album: String?,
+        duration: TimeInterval,
+        elapsed: TimeInterval,
+        playbackRate: Double?,
+        isPlayingFallback: Bool?,
+        artworkURL: URL?,
+        artworkImage: NSImage?
+    ) -> Snapshot? {
+        if let displayID,
+           displayID != sourceKind.bundleIdentifier {
+            return nil
+        }
+
+        let title = nilIfEmpty(title)
+        let artist = nilIfEmpty(artist)
+        let album = nilIfEmpty(album)
+
+        let track: PlayerTrackMetadata?
+        if let title {
+            track = PlayerTrackMetadata(
+                title: title,
+                artist: artist ?? "Unknown Podcast",
+                album: album,
+                duration: duration,
+                elapsed: clampedElapsed(elapsed, duration: duration),
+                artworkURL: artworkURL
+            )
+        } else {
+            track = nil
+        }
+
+        let isPlaying = playbackRate.map { $0 > 0 } ?? isPlayingFallback ?? false
+        let playbackStatus: PlayerPlaybackStatus
+        if isPlaying {
+            playbackStatus = .playing
+        } else if let _ = track {
+            playbackStatus = .paused
+        } else {
+            playbackStatus = .stopped
+        }
+
+        return Snapshot(
+            playbackStatus: playbackStatus,
+            track: track,
+            artworkImage: artworkImage
+        )
+    }
+
+    private func nowPlayingApplicationDisplayID() async -> String? {
+        guard let getNowPlayingApplicationDisplayID else {
+            return nil
+        }
+
+        return await withCheckedContinuation { continuation in
+            let box = ContinuationBox(continuation)
+            getNowPlayingApplicationDisplayID(.global(qos: .userInitiated)) { displayID in
+                box.resume(returning: displayID)
+            }
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.8) {
+                box.resume(returning: nil)
+            }
+        }
+    }
+
+    private func nowPlayingApplicationIsPlaying() async -> Bool {
+        guard let getNowPlayingApplicationIsPlaying else {
+            return false
+        }
+
+        return await withCheckedContinuation { continuation in
+            let box = ContinuationBox(continuation)
+            getNowPlayingApplicationIsPlaying(.global(qos: .userInitiated)) { isPlaying in
+                box.resume(returning: isPlaying)
+            }
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.8) {
+                box.resume(returning: false)
+            }
+        }
+    }
+
+    private func nowPlayingInfo() async -> [AnyHashable: Any]? {
+        guard let getNowPlayingInfo else {
+            return nil
+        }
+
+        return await withCheckedContinuation { continuation in
+            let box = ContinuationBox(continuation)
+            getNowPlayingInfo(.global(qos: .userInitiated)) { info in
+                box.resume(returning: info)
+            }
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.8) {
+                box.resume(returning: nil)
+            }
+        }
+    }
+
+    private func stringValue(for key: String, in info: [AnyHashable: Any]) -> String? {
+        info[key] as? String
+    }
+
+    private static func nilIfEmpty(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed?.isEmpty == false ? trimmed : nil
+    }
+
+    private func doubleValue(for key: String, in info: [AnyHashable: Any]) -> Double? {
+        if let doubleValue = info[key] as? Double {
+            return doubleValue
+        }
+
+        return (info[key] as? NSNumber)?.doubleValue
+    }
+
+    private func dateValue(for key: String, in info: [AnyHashable: Any]) -> Date? {
+        if let date = info[key] as? Date {
+            return date
+        }
+
+        if let date = info[key] as? NSDate {
+            return date as Date
+        }
+
+        return nil
+    }
+
+    private func elapsedTime(
+        in info: [AnyHashable: Any],
+        duration: TimeInterval,
+        playbackRate: Double?
+    ) -> TimeInterval {
+        if let calculatedElapsed = doubleValue(for: calculatedElapsedKey, in: info) {
+            return Self.clampedElapsed(calculatedElapsed, duration: duration)
+        }
+
+        let baseElapsed = doubleValue(for: elapsedKey, in: info) ?? 0
+        guard let timestamp = dateValue(for: timestampKey, in: info),
+              let playbackRate,
+              playbackRate > 0 else {
+            return Self.clampedElapsed(baseElapsed, duration: duration)
+        }
+
+        return Self.clampedElapsed(
+            baseElapsed + Date().timeIntervalSince(timestamp) * playbackRate,
+            duration: duration
+        )
+    }
+
+    private static func clampedElapsed(_ elapsed: TimeInterval, duration: TimeInterval) -> TimeInterval {
+        let lowerBoundedElapsed = max(elapsed, 0)
+        guard duration > 0 else {
+            return lowerBoundedElapsed
+        }
+
+        return min(lowerBoundedElapsed, duration)
+    }
+
+    private func imageValue(for key: String, in info: [AnyHashable: Any]) -> NSImage? {
+        guard let data = info[key] as? Data,
+              !data.isEmpty else {
+            return nil
+        }
+
+        return NSImage(data: data)
+    }
+
+    private static func loadFunction<T>(
+        _ symbol: String,
+        from handle: UnsafeMutableRawPointer?,
+        as type: T.Type
+    ) -> T? {
+        guard let handle,
+              let pointer = dlsym(handle, symbol) else {
+            return nil
+        }
+
+        return unsafeBitCast(pointer, to: type)
+    }
+
+    private static func loadStringConstant(
+        _ symbol: String,
+        from handle: UnsafeMutableRawPointer?
+    ) -> String {
+        guard let handle,
+              let pointer = dlsym(handle, symbol) else {
+            return symbol
+        }
+
+        let value = pointer.assumingMemoryBound(to: CFString.self).pointee
+        return value as String
+    }
+}
+
 @MainActor
 final class PlayerMediaCoordinator {
     private static let artworkThumbnailMaxPixelSize: CGFloat = 192
@@ -82,26 +832,42 @@ final class PlayerMediaCoordinator {
         let cycleRepeat: () -> Void
     }
 
+    private struct MusicArtworkPrefetchCandidate {
+        let track: PlayerTrackMetadata
+        let artworkFileURL: URL?
+    }
+
     private lazy var sources: [ScriptSource] = [
         makeMusicSource(),
         makeSpotifySource(),
+        makePodcastsSource(),
     ]
     private var lastPreferredSourceKind: PlayerSourceKind?
     private var artworkCache: [String: NSImage] = [:]
     private var artworkCacheOrder: [String] = []
     private var musicArtworkURLCache: [String: URL] = [:]
+    private var lastPodcastsSnapshot: PlayerSnapshot?
+    private var lastPodcastsSnapshotDate: Date?
     private let scriptWorker = PlayerAppleScriptWorker()
     private let artworkCacheLimit = 8
     private let launchedCommandDelay: TimeInterval = 0.8
     private let immediateRefreshDelay: TimeInterval = 0.25
     private let launchedRefreshDelay: TimeInterval = 1.15
+    private let podcastsSnapshotGraceInterval: TimeInterval = 6
 
-    func fetchCurrentState() async -> PlayerNowPlayingState {
+    func fetchCurrentState(preferredSourceKind: PlayerSourceKind?) async -> PlayerNowPlayingState {
+        if let preferredSourceKind {
+            return await fetchState(for: preferredSourceKind)
+        }
+
         let frontmostBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         var pausedCandidate: PlayerSnapshot?
         var automationIssueCandidate: PlayerAutomationIssue?
 
-        for source in prioritizedSources(frontmostBundleID: frontmostBundleID) {
+        for source in prioritizedSources(
+            frontmostBundleID: frontmostBundleID,
+            preferredSourceKind: preferredSourceKind
+        ) {
             switch await source.fetchState() {
             case let .snapshot(snapshot):
                 if snapshot.playbackStatus == .playing {
@@ -133,6 +899,25 @@ final class PlayerMediaCoordinator {
 
         lastPreferredSourceKind = nil
         return .empty
+    }
+
+    private func fetchState(for sourceKind: PlayerSourceKind) async -> PlayerNowPlayingState {
+        guard let source = resolvedSource(for: sourceKind) else {
+            lastPreferredSourceKind = nil
+            return .idleState(source: sourceKind)
+        }
+
+        switch await source.fetchState() {
+        case let .snapshot(snapshot):
+            lastPreferredSourceKind = snapshot.source
+            return toState(snapshot)
+        case let .automationIssue(issue):
+            lastPreferredSourceKind = nil
+            return .issueState(issue)
+        case .unavailable:
+            lastPreferredSourceKind = sourceKind
+            return .idleState(source: sourceKind)
+        }
     }
 
     func previousTrack(for sourceKind: PlayerSourceKind?) -> TimeInterval? {
@@ -173,6 +958,9 @@ final class PlayerMediaCoordinator {
         case .music:
             cacheKey = musicArtworkCacheKey(for: track)
             remoteArtworkURL = musicArtworkURLCache[cacheKey]
+        case .podcasts:
+            cacheKey = podcastsArtworkCacheKey(for: track, artworkURL: track.artworkURL)
+            remoteArtworkURL = track.artworkURL
         case .spotify:
             cacheKey = spotifyArtworkCacheKey(for: track, artworkURL: track.artworkURL)
             remoteArtworkURL = track.artworkURL
@@ -188,11 +976,18 @@ final class PlayerMediaCoordinator {
             if let remoteArtworkURL {
                 resolvedArtworkURL = remoteArtworkURL
             } else {
+                if let localArtworkImage = await loadMusicArtworkFromCurrentTrack() {
+                    storeArtwork(localArtworkImage, for: cacheKey)
+                    return localArtworkImage
+                }
+
                 resolvedArtworkURL = await Self.lookupMusicArtworkURL(for: track)
                 if let resolvedArtworkURL {
                     musicArtworkURLCache[cacheKey] = resolvedArtworkURL
                 }
             }
+        case .podcasts:
+            resolvedArtworkURL = remoteArtworkURL
         case .spotify:
             resolvedArtworkURL = remoteArtworkURL
         }
@@ -204,6 +999,50 @@ final class PlayerMediaCoordinator {
 
         storeArtwork(image, for: cacheKey)
         return image
+    }
+
+    func prefetchUpcomingArtwork(after state: PlayerNowPlayingState, limit: Int) async {
+        guard state.source == .music,
+              state.shuffleMode == .off,
+              state.track != nil,
+              limit > 0 else {
+            return
+        }
+
+        let candidates = await loadUpcomingMusicArtworkCandidates(limit: limit)
+        guard !candidates.isEmpty else {
+            return
+        }
+
+        let artworkDirectories = Set(candidates.compactMap { $0.artworkFileURL?.deletingLastPathComponent() })
+        defer {
+            for directory in artworkDirectories {
+                try? FileManager.default.removeItem(at: directory)
+            }
+        }
+
+        for candidate in candidates {
+            let cacheKey = musicArtworkCacheKey(for: candidate.track)
+            guard cachedArtworkImage(for: cacheKey) == nil else {
+                continue
+            }
+
+            if let artworkFileURL = candidate.artworkFileURL,
+               let data = try? Data(contentsOf: artworkFileURL),
+               !data.isEmpty,
+               let image = await Self.decodeArtworkImage(from: data) {
+                storeArtwork(image, for: cacheKey)
+                continue
+            }
+
+            if musicArtworkURLCache[cacheKey] == nil,
+               let artworkURL = await Self.lookupMusicArtworkURL(for: candidate.track) {
+                musicArtworkURLCache[cacheKey] = artworkURL
+                if let image = await Self.loadArtworkImage(from: artworkURL) {
+                    storeArtwork(image, for: cacheKey)
+                }
+            }
+        }
     }
 
     nonisolated static func automationPermissionStatus(
@@ -305,18 +1144,26 @@ final class PlayerMediaCoordinator {
         )
     }
 
-    private func prioritizedSources(frontmostBundleID: String?) -> [ScriptSource] {
+    private func prioritizedSources(
+        frontmostBundleID: String?,
+        preferredSourceKind: PlayerSourceKind?
+    ) -> [ScriptSource] {
         var ordered: [ScriptSource] = []
+
+        if let preferredSourceKind,
+           let preferredSource = sources.first(where: { $0.kind == preferredSourceKind }) {
+            ordered.append(preferredSource)
+        }
 
         if let frontmostBundleID,
            let frontmostSource = sources.first(where: { $0.kind.bundleIdentifier == frontmostBundleID }) {
-            ordered.append(frontmostSource)
+            appendSourceIfNeeded(frontmostSource, to: &ordered)
         }
 
         if let lastPreferredSourceKind,
            let preferredSource = sources.first(where: { $0.kind == lastPreferredSourceKind }),
            !ordered.contains(where: { $0.kind == preferredSource.kind }) {
-            ordered.append(preferredSource)
+            appendSourceIfNeeded(preferredSource, to: &ordered)
         }
 
         for source in sources where !ordered.contains(where: { $0.kind == source.kind }) {
@@ -324,6 +1171,12 @@ final class PlayerMediaCoordinator {
         }
 
         return ordered
+    }
+
+    private func appendSourceIfNeeded(_ source: ScriptSource, to sources: inout [ScriptSource]) {
+        if !sources.contains(where: { $0.kind == source.kind }) {
+            sources.append(source)
+        }
     }
 
     private func makeMusicSource() -> ScriptSource {
@@ -409,6 +1262,40 @@ final class PlayerMediaCoordinator {
         )
     }
 
+    private func makePodcastsSource() -> ScriptSource {
+        ScriptSource(
+            kind: .podcasts,
+            fetchState: { [weak self] in
+                await self?.fetchPodcastsState() ?? .unavailable
+            },
+            previousTrack: {
+                Self.sendPodcastsMediaRemoteCommand(.previousTrack)
+            },
+            togglePlayPause: {
+                Self.sendPodcastsMediaRemoteCommand(.togglePlayPause)
+            },
+            nextTrack: {
+                Self.sendPodcastsMediaRemoteCommand(.nextTrack)
+            },
+            seek: { _ in },
+            toggleShuffle: {},
+            cycleRepeat: {}
+        )
+    }
+
+    private static func sendPodcastsMediaRemoteCommand(_ command: PlayerMediaRemoteBridge.Command) {
+        let didActivate = activateApplicationIfRunning(bundleIdentifier: PlayerSourceKind.podcasts.bundleIdentifier)
+        guard didActivate else {
+            PlayerMediaRemoteBridge.shared.send(command)
+            return
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(120))
+            PlayerMediaRemoteBridge.shared.send(command)
+        }
+    }
+
     private func fetchMusicState() async -> FetchResult {
         guard Self.isApplicationRunning(bundleIdentifier: PlayerSourceKind.music.bundleIdentifier) else {
             return .unavailable
@@ -484,6 +1371,61 @@ final class PlayerMediaCoordinator {
             shuffleMode: shuffleMode(for: parts[6]),
             repeatMode: repeatMode(for: parts[7]),
             artworkImage: cachedArtworkImage(for: cacheKey)
+        ))
+    }
+
+    private func fetchPodcastsState() async -> FetchResult {
+        guard Self.isApplicationRunning(bundleIdentifier: PlayerSourceKind.podcasts.bundleIdentifier) else {
+            lastPodcastsSnapshot = nil
+            lastPodcastsSnapshotDate = nil
+            return .unavailable
+        }
+
+        if let snapshot = await PlayerMediaRemoteBridge.shared.snapshot(for: .podcasts) {
+            var artworkImage = snapshot.artworkImage
+            if let track = snapshot.track {
+                let cacheKey = podcastsArtworkCacheKey(for: track, artworkURL: track.artworkURL)
+                if let cachedImage = cachedArtworkImage(for: cacheKey) {
+                    artworkImage = cachedImage
+                } else if let snapshotArtworkImage = snapshot.artworkImage {
+                    storeArtwork(snapshotArtworkImage, for: cacheKey)
+                    artworkImage = snapshotArtworkImage
+                }
+            }
+
+            let resolvedSnapshot = PlayerSnapshot(
+                source: .podcasts,
+                playbackStatus: snapshot.playbackStatus,
+                track: snapshot.track,
+                shuffleMode: .unsupported,
+                repeatMode: .unsupported,
+                artworkImage: artworkImage
+            )
+
+            if resolvedSnapshot.track != nil {
+                lastPodcastsSnapshot = resolvedSnapshot
+                lastPodcastsSnapshotDate = Date()
+            } else {
+                lastPodcastsSnapshot = nil
+                lastPodcastsSnapshotDate = nil
+            }
+
+            return .snapshot(resolvedSnapshot)
+        }
+
+        if let lastPodcastsSnapshot,
+           let lastPodcastsSnapshotDate,
+           Date().timeIntervalSince(lastPodcastsSnapshotDate) <= podcastsSnapshotGraceInterval {
+            return .snapshot(lastPodcastsSnapshot)
+        }
+
+        return .snapshot(PlayerSnapshot(
+            source: .podcasts,
+            playbackStatus: .stopped,
+            track: nil,
+            shuffleMode: .unsupported,
+            repeatMode: .unsupported,
+            artworkImage: nil
         ))
     }
 
@@ -628,6 +1570,19 @@ final class PlayerMediaCoordinator {
         ].joined(separator: "\u{1F}")
     }
 
+    private func podcastsArtworkCacheKey(for track: PlayerTrackMetadata, artworkURL: URL?) -> String {
+        if let artworkURL {
+            return "podcasts:\(artworkURL.absoluteString)"
+        }
+
+        return [
+            "podcasts",
+            track.title,
+            track.artist,
+            track.album ?? "",
+        ].joined(separator: "\u{1F}")
+    }
+
     private func cachedArtworkImage(for key: String) -> NSImage? {
         artworkCache[key]
     }
@@ -653,6 +1608,149 @@ final class PlayerMediaCoordinator {
         }
 
         return await decodeArtworkImage(from: data)
+    }
+
+    private func loadUpcomingMusicArtworkCandidates(limit: Int) async -> [MusicArtworkPrefetchCandidate] {
+        let outputDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FantasticIsland-MusicArtworkPrefetch-\(UUID().uuidString)", isDirectory: true)
+
+        do {
+            try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+        } catch {
+            return []
+        }
+
+        let outputDirectoryPath = outputDirectory.path
+        let result = await scriptWorker.execute([
+            #"set previousDelimiters to AppleScript's text item delimiters"#,
+            #"try"#,
+            #"tell application "Music""#,
+            #"if player state is stopped then error number -128"#,
+            #"set playlistRef to current playlist"#,
+            #"set currentTrack to current track"#,
+            #"set currentDatabaseID to database ID of currentTrack"#,
+            #"set currentPersistentID to persistent ID of currentTrack"#,
+            #"set trackCount to count of tracks of playlistRef"#,
+            #"set currentIndex to 0"#,
+            #"repeat with trackIndex from 1 to trackCount"#,
+            #"set candidateTrack to track trackIndex of playlistRef"#,
+            #"if database ID of candidateTrack is currentDatabaseID and persistent ID of candidateTrack is currentPersistentID then"#,
+            #"set currentIndex to trackIndex"#,
+            #"exit repeat"#,
+            #"end if"#,
+            #"end repeat"#,
+            #"if currentIndex is 0 then error number -128"#,
+            #"set outputRecords to {}"#,
+            #"set lastIndex to currentIndex + \#(limit)"#,
+            #"if lastIndex > trackCount then set lastIndex to trackCount"#,
+            #"repeat with trackIndex from (currentIndex + 1) to lastIndex"#,
+            #"set nextTrack to track trackIndex of playlistRef"#,
+            #"set trackName to name of nextTrack"#,
+            #"set artistName to artist of nextTrack"#,
+            #"set albumName to album of nextTrack"#,
+            #"set durationSeconds to duration of nextTrack"#,
+            #"set artworkPath to """#,
+            #"if (count of artworks of nextTrack) > 0 then"#,
+            #"set artworkPath to "\#(outputDirectoryPath)/artwork-" & (trackIndex as text) & ".data""#,
+            #"set artworkData to raw data of artwork 1 of nextTrack"#,
+            #"set outputFile to POSIX file artworkPath"#,
+            #"set fileReference to open for access outputFile with write permission"#,
+            #"try"#,
+            #"set eof fileReference to 0"#,
+            #"write artworkData to fileReference"#,
+            #"close access fileReference"#,
+            #"on error"#,
+            #"try"#,
+            #"close access fileReference"#,
+            #"end try"#,
+            #"set artworkPath to """#,
+            #"end try"#,
+            #"end if"#,
+            #"set AppleScript's text item delimiters to (ASCII character 31)"#,
+            #"set end of outputRecords to {trackName, artistName, albumName, (durationSeconds as text), artworkPath} as text"#,
+            #"end repeat"#,
+            #"end tell"#,
+            #"set AppleScript's text item delimiters to (ASCII character 30)"#,
+            #"set outputText to outputRecords as text"#,
+            #"set AppleScript's text item delimiters to previousDelimiters"#,
+            #"return outputText"#,
+            #"on error"#,
+            #"set AppleScript's text item delimiters to previousDelimiters"#,
+            #"return """#,
+            #"end try"#,
+        ])
+
+        guard let output = result.stringValue else {
+            try? FileManager.default.removeItem(at: outputDirectory)
+            return []
+        }
+
+        let candidates = output
+            .components(separatedBy: "\u{1E}")
+            .compactMap { record -> MusicArtworkPrefetchCandidate? in
+                let parts = record.components(separatedBy: "\u{1F}")
+                guard parts.count >= 5 else {
+                    return nil
+                }
+
+                let artworkFileURL = parts[4].isEmpty ? nil : URL(fileURLWithPath: parts[4])
+                return MusicArtworkPrefetchCandidate(
+                    track: PlayerTrackMetadata(
+                        title: fallback(parts[0], default: "Unknown Track"),
+                        artist: fallback(parts[1], default: "Unknown Artist"),
+                        album: parts[2].nilIfEmpty,
+                        duration: Double(parts[3]) ?? 0,
+                        elapsed: 0,
+                        artworkURL: nil
+                    ),
+                    artworkFileURL: artworkFileURL
+                )
+            }
+
+        if candidates.isEmpty {
+            try? FileManager.default.removeItem(at: outputDirectory)
+        }
+
+        return candidates
+    }
+
+    private func loadMusicArtworkFromCurrentTrack() async -> NSImage? {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FantasticIsland-MusicArtwork-\(UUID().uuidString)")
+
+        defer {
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+
+        let result = await scriptWorker.execute([
+            #"tell application "Music""#,
+            #"if player state is stopped then return """#,
+            #"set currentTrack to current track"#,
+            #"if (count of artworks of currentTrack) is 0 then return """#,
+            #"set artworkData to raw data of artwork 1 of currentTrack"#,
+            #"end tell"#,
+            #"set outputFile to POSIX file "\#(fileURL.path)""#,
+            #"set fileReference to open for access outputFile with write permission"#,
+            #"try"#,
+            #"set eof fileReference to 0"#,
+            #"write artworkData to fileReference"#,
+            #"close access fileReference"#,
+            #"on error"#,
+            #"try"#,
+            #"close access fileReference"#,
+            #"end try"#,
+            #"return """#,
+            #"end try"#,
+            #"return POSIX path of outputFile"#,
+        ])
+
+        guard result.stringValue != nil,
+              let data = try? Data(contentsOf: fileURL),
+              !data.isEmpty else {
+            return nil
+        }
+
+        return await Self.decodeArtworkImage(from: data)
     }
 
     private static func decodeArtworkImage(from data: Data) async -> NSImage? {
@@ -813,6 +1911,17 @@ final class PlayerMediaCoordinator {
 
     nonisolated private static func isApplicationRunning(bundleIdentifier: String) -> Bool {
         !NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).isEmpty
+    }
+
+    @discardableResult
+    nonisolated private static func activateApplicationIfRunning(bundleIdentifier: String) -> Bool {
+        guard let runningApplication = NSRunningApplication
+            .runningApplications(withBundleIdentifier: bundleIdentifier)
+            .first else {
+            return false
+        }
+
+        return runningApplication.activate(options: [.activateAllWindows])
     }
 
     nonisolated private static func launchApplication(bundleIdentifier: String) -> Bool {

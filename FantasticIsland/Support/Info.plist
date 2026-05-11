@@ -25,7 +25,7 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>Fantastic Island needs access to Music and Spotify so Player can read playback and control transport.</string>
+	<string>Fantastic Island needs access to Music, Podcasts, and Spotify so Player can read playback and control transport.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

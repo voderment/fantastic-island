@@ -101,6 +101,7 @@ swift test
 
 ## 发布说明
 
+- [v0.3.0](./docs/releases/v0.3.0.md) - Player 播放源切换与 Codex 问题流
 - [v0.2.0](./docs/releases/v0.2.0.md) - Island 动画与交互细节优化
 - [v0.1.0](./docs/releases/v0.1.0.md) - 首个公开源码版本
 

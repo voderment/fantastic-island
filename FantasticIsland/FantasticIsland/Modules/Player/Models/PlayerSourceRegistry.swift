@@ -3,6 +3,7 @@ import Foundation
 
 enum PlayerSourceKind: String, CaseIterable, Equatable, Hashable, Identifiable {
     case music
+    case podcasts
     case spotify
 
     nonisolated var id: String { rawValue }
@@ -34,18 +35,18 @@ enum PlayerSourceRegistry {
             sourceKind: .music
         ),
         PlayerAppDescriptor(
+            id: PlayerSourceKind.podcasts.rawValue,
+            displayName: "Apple Podcasts",
+            bundleIdentifier: "com.apple.podcasts",
+            supportsTransportControls: true,
+            sourceKind: .podcasts
+        ),
+        PlayerAppDescriptor(
             id: PlayerSourceKind.spotify.rawValue,
             displayName: "Spotify",
             bundleIdentifier: "com.spotify.client",
             supportsTransportControls: true,
             sourceKind: .spotify
-        ),
-        PlayerAppDescriptor(
-            id: "podcasts",
-            displayName: "Podcasts",
-            bundleIdentifier: "com.apple.podcasts",
-            supportsTransportControls: false,
-            sourceKind: nil
         ),
         PlayerAppDescriptor(
             id: "netease_music",
@@ -73,6 +74,17 @@ enum PlayerSourceRegistry {
 
     static func installedControllableSources() -> [PlayerSourceKind] {
         installedDescriptors().compactMap(\.sourceKind)
+    }
+
+    static func installedApplePlaybackSources() -> [PlayerSourceKind] {
+        installedControllableSources().filter { sourceKind in
+            switch sourceKind {
+            case .music, .podcasts:
+                return true
+            case .spotify:
+                return false
+            }
+        }
     }
 
     static func runningControllableSources() -> [PlayerSourceKind] {

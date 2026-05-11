@@ -1155,18 +1155,23 @@ final class IslandAppModel: ObservableObject {
         presentedActivity = nextPresentedActivity
 
         if allowAutoPresentation,
-           let frontmostActivity,
            islandPeeking,
-           shouldAutoPresent(frontmostActivity, comparedTo: previousActivitiesByID, allowDuringPeek: true) {
-            selectModuleIfNeededForAutoPresentation(frontmostActivity)
-            presentedActivity = frontmostActivity
-            presentPeek(for: frontmostActivity)
+           let autoPresentationCandidate = autoPresentationCandidate(
+            from: filteredActivities,
+            comparedTo: previousActivitiesByID,
+            allowDuringPeek: true
+           ) {
+            selectModuleIfNeededForAutoPresentation(autoPresentationCandidate)
+            presentedActivity = autoPresentationCandidate
+            presentPeek(for: autoPresentationCandidate)
         } else if allowAutoPresentation,
-                  let frontmostActivity,
-                  shouldAutoPresent(frontmostActivity, comparedTo: previousActivitiesByID) {
-            selectModuleIfNeededForAutoPresentation(frontmostActivity)
-            presentedActivity = frontmostActivity
-            presentPeek(for: frontmostActivity)
+                  let autoPresentationCandidate = autoPresentationCandidate(
+                    from: filteredActivities,
+                    comparedTo: previousActivitiesByID
+                  ) {
+            selectModuleIfNeededForAutoPresentation(autoPresentationCandidate)
+            presentedActivity = autoPresentationCandidate
+            presentPeek(for: autoPresentationCandidate)
         }
 
         if openReason?.isNotification == true {
@@ -1212,6 +1217,20 @@ final class IslandAppModel: ObservableObject {
             }
 
             return lhs.id < rhs.id
+        }
+    }
+
+    private func autoPresentationCandidate(
+        from activities: [IslandActivity],
+        comparedTo previousActivitiesByID: [String: IslandActivity],
+        allowDuringPeek: Bool = false
+    ) -> IslandActivity? {
+        activities.first {
+            shouldAutoPresent(
+                $0,
+                comparedTo: previousActivitiesByID,
+                allowDuringPeek: allowDuringPeek
+            )
         }
     }
 

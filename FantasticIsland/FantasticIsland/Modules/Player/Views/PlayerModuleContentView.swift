@@ -6,11 +6,12 @@ struct PlayerModuleRenderState {
     let nowPlayingState: PlayerNowPlayingState
     let trackSwitchNotification: PlayerModuleModel.TrackSwitchNotification?
     let supportsTransportControls: Bool
-    let canActivateCurrentSource: Bool
     let automationIssue: PlayerAutomationIssue?
     let canRequestAutomationAccess: Bool
     let isResolvingAutomationAccess: Bool
-    let sourceBadgeImage: NSImage?
+    let sourceOptions: [PlayerSourceKind]
+    let selectedSource: PlayerSourceKind
+    let sourceIconImages: [PlayerSourceKind: NSImage]
     let previousTrack: () -> Void
     let togglePlayPause: () -> Void
     let nextTrack: () -> Void
@@ -20,7 +21,7 @@ struct PlayerModuleRenderState {
     let requestAutomationAccess: () -> Void
     let openAutomationSettings: () -> Void
     let refresh: () -> Void
-    let activateCurrentSource: () -> Void
+    let selectSource: (PlayerSourceKind) -> Void
 }
 
 struct PlayerModuleLiveContentView: View {
@@ -131,65 +132,43 @@ struct PlayerModuleContentView: View {
     }
 
     private var artworkView: some View {
-        Group {
-            if state.canActivateCurrentSource {
-                Button(action: state.activateCurrentSource) {
-                    artworkBody
-                }
-                .buttonStyle(PlayerArtworkButtonStyle())
-                .help("Open \(state.nowPlayingState.sourceLabel)")
-            } else {
-                artworkBody
-            }
-        }
+        artworkBody
+            .help("Switch playback source")
     }
 
     private var artworkBody: some View {
         artworkThumbnail
-            .overlay(alignment: .bottomLeading) {
-                if let badgeImage = state.sourceBadgeImage {
-                    PlayerSourceBadgeView(image: badgeImage)
-                        .offset(x: -5, y: 5)
-                }
+            .overlay(alignment: .bottom) {
+                PlayerSourceSelectorView(
+                    selectedSource: state.selectedSource,
+                    options: state.sourceOptions,
+                    iconImages: state.sourceIconImages,
+                    selectSource: state.selectSource
+                )
+                .frame(width: PlayerExpandedMetrics.artworkSize - 8)
+                .padding(.bottom, 7)
             }
     }
 
     private var artworkThumbnail: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: PlayerExpandedMetrics.artworkCornerRadius, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.08),
-                            Color.white.opacity(0.03),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    )
-
-            if let artworkImage = state.nowPlayingState.artworkImage {
-                Image(nsImage: artworkImage)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                Image(systemName: "music.note")
-                    .font(.system(size: 28, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.28))
-            }
-        }
-        .clipShape(.rect(cornerRadius: PlayerExpandedMetrics.artworkCornerRadius))
-        .frame(width: PlayerExpandedMetrics.artworkSize, height: PlayerExpandedMetrics.artworkSize)
+        PlayerArtworkThumbnailView(
+            artworkImage: state.nowPlayingState.artworkImage,
+            artworkRevision: artworkRevision,
+            trackIdentity: artworkTrackIdentity,
+            hasTrack: state.nowPlayingState.track != nil,
+            size: PlayerExpandedMetrics.artworkSize,
+            cornerRadius: PlayerExpandedMetrics.artworkCornerRadius
+        )
     }
 
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: PlayerExpandedMetrics.titleBlockSpacing) {
             HStack(alignment: .center, spacing: 16) {
-                Text(state.nowPlayingState.titleText)
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.96))
-                    .lineLimit(showsAutomationIssue ? 2 : 1)
-                    .layoutPriority(1)
+                PlayerAnimatedTitleText(
+                    title: state.nowPlayingState.titleText,
+                    lineLimit: showsAutomationIssue ? 2 : 1
+                )
+                .layoutPriority(1)
 
                 Spacer(minLength: 0)
 
@@ -356,6 +335,23 @@ struct PlayerModuleContentView: View {
         scrubProgress ?? state.nowPlayingState.progress
     }
 
+    private var artworkRevision: Int? {
+        state.nowPlayingState.artworkImage.map { ObjectIdentifier($0).hashValue }
+    }
+
+    private var artworkTrackIdentity: String? {
+        guard let track = state.nowPlayingState.track else {
+            return nil
+        }
+
+        return [
+            state.nowPlayingState.source?.rawValue ?? "player",
+            track.title,
+            track.artist,
+            track.album ?? "",
+        ].joined(separator: "\u{1F}")
+    }
+
     private var showsAutomationIssue: Bool {
         state.automationIssue != nil
     }
@@ -405,28 +401,164 @@ struct PlayerModuleContentView: View {
     }
 }
 
-private struct PlayerArtworkButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .brightness(configuration.isPressed ? -0.06 : 0)
-            .animation(.smooth(duration: 0.14), value: configuration.isPressed)
+private struct PlayerAnimatedTitleText: View {
+    let title: String
+    let lineLimit: Int
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 20, weight: .bold))
+            .foregroundStyle(.white.opacity(0.96))
+            .lineLimit(lineLimit)
+            .contentTransition(.numericText())
+            .animation(.smooth(duration: 0.22), value: title)
     }
 }
 
-private struct PlayerSourceBadgeView: View {
-    let image: NSImage
-    var size: CGFloat = 36
-    var cornerRadius: CGFloat = 10
+private struct PlayerArtworkThumbnailView: View {
+    let artworkImage: NSImage?
+    let artworkRevision: Int?
+    let trackIdentity: String?
+    let hasTrack: Bool
+    let size: CGFloat
+    let cornerRadius: CGFloat
+
+    @State private var displayedArtworkImage: NSImage?
+    @State private var displayedArtworkRevision: Int?
+    @State private var displayedArtworkTrackIdentity: String?
+    @State private var placeholderFallbackTask: Task<Void, Never>?
 
     var body: some View {
-        Image(nsImage: image)
-            .resizable()
-            .interpolation(.high)
-            .scaledToFill()
-            .frame(width: size, height: size)
-            .clipShape(.rect(cornerRadius: cornerRadius))
-            .shadow(color: .black.opacity(0.18), radius: 4, x: 0, y: 2)
+        ZStack {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.08),
+                            Color.white.opacity(0.03),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+
+            if let displayedArtworkImage {
+                Image(nsImage: displayedArtworkImage)
+                    .resizable()
+                    .scaledToFill()
+                    .id(displayedArtworkRevision)
+                    .transition(.opacity.combined(with: .scale(scale: 0.985)))
+            } else {
+                Image(systemName: "music.note")
+                    .font(.system(size: 28, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.28))
+                    .transition(.opacity)
+            }
+        }
+        .clipShape(.rect(cornerRadius: cornerRadius))
+        .frame(width: size, height: size)
+        .animation(.smooth(duration: 0.22), value: displayedArtworkRevision)
+        .onAppear(perform: syncDisplayedArtwork)
+        .onChange(of: artworkRevision) { _, _ in
+            syncDisplayedArtwork()
+        }
+        .onChange(of: trackIdentity) { _, _ in
+            syncDisplayedArtwork()
+        }
+        .onChange(of: hasTrack) { _, _ in
+            syncDisplayedArtwork()
+        }
+        .onDisappear {
+            placeholderFallbackTask?.cancel()
+        }
+    }
+
+    private func syncDisplayedArtwork() {
+        if let artworkImage {
+            placeholderFallbackTask?.cancel()
+            displayedArtworkImage = artworkImage
+            displayedArtworkRevision = artworkRevision
+            displayedArtworkTrackIdentity = trackIdentity
+            return
+        }
+
+        if !hasTrack {
+            placeholderFallbackTask?.cancel()
+            displayedArtworkImage = nil
+            displayedArtworkRevision = nil
+            displayedArtworkTrackIdentity = nil
+            return
+        }
+
+        if trackIdentity != displayedArtworkTrackIdentity {
+            schedulePlaceholderFallback(for: trackIdentity)
+        }
+    }
+
+    private func schedulePlaceholderFallback(for trackIdentity: String?) {
+        placeholderFallbackTask?.cancel()
+        placeholderFallbackTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(750))
+            guard !Task.isCancelled,
+                  self.trackIdentity == trackIdentity,
+                  self.artworkRevision == nil else {
+                return
+            }
+
+            withAnimation(.smooth(duration: 0.18)) {
+                displayedArtworkImage = nil
+                displayedArtworkRevision = nil
+                displayedArtworkTrackIdentity = trackIdentity
+            }
+        }
+    }
+}
+
+private struct PlayerSourceSelectorView: View {
+    let selectedSource: PlayerSourceKind
+    let options: [PlayerSourceKind]
+    let iconImages: [PlayerSourceKind: NSImage]
+    let selectSource: (PlayerSourceKind) -> Void
+
+    var body: some View {
+        CapsuleMenuPicker(
+            selection: Binding(
+                get: { selectedSource },
+                set: { selectSource($0) }
+            ),
+            options: options,
+            title: \.displayName,
+            labelTitle: { sourceLabel(for: $0) },
+            isEnabled: options.count > 1,
+            localizeLabel: false,
+            localizeMenuItems: false,
+            maxLabelWidth: 42,
+            icon: { iconImages[$0] },
+            iconSize: 13,
+            itemSpacing: 4,
+            horizontalPadding: 7,
+            verticalPadding: 6,
+            backgroundColor: .black,
+            backgroundOpacity: 0.72,
+            disabledBackgroundOpacity: 0.62,
+            strokeColor: .white,
+            strokeOpacity: 0.16,
+            strokeLineWidth: 0.8
+        )
+        .frame(width: PlayerExpandedMetrics.artworkSize - 8, height: 34)
+        .clipShape(Capsule())
+        .help("Switch playback source")
+    }
+
+    private func sourceLabel(for source: PlayerSourceKind) -> String {
+        switch source {
+        case .music:
+            return "Music"
+        case .podcasts:
+            return "Podcasts"
+        case .spotify:
+            return "Spotify"
+        }
     }
 }
 

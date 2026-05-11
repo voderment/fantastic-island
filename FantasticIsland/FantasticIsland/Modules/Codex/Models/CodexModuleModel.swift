@@ -59,6 +59,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     private static let estimatedSessionRowSpacing: CGFloat = 6
     private static let estimatedActionableSessionHeight: CGFloat = 196
     private static let estimatedApprovalSessionHeight: CGFloat = 248
+    private static let estimatedQuestionSessionHeight: CGFloat = 304
     private static let estimatedTransientSessionHeight: CGFloat = 196
     private static let estimatedPeekNotificationHeight: CGFloat = 120
     private static let estimatedFooterButtonHeight: CGFloat = 28
@@ -430,9 +431,14 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     }
 
     private func estimatedActionableSessionHeight(for session: SessionSnapshot?) -> CGFloat {
-        session?.phase == .waitingForApproval
-            ? Self.estimatedApprovalSessionHeight
-            : Self.estimatedActionableSessionHeight
+        switch session?.phase {
+        case .waitingForApproval:
+            return Self.estimatedApprovalSessionHeight
+        case .waitingForAnswer:
+            return Self.estimatedQuestionSessionHeight
+        case .running, .busy, .completed, nil:
+            return Self.estimatedActionableSessionHeight
+        }
     }
 
     func session(for activity: IslandActivity) -> SessionSnapshot? {

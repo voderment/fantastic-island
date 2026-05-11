@@ -151,6 +151,7 @@ enum DesignTokenEditorLocalization {
         }
     }
 
+#if DEBUG
     static func debugLockModeTitle(_ mode: IslandDebugPanelLockMode, locale: Locale) -> String {
         let text: DesignTokenLocalizedText
         switch mode {
@@ -229,6 +230,7 @@ enum DesignTokenEditorLocalization {
             return "已觸發 \(debugScenarioTitle(scenario, locale: locale))。"
         }
     }
+#endif
 
     private static let groupTitles: [IslandDesignTokenGroup: DesignTokenLocalizedText] = [
         .shell: DesignTokenLocalizedText("Shell", "壳体", "殼體"),

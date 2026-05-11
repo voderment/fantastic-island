@@ -67,6 +67,8 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
     private var pollingTask: Task<Void, Never>?
     private var artworkLoadTask: Task<Void, Never>?
     private var artworkLoadIdentity: TrackIdentity?
+    private var artworkPrefetchTask: Task<Void, Never>?
+    private var artworkPrefetchIdentity: TrackIdentity?
     private var isRefreshing = false
     private var needsRefreshAfterCurrentPass = false
     private var pendingRefreshWorkItem: DispatchWorkItem?
@@ -82,6 +84,8 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
     private static let playbackNotificationNames: [Notification.Name] = [
         Notification.Name("com.apple.Music.playerInfo"),
         Notification.Name("com.apple.iTunes.playerInfo"),
+        Notification.Name("com.apple.podcasts.playerInfo"),
+        Notification.Name("com.apple.Podcasts.playerInfo"),
         Notification.Name("com.spotify.client.PlaybackStateChanged"),
     ]
 
@@ -97,6 +101,7 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
     deinit {
         pollingTask?.cancel()
         artworkLoadTask?.cancel()
+        artworkPrefetchTask?.cancel()
         pendingRefreshWorkItem?.cancel()
         for observer in workspaceObservers {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
@@ -223,23 +228,27 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
             resolvedNotification = nil
         }
 
-        let sourceBadgeImage: NSImage?
-        if nowPlayingState.track != nil, let source = nowPlayingState.source {
-            sourceBadgeImage = PlayerSourceRegistry.appIcon(for: source)
-        } else {
-            sourceBadgeImage = nil
-        }
+        let sourceIconImages = Dictionary(
+            uniqueKeysWithValues: defaultSourceOptions.compactMap { sourceKind -> (PlayerSourceKind, NSImage)? in
+                guard let image = PlayerSourceRegistry.appIcon(for: sourceKind) else {
+                    return nil
+                }
+
+                return (sourceKind, image)
+            }
+        )
 
         return PlayerModuleRenderState(
             presentation: presentation,
             nowPlayingState: nowPlayingState,
             trackSwitchNotification: resolvedNotification,
             supportsTransportControls: supportsTransportControls,
-            canActivateCurrentSource: canActivateCurrentSource,
             automationIssue: automationIssue,
             canRequestAutomationAccess: canRequestAutomationAccess,
             isResolvingAutomationAccess: isResolvingAutomationAccess,
-            sourceBadgeImage: sourceBadgeImage,
+            sourceOptions: defaultSourceOptions,
+            selectedSource: defaultSourceSelection,
+            sourceIconImages: sourceIconImages,
             previousTrack: { [weak self] in Task { @MainActor in self?.previousTrack() } },
             togglePlayPause: { [weak self] in Task { @MainActor in self?.togglePlayPause() } },
             nextTrack: { [weak self] in Task { @MainActor in self?.nextTrack() } },
@@ -249,7 +258,7 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
             requestAutomationAccess: { [weak self] in Task { @MainActor in self?.requestAutomationAccess() } },
             openAutomationSettings: { [weak self] in Task { @MainActor in self?.openAutomationSettings() } },
             refresh: { [weak self] in Task { @MainActor in self?.refresh() } },
-            activateCurrentSource: { [weak self] in Task { @MainActor in self?.activateCurrentSource() } }
+            selectSource: { [weak self] source in Task { @MainActor in self?.selectPlaybackSource(source) } }
         )
     }
 
@@ -270,7 +279,9 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
                 return
             }
 
-            let nextState = await self.mediaCoordinator.fetchCurrentState()
+            let nextState = await self.mediaCoordinator.fetchCurrentState(
+                preferredSourceKind: self.defaultSource
+            )
             self.finishRefresh(with: nextState)
         }
     }
@@ -328,6 +339,24 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
             sourceKind,
             installedControllableSources: defaultSourceOptions
         )
+    }
+
+    func selectPlaybackSource(_ sourceKind: PlayerSourceKind) {
+        let resolvedSource = PlayerModuleSettings.setDefaultSource(
+            sourceKind,
+            installedControllableSources: defaultSourceOptions
+        )
+        defaultSource = resolvedSource
+
+        guard resolvedSource == sourceKind else {
+            return
+        }
+
+        mediaCoordinator.activateSourceApplication(for: sourceKind)
+        if nowPlayingState.source != sourceKind {
+            nowPlayingState = .idleState(source: sourceKind)
+        }
+        refreshSoon(after: 0.35)
     }
 
     func requestAutomationAccess() {
@@ -471,7 +500,7 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
             self.installedSourceApps = installedSourceApps
         }
 
-        let defaultSourceOptions = PlayerSourceRegistry.installedControllableSources()
+        let defaultSourceOptions = PlayerSourceRegistry.installedApplePlaybackSources()
         if defaultSourceOptions != self.defaultSourceOptions {
             self.defaultSourceOptions = defaultSourceOptions
         }
@@ -565,8 +594,19 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
     }
 
     private func requestArtworkLoadIfNeeded(for state: PlayerNowPlayingState) {
-        guard let identity = TrackIdentity(state: state),
-              state.artworkImage == nil else {
+        guard let identity = TrackIdentity(state: state) else {
+            artworkLoadTask?.cancel()
+            artworkLoadTask = nil
+            artworkLoadIdentity = nil
+            artworkPrefetchTask?.cancel()
+            artworkPrefetchTask = nil
+            artworkPrefetchIdentity = nil
+            return
+        }
+
+        scheduleArtworkPrefetchIfNeeded(for: state, identity: identity)
+
+        guard state.artworkImage == nil else {
             artworkLoadTask?.cancel()
             artworkLoadTask = nil
             artworkLoadIdentity = nil
@@ -600,6 +640,40 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
             }
 
             self.nowPlayingState.artworkImage = artworkImage
+        }
+    }
+
+    private func scheduleArtworkPrefetchIfNeeded(
+        for state: PlayerNowPlayingState,
+        identity: TrackIdentity
+    ) {
+        guard state.source == .music,
+              state.shuffleMode == .off else {
+            artworkPrefetchTask?.cancel()
+            artworkPrefetchTask = nil
+            artworkPrefetchIdentity = nil
+            return
+        }
+
+        guard artworkPrefetchIdentity != identity else {
+            return
+        }
+
+        artworkPrefetchTask?.cancel()
+        artworkPrefetchIdentity = identity
+
+        artworkPrefetchTask = Task { [weak self, state, identity] in
+            guard let self else {
+                return
+            }
+
+            defer {
+                if self.artworkPrefetchIdentity == identity {
+                    self.artworkPrefetchTask = nil
+                }
+            }
+
+            await self.mediaCoordinator.prefetchUpcomingArtwork(after: state, limit: 2)
         }
     }
 

@@ -172,14 +172,14 @@ struct CodexIslandSessionRow: View {
                     .layoutPriority(1)
                 }
 
-                if let promptLineText {
+                if showsPromptLineInHeader, let promptLineText {
                     Text(promptLineText)
                         .font(.system(size: promptFontSize, weight: .medium))
                         .foregroundStyle(.white.opacity(promptOpacity))
                         .lineLimit(1)
                 }
 
-                if let activityLineText {
+                if showsActivityLineInHeader, let activityLineText {
                     Text(activityLineText)
                         .font(.system(size: activityFontSize, weight: .medium))
                         .foregroundStyle(activityColor.opacity(activityOpacity))
@@ -293,6 +293,14 @@ struct CodexIslandSessionRow: View {
         }
 
         return session.phase.displayName
+    }
+
+    private var showsPromptLineInHeader: Bool {
+        !(usesPeekStyle && session.phase.requiresAttention)
+    }
+
+    private var showsActivityLineInHeader: Bool {
+        !(usesPeekStyle && session.phase.requiresAttention)
     }
 
     private var headlineColor: Color {
@@ -855,9 +863,12 @@ private struct CodexStructuredQuestionPromptView: View {
     var isEnabled: Bool
     let onAnswer: (CodexQuestionResponse) -> Void
 
+    @State private var activeQuestionIndex = 0
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if let title = prompt?.title.trimmingCharacters(in: .whitespacesAndNewlines),
+            if questionItems.isEmpty,
+               let title = prompt?.title.trimmingCharacters(in: .whitespacesAndNewlines),
                !title.isEmpty {
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
@@ -875,60 +886,32 @@ private struct CodexStructuredQuestionPromptView: View {
                         .disabled(!isEnabled)
                     }
                 }
-            } else {
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        ForEach(questionItems, id: \.id) { item in
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(item.header)
-                                    .font(.system(size: 10.5, weight: .bold))
-                                    .foregroundStyle(.white.opacity(0.5))
+            } else if questionItems.count == 1, let item = questionItems.first {
+                VStack(alignment: .leading, spacing: 12) {
+                    questionItemView(item)
 
-                                Text(item.question)
-                                    .font(.system(size: 12.5, weight: .medium))
-                                    .foregroundStyle(.white.opacity(0.88))
-                                    .fixedSize(horizontal: false, vertical: true)
-
-                                HStack(spacing: 8) {
-                                    ForEach(item.options.prefix(4), id: \.label) { option in
-                                        Button(option.label) {
-                                            toggle(option: option.label, for: item)
-                                        }
-                                        .buttonStyle(
-                                            CodexWideButtonStyle(
-                                                kind: selectedLabels(for: item).contains(option.label) ? .primary : .secondary
-                                            )
-                                        )
-                                        .disabled(!isEnabled)
-                                    }
-                                }
-                            }
-                        }
-
-                        Button("Submit") {
-                            onAnswer(CodexQuestionResponse(answers: answerMap))
-                        }
-                        .buttonStyle(CodexWideButtonStyle(kind: .primary))
-                        .disabled(!isEnabled || !hasCompleteSelection)
+                    Button("Submit") {
+                        onAnswer(CodexQuestionResponse(answers: answerMap))
                     }
+                    .buttonStyle(CodexWideButtonStyle(kind: .primary))
+                    .disabled(!isEnabled || !hasCompleteSelection)
                 }
+            } else {
+                pagedQuestionFlow
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.04))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(.white.opacity(0.06))
-        )
+        .onChange(of: questionIDs) { _, _ in
+            activeQuestionIndex = 0
+        }
     }
 
     private var questionItems: [CodexQuestionItem] {
         prompt?.questions ?? []
+    }
+
+    private var questionIDs: [String] {
+        questionItems.map(\.id)
     }
 
     private var answerMap: [String: [String]] {
@@ -945,8 +928,136 @@ private struct CodexStructuredQuestionPromptView: View {
         questionItems.allSatisfy { !selectedLabels(for: $0).isEmpty }
     }
 
+    private var currentQuestionIndex: Int {
+        guard !questionItems.isEmpty else {
+            return 0
+        }
+
+        return min(max(activeQuestionIndex, 0), questionItems.count - 1)
+    }
+
+    private var currentQuestion: CodexQuestionItem? {
+        guard !questionItems.isEmpty else {
+            return nil
+        }
+
+        return questionItems[currentQuestionIndex]
+    }
+
+    private var pagedQuestionFlow: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            questionProgressHeader
+
+            if let currentQuestion {
+                questionItemView(currentQuestion)
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    activeQuestionIndex = max(currentQuestionIndex - 1, 0)
+                } label: {
+                    Label("Back", systemImage: "chevron.left")
+                }
+                .buttonStyle(CodexQuestionNavigationButtonStyle())
+                .disabled(!isEnabled || currentQuestionIndex == 0)
+
+                Button {
+                    if currentQuestionIndex == questionItems.count - 1 {
+                        onAnswer(CodexQuestionResponse(answers: answerMap))
+                    } else {
+                        activeQuestionIndex = min(currentQuestionIndex + 1, questionItems.count - 1)
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(currentQuestionIndex == questionItems.count - 1 ? "Submit" : "Next")
+                        if currentQuestionIndex < questionItems.count - 1 {
+                            Image(systemName: "chevron.right")
+                        }
+                    }
+                }
+                .buttonStyle(CodexQuestionNavigationButtonStyle(isPrimary: currentQuestionIndex == questionItems.count - 1))
+                .disabled(!isEnabled || !canAdvanceCurrentQuestion)
+            }
+        }
+    }
+
+    private var questionProgressHeader: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Text("Question \(currentQuestionIndex + 1) of \(questionItems.count)")
+                    .font(.system(size: 10.5, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.52))
+                    .lineLimit(1)
+
+                Spacer(minLength: 8)
+
+                Text("\(answerMap.count)/\(questionItems.count) answered")
+                    .font(.system(size: 10.5, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.42))
+                    .lineLimit(1)
+            }
+
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(.white.opacity(0.08))
+
+                    Capsule()
+                        .fill(Color(red: 0.26, green: 0.45, blue: 0.86).opacity(0.95))
+                        .frame(width: geometry.size.width * progressFraction)
+                }
+            }
+            .frame(height: 3)
+        }
+    }
+
+    private var progressFraction: CGFloat {
+        guard !questionItems.isEmpty else {
+            return 0
+        }
+
+        return CGFloat(currentQuestionIndex + 1) / CGFloat(questionItems.count)
+    }
+
+    private var canAdvanceCurrentQuestion: Bool {
+        guard let currentQuestion else {
+            return false
+        }
+
+        if currentQuestionIndex == questionItems.count - 1 {
+            return hasCompleteSelection
+        }
+
+        return !selectedLabels(for: currentQuestion).isEmpty
+    }
+
     private func selectedLabels(for item: CodexQuestionItem) -> Set<String> {
         selections[item.id] ?? []
+    }
+
+    private func questionItemView(_ item: CodexQuestionItem) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if !item.header.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(item.header)
+                    .font(.system(size: 10.5, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+
+            Text(item.question)
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.88))
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                ForEach(item.options.prefix(4), id: \.label) { option in
+                    Button(option.label) {
+                        toggle(option: option.label, for: item)
+                    }
+                    .buttonStyle(CodexQuestionChoiceButtonStyle(isSelected: selectedLabels(for: item).contains(option.label)))
+                    .disabled(!isEnabled)
+                }
+            }
+        }
     }
 
     private func toggle(option: String, for item: CodexQuestionItem) {
@@ -1063,6 +1174,8 @@ private struct CodexWideButtonStyle: ButtonStyle {
 
     let kind: Kind
 
+    @Environment(\.isEnabled) private var isEnabled
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 11.5, weight: .semibold))
@@ -1070,9 +1183,14 @@ private struct CodexWideButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
             .background(backgroundColor(configuration.isPressed), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .opacity(isEnabled ? 1 : 0.42)
     }
 
     private var foregroundColor: Color {
+        if !isEnabled {
+            return .white.opacity(0.48)
+        }
+
         switch kind {
         case .primary, .warning, .danger:
             return .white
@@ -1082,6 +1200,10 @@ private struct CodexWideButtonStyle: ButtonStyle {
     }
 
     private func backgroundColor(_ isPressed: Bool) -> Color {
+        if !isEnabled {
+            return Color.white.opacity(0.08)
+        }
+
         let pressedFactor: Double = isPressed ? 0.78 : 1.0
         switch kind {
         case .primary:
@@ -1093,6 +1215,89 @@ private struct CodexWideButtonStyle: ButtonStyle {
         case .danger:
             return Color(red: 0.82, green: 0.22, blue: 0.22).opacity(pressedFactor)
         }
+    }
+}
+
+private struct CodexQuestionChoiceButtonStyle: ButtonStyle {
+    let isSelected: Bool
+
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12.5, weight: .semibold))
+            .foregroundStyle(foregroundColor)
+            .multilineTextAlignment(.center)
+            .lineLimit(2)
+            .minimumScaleFactor(0.82)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .padding(.horizontal, 12)
+            .background(backgroundColor(isPressed: configuration.isPressed), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .strokeBorder(borderColor, lineWidth: isSelected ? 1 : 0.75)
+            }
+            .opacity(isEnabled ? 1 : 0.46)
+    }
+
+    private var foregroundColor: Color {
+        if !isEnabled {
+            return .white.opacity(0.46)
+        }
+
+        return isSelected ? .white : .white.opacity(0.86)
+    }
+
+    private func backgroundColor(isPressed: Bool) -> Color {
+        if !isEnabled {
+            return Color.white.opacity(0.06)
+        }
+
+        if isSelected {
+            return Color(red: 0.26, green: 0.45, blue: 0.86).opacity(isPressed ? 0.70 : 0.92)
+        }
+
+        return Color.white.opacity(isPressed ? 0.12 : 0.09)
+    }
+
+    private var borderColor: Color {
+        isSelected ? Color.white.opacity(0.24) : Color.white.opacity(0.07)
+    }
+}
+
+private struct CodexQuestionNavigationButtonStyle: ButtonStyle {
+    var isPrimary = false
+
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .labelStyle(.titleAndIcon)
+            .font(.system(size: 11.5, weight: .semibold))
+            .foregroundStyle(foregroundColor)
+            .frame(maxWidth: .infinity, minHeight: 38)
+            .background(backgroundColor(isPressed: configuration.isPressed), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .opacity(isEnabled ? 1 : 0.38)
+    }
+
+    private var foregroundColor: Color {
+        if !isEnabled {
+            return .white.opacity(0.44)
+        }
+
+        return isPrimary ? .white : .white.opacity(0.78)
+    }
+
+    private func backgroundColor(isPressed: Bool) -> Color {
+        if !isEnabled {
+            return Color.white.opacity(0.06)
+        }
+
+        if isPrimary {
+            return Color(red: 0.26, green: 0.45, blue: 0.86).opacity(isPressed ? 0.74 : 0.96)
+        }
+
+        return Color.white.opacity(isPressed ? 0.11 : 0.08)
     }
 }
 
