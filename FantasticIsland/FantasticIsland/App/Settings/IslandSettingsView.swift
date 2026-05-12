@@ -351,6 +351,8 @@ struct IslandSettingsView: View {
                     clashModulePage
                 case PlayerModuleModel.moduleID:
                     playerModulePage
+                case XPostModuleModel.moduleID:
+                    twitterModulePage
                 default:
                     SettingsCard(title: "Module Specific") {
                         PlaceholderRow(
@@ -891,6 +893,105 @@ struct IslandSettingsView: View {
         }
     }
 
+    private var twitterModulePage: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            SettingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    SettingsSectionHeader(
+                        title: "X Developer App",
+                        detail: "Use your own X OAuth 2.0 Native/Public app with PKCE. Fantastic Island does not ship maintainer API credits."
+                    )
+
+                    SettingsField(
+                        title: "Client ID",
+                        prompt: "OAuth 2.0 Client ID",
+                        text: Binding(
+                            get: { model.xPostModule.configuredClientID },
+                            set: { model.xPostModule.updateConfiguredClientID($0) }
+                        )
+                    )
+
+                    SettingsInfoBlock(
+                        title: "Callback URL",
+                        value: XPostModuleSettings.callbackURL.absoluteString,
+                        monospaced: true,
+                        valueColor: .white.opacity(0.76)
+                    )
+
+                    Text("Create an X Developer project, enable OAuth 2.0, choose a Native/Public client, add this callback URL, and enable tweet.read, tweet.write, users.read, and offline.access scopes.")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            SettingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    SettingsSectionHeader(
+                        title: "Account",
+                        detail: "Sign in once with X after adding your Client ID. Tokens stay in the local Keychain."
+                    )
+
+                    SettingsInfoBlock(
+                        title: "Status",
+                        value: model.xPostModule.accountStatusText,
+                        monospaced: false,
+                        valueColor: model.xPostModule.isAuthenticated ? Color.green.opacity(0.86) : .white.opacity(0.72)
+                    )
+
+                    AdaptiveActionGroup {
+                        ProminentActionButton(title: model.xPostModule.isSigningIn ? "Signing in..." : "Sign in with X") {
+                            model.xPostModule.signIn()
+                        }
+                        .opacity(model.xPostModule.canSignIn ? 1 : 0.5)
+                        .disabled(!model.xPostModule.canSignIn)
+
+                        if model.xPostModule.isAuthenticated {
+                            SecondaryActionButton(title: "Disconnect", tint: Color.red.opacity(0.22)) {
+                                model.xPostModule.disconnect()
+                            }
+                        }
+                    }
+
+                    if let errorMessage = model.xPostModule.errorMessage, !errorMessage.isEmpty {
+                        Text(LocalizedStringKey(errorMessage))
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.red.opacity(0.9))
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else if let statusMessage = model.xPostModule.statusMessage, !statusMessage.isEmpty {
+                        Text(LocalizedStringKey(statusMessage))
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.green.opacity(0.82))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
+            SettingsCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    SettingsSectionHeader(
+                        title: "Posting Policy",
+                        detail: "Version 1 only publishes text posts through the official X API."
+                    )
+
+                    SettingsInfoBlock(
+                        title: "Supported",
+                        value: "Plain text posts",
+                        monospaced: false,
+                        valueColor: .white.opacity(0.76)
+                    )
+
+                    SettingsInfoBlock(
+                        title: "Blocked",
+                        value: "URLs, media, replies, quotes, threads, timelines, and browser compose fallbacks",
+                        monospaced: false,
+                        valueColor: Color.orange.opacity(0.86)
+                    )
+                }
+            }
+        }
+    }
+
     private func pageHeader(title: String, caption: String?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(LocalizedStringKey(title))
@@ -1222,6 +1323,8 @@ struct IslandSettingsView: View {
             return "Switch between detection mode and managed mode, then focus on the settings and actions relevant to the mode you picked."
         case PlayerModuleModel.moduleID:
             return "Review the current media integration state and keep transport controls close at hand."
+        case XPostModuleModel.moduleID:
+            return "Configure your own X API credentials, sign in, and publish text-only posts from the island."
         default:
             return nil
         }

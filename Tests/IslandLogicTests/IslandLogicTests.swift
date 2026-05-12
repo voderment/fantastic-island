@@ -144,6 +144,26 @@ final class IslandLogicTests: XCTestCase {
         XCTAssertEqual(ClashConfigSupport.formatTrafficRate(1024 * 1024), "1 MB/s")
     }
 
+    func testXPostValidatorBlocksURLs() {
+        XCTAssertTrue(XPostTextValidator.validate("hello https://example.com").containsURL)
+        XCTAssertTrue(XPostTextValidator.validate("hello http://example.com").containsURL)
+        XCTAssertTrue(XPostTextValidator.validate("hello www.example.com").containsURL)
+        XCTAssertFalse(XPostTextValidator.validate("hello example dot com").containsURL)
+    }
+
+    func testXPostValidatorRejectsEmptyText() {
+        let validation = XPostTextValidator.validate(" \n\t ")
+        XCTAssertTrue(validation.isEmpty)
+        XCTAssertFalse(validation.isValid)
+    }
+
+    func testXPostValidatorRejectsOverLimitWeightedText() {
+        let validation = XPostTextValidator.validate(String(repeating: "发", count: 141))
+        XCTAssertEqual(validation.weightedLength, 282)
+        XCTAssertTrue(validation.isOverLimit)
+        XCTAssertFalse(validation.isValid)
+    }
+
     func testCodexClientHandlesSynchronousResponseDuringWrite() async throws {
         let transport = FakeTransport()
         transport.onRequest = { request in

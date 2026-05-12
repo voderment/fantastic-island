@@ -21,6 +21,8 @@ let package = Package(
                 "Modules/Clash/Models/ClashConfigSupport.swift",
                 "Modules/Clash/Models/ClashRuntimeModels.swift",
                 "Modules/Clash/Models/ClashModuleSettings.swift",
+                "Modules/XPost/Models/XPostTextValidation.swift",
+                "Shared/Security/KeychainSecretStore.swift",
             ]
         ),
         .testTarget(

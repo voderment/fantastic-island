@@ -1,5 +1,4 @@
 import Foundation
-import Security
 
 enum ClashModuleSettings {
     private static let modeKey = "clash.module.mode"
@@ -23,6 +22,7 @@ enum ClashModuleSettings {
     private static let managedTunStrictRouteKey = "clash.module.managed.tunStrictRoute"
     private static let managedTunAutoRouteKey = "clash.module.managed.tunAutoRoute"
     private static let managedLastHealthyProfileIDKey = "clash.module.managed.lastHealthyProfileID"
+    private static let keychainService = "FantasticIsland.ClashAttach"
 
     static var mode: ClashModuleMode {
         get {
@@ -206,13 +206,13 @@ enum ClashModuleSettings {
     }
 
     static var attachAPISecret: String {
-        get { KeychainSecretStore.load(account: attachAPISecretAccount) ?? "" }
+        get { KeychainSecretStore.load(service: keychainService, account: attachAPISecretAccount) ?? "" }
         set {
             let trimmedValue = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmedValue.isEmpty {
-                KeychainSecretStore.delete(account: attachAPISecretAccount)
+                KeychainSecretStore.delete(service: keychainService, account: attachAPISecretAccount)
             } else {
-                KeychainSecretStore.save(trimmedValue, account: attachAPISecretAccount)
+                KeychainSecretStore.save(trimmedValue, service: keychainService, account: attachAPISecretAccount)
             }
         }
     }
@@ -297,53 +297,5 @@ enum ClashModuleSettings {
         } else {
             UserDefaults.standard.removeObject(forKey: key)
         }
-    }
-}
-
-private enum KeychainSecretStore {
-    private static let service = "FantasticIsland.ClashAttach"
-
-    static func load(account: String) -> String? {
-        var query = baseQuery(account: account)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess,
-              let data = item as? Data,
-              let value = String(data: data, encoding: .utf8),
-              !value.isEmpty else {
-            return nil
-        }
-
-        return value
-    }
-
-    static func save(_ value: String, account: String) {
-        let data = Data(value.utf8)
-        let query = baseQuery(account: account)
-        let attributes = [kSecValueData as String: data]
-
-        let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
-        if updateStatus == errSecSuccess {
-            return
-        }
-
-        var addQuery = query
-        addQuery[kSecValueData as String] = data
-        SecItemAdd(addQuery as CFDictionary, nil)
-    }
-
-    static func delete(account: String) {
-        SecItemDelete(baseQuery(account: account) as CFDictionary)
-    }
-
-    private static func baseQuery(account: String) -> [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
     }
 }

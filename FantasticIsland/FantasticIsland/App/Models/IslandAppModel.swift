@@ -89,6 +89,7 @@ final class IslandAppModel: ObservableObject {
     let codexFanModule: CodexModuleModel
     let clashModule: ClashModuleModel
     let playerModule: PlayerModuleModel
+    let xPostModule: XPostModuleModel
     let moduleRegistry: IslandModuleRegistry
     let designTokenStore = IslandDebugTokenStore()
 
@@ -135,14 +136,16 @@ final class IslandAppModel: ObservableObject {
         let codexFanModule = CodexModuleModel()
         let clashModule = ClashModuleModel()
         let playerModule = PlayerModuleModel()
+        let xPostModule = XPostModuleModel()
         IslandDefaults.migrateLegacyValues()
-        let allModules: [any IslandModule] = [codexFanModule, clashModule, playerModule]
+        let allModules: [any IslandModule] = [codexFanModule, clashModule, playerModule, xPostModule]
         let defaults = UserDefaults.standard
         let loadedEnabledModuleIDs = Self.loadEnabledModuleIDs(defaults: defaults, availableModules: allModules)
 
         self.codexFanModule = codexFanModule
         self.clashModule = clashModule
         self.playerModule = playerModule
+        self.xPostModule = xPostModule
         self.moduleRegistry = IslandModuleRegistry(modules: allModules)
         self.isAudioMuted = defaults.bool(forKey: IslandDefaults.audioMutedKey)
         self.launchAtLoginEnabled = defaults.bool(forKey: IslandDefaults.launchAtLoginKey)
@@ -792,6 +795,7 @@ final class IslandAppModel: ObservableObject {
         bindModule(codexFanModule)
         bindModule(clashModule)
         bindModule(playerModule)
+        bindModule(xPostModule)
 
         designTokenStore.objectWillChange
             .sink { [weak self] _ in
