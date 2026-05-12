@@ -59,7 +59,7 @@ final class XPostModuleModel: ObservableObject, IslandModule {
     let id = XPostModuleModel.moduleID
     let title = "Twitter"
     let symbolName = "square.and.pencil"
-    let iconAssetName: String? = nil
+    let iconAssetName: String? = "Xicon"
 
     @Published var draftText = ""
     @Published private(set) var configuredClientID = XPostModuleSettings.clientID
@@ -70,6 +70,7 @@ final class XPostModuleModel: ObservableObject, IslandModule {
     @Published private(set) var statusMessage: String?
     @Published private(set) var errorMessage: String?
     @Published private(set) var lastCreatedPostID: String?
+    @Published private(set) var composerFocusRequestID: UUID?
 
     private let oauthClient = XPostOAuthClient()
     private let apiClient = XPostAPIClient()
@@ -207,6 +208,18 @@ final class XPostModuleModel: ObservableObject, IslandModule {
         statusMessage = "Disconnected from X."
         errorMessage = nil
         lastCreatedPostID = nil
+    }
+
+    func requestComposerFocus() {
+        composerFocusRequestID = UUID()
+    }
+
+    func markComposerFocusRequestHandled(_ requestID: UUID) {
+        guard composerFocusRequestID == requestID else {
+            return
+        }
+
+        composerFocusRequestID = nil
     }
 
     func submitPost() {

@@ -106,9 +106,14 @@ final class IslandAppModel: ObservableObject {
         localeProvider: { [weak self] in self?.resolvedLocale ?? .current }
     )
 #endif
-    private lazy var globalHotKeyController = IslandGlobalHotKeyController { [weak self] in
+    private lazy var globalHotKeyController = IslandGlobalHotKeyController { [weak self] action in
         Task { @MainActor [weak self] in
-            self?.toggleIslandExpansionFromShortcut()
+            switch action {
+            case .toggleExpansion:
+                self?.toggleIslandExpansionFromShortcut()
+            case .openTwitterComposer:
+                self?.openTwitterComposerFromShortcut()
+            }
         }
     }
     private var cancellables: Set<AnyCancellable> = []
@@ -426,6 +431,7 @@ final class IslandAppModel: ObservableObject {
     }
     var canUseCustomWindDriveLogo: Bool { windDriveCustomLogoImage != nil }
     var expandShortcutDisplayText: String { IslandExpandShortcut.displayText }
+    var twitterShortcutDisplayText: String { IslandTwitterShortcut.displayText }
     var resolvedLocale: Locale {
         if let localeIdentifier = interfaceLanguage.localeIdentifier {
             return Locale(identifier: localeIdentifier)
@@ -542,6 +548,15 @@ final class IslandAppModel: ObservableObject {
         } else {
             expandIsland(reason: .shortcut)
         }
+    }
+
+    func openTwitterComposerFromShortcut() {
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        selectModule(id: XPostModuleModel.moduleID)
+        if !islandExpanded {
+            expandIsland(reason: .shortcut)
+        }
+        xPostModule.requestComposerFocus()
     }
 
     func beginIslandCollapseAnimation() {

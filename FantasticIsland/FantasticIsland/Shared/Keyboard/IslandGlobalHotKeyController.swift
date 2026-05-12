@@ -7,19 +7,30 @@ enum IslandExpandShortcut {
     static let displayText = "Option + E"
 }
 
-final class IslandGlobalHotKeyController {
-    private var hotKeyRef: EventHotKeyRef?
-    private var eventHandler: EventHandlerRef?
-    private let action: () -> Void
+enum IslandTwitterShortcut {
+    static let keyCode: UInt32 = UInt32(kVK_ANSI_S)
+    static let carbonModifiers: UInt32 = UInt32(cmdKey) | UInt32(shiftKey)
+    static let displayText = "Command + Shift + S"
+}
 
-    init(action: @escaping () -> Void) {
+enum IslandHotKeyAction {
+    case toggleExpansion
+    case openTwitterComposer
+}
+
+final class IslandGlobalHotKeyController {
+    private var hotKeyRefs: [EventHotKeyRef] = []
+    private var eventHandler: EventHandlerRef?
+    private let action: (IslandHotKeyAction) -> Void
+
+    init(action: @escaping (IslandHotKeyAction) -> Void) {
         self.action = action
         installHandler()
-        registerHotKey()
+        registerHotKeys()
     }
 
     deinit {
-        if let hotKeyRef {
+        for hotKeyRef in hotKeyRefs {
             UnregisterEventHotKey(hotKeyRef)
         }
 
@@ -56,20 +67,38 @@ final class IslandGlobalHotKeyController {
         )
     }
 
-    private func registerHotKey() {
-        var hotKeyID = EventHotKeyID(
-            signature: fourCharCode(from: "isld"),
-            id: 1
+    private func registerHotKeys() {
+        registerHotKey(
+            id: 1,
+            keyCode: IslandExpandShortcut.keyCode,
+            modifiers: IslandExpandShortcut.carbonModifiers
         )
+        registerHotKey(
+            id: 2,
+            keyCode: IslandTwitterShortcut.keyCode,
+            modifiers: IslandTwitterShortcut.carbonModifiers
+        )
+    }
 
-        RegisterEventHotKey(
-            IslandExpandShortcut.keyCode,
-            IslandExpandShortcut.carbonModifiers,
+    private func registerHotKey(id: UInt32, keyCode: UInt32, modifiers: UInt32) {
+        let hotKeyID = EventHotKeyID(
+            signature: fourCharCode(from: "isld"),
+            id: id
+        )
+        var hotKeyRef: EventHotKeyRef?
+
+        let status = RegisterEventHotKey(
+            keyCode,
+            modifiers,
             hotKeyID,
             GetApplicationEventTarget(),
             0,
             &hotKeyRef
         )
+
+        if status == noErr, let hotKeyRef {
+            hotKeyRefs.append(hotKeyRef)
+        }
     }
 
     private func handleHotKeyEvent(_ event: EventRef) -> OSStatus {
@@ -85,13 +114,20 @@ final class IslandGlobalHotKeyController {
         )
 
         guard status == noErr,
-              hotKeyID.signature == fourCharCode(from: "isld"),
-              hotKeyID.id == 1 else {
+              hotKeyID.signature == fourCharCode(from: "isld") else {
             return status
         }
 
-        action()
-        return noErr
+        switch hotKeyID.id {
+        case 1:
+            action(.toggleExpansion)
+            return noErr
+        case 2:
+            action(.openTwitterComposer)
+            return noErr
+        default:
+            return OSStatus(eventNotHandledErr)
+        }
     }
 
     private func fourCharCode(from string: String) -> FourCharCode {

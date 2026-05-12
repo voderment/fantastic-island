@@ -30,6 +30,8 @@
 "Keyboard Shortcut" = "Keyboard Shortcut";
 "Expand Notch Area" = "Expand Notch Area";
 "Expands the notch surface from anywhere." = "Expands the notch surface from anywhere.";
+"Open Twitter Composer" = "Open Twitter Composer";
+"Opens Twitter and focuses the post box." = "Opens Twitter and focuses the post box.";
 "Interface Language" = "Interface Language";
 "Supports following system language, English, Simplified Chinese, and Traditional Chinese." = "Supports following system language, English, Simplified Chinese, and Traditional Chinese.";
 
@@ -366,7 +368,6 @@
 "Configure your own X API credentials, sign in, and publish text-only posts from the island." = "Configure your own X API credentials, sign in, and publish text-only posts from the island.";
 "Twitter" = "Twitter";
 "X Developer App" = "X Developer App";
-"Use your own X OAuth 2.0 Native/Public app with PKCE. Fantastic Island does not ship maintainer API credits." = "Use your own X OAuth 2.0 Native/Public app with PKCE. Fantastic Island does not ship maintainer API credits.";
 "Client ID" = "Client ID";
 "Callback URL" = "Callback URL";
 "Create an X Developer project, enable OAuth 2.0, choose a Native/Public client, add this callback URL, and enable tweet.read, tweet.write, users.read, and offline.access scopes." = "Create an X Developer project, enable OAuth 2.0, choose a Native/Public client, add this callback URL, and enable tweet.read, tweet.write, users.read, and offline.access scopes.";
@@ -386,6 +387,7 @@
 "Sign in Required" = "Sign in Required";
 "Configure your own X OAuth 2.0 Client ID in settings. Fantastic Island never uses maintainer API credits." = "Configure your own X OAuth 2.0 Client ID in settings. Fantastic Island never uses maintainer API credits.";
 "Sign in once with X to allow Fantastic Island to publish text posts from the island." = "Sign in once with X to allow Fantastic Island to publish text posts from the island.";
+"What's happening?" = "What's happening?";
 "Post" = "Post";
 "Posting..." = "Posting...";
 "URLs are blocked in this version because X charges more for URL posts." = "URLs are blocked in this version because X charges more for URL posts.";

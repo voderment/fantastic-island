@@ -30,6 +30,8 @@
 "Keyboard Shortcut" = "快捷键";
 "Expand Notch Area" = "展开刘海区域";
 "Expands the notch surface from anywhere." = "可在任意位置快速展开刘海面板。";
+"Open Twitter Composer" = "打开 Twitter 输入框";
+"Opens Twitter and focuses the post box." = "打开 Twitter 模组并聚焦到发帖输入框。";
 "Interface Language" = "界面语言";
 "Supports following system language, English, Simplified Chinese, and Traditional Chinese." = "支持跟随系统、English、简体中文、繁體中文。";
 
@@ -366,7 +368,6 @@
 "Configure your own X API credentials, sign in, and publish text-only posts from the island." = "配置你自己的 X API 凭据，登录后直接从刘海发布纯文本帖子。";
 "Twitter" = "Twitter";
 "X Developer App" = "X 开发者应用";
-"Use your own X OAuth 2.0 Native/Public app with PKCE. Fantastic Island does not ship maintainer API credits." = "使用你自己的 X OAuth 2.0 Native/Public 应用和 PKCE。Fantastic Island 不内置维护者的 API 额度。";
 "Client ID" = "Client ID";
 "Callback URL" = "回调 URL";
 "Create an X Developer project, enable OAuth 2.0, choose a Native/Public client, add this callback URL, and enable tweet.read, tweet.write, users.read, and offline.access scopes." = "创建 X Developer 项目，启用 OAuth 2.0，选择 Native/Public 客户端，添加这个回调 URL，并启用 tweet.read、tweet.write、users.read、offline.access 权限。";
@@ -386,6 +387,7 @@
 "Sign in Required" = "需要登录";
 "Configure your own X OAuth 2.0 Client ID in settings. Fantastic Island never uses maintainer API credits." = "请在设置中配置你自己的 X OAuth 2.0 Client ID。Fantastic Island 不使用维护者的 API 额度。";
 "Sign in once with X to allow Fantastic Island to publish text posts from the island." = "使用 X 登录一次后，Fantastic Island 才能从刘海发布纯文本帖子。";
+"What's happening?" = "有什么新鲜事？";
 "Post" = "发布";
 "Posting..." = "正在发布...";
 "URLs are blocked in this version because X charges more for URL posts." = "此版本会阻止 URL，因为 X 对含链接帖子收费更高。";

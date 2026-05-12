@@ -1,7 +1,9 @@
+import AppKit
 import SwiftUI
 
 struct XPostModuleContentView: View {
     @ObservedObject var model: XPostModuleModel
+    @State private var isComposerFocused = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -24,9 +26,17 @@ struct XPostModuleContentView: View {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(Color.white.opacity(0.10))
 
-                Image(systemName: "square.and.pencil")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.88))
+                if let iconAssetName = model.iconAssetName {
+                    Image(iconAssetName)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 21, height: 21)
+                        .foregroundStyle(.white.opacity(0.9))
+                } else {
+                    Image(systemName: model.symbolName)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.88))
+                }
             }
             .frame(width: 42, height: 42)
 
@@ -88,20 +98,35 @@ struct XPostModuleContentView: View {
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: 10) {
-            TextEditor(text: $model.draftText)
-                .font(.system(size: 14, weight: .regular))
-                .foregroundStyle(.white)
-                .scrollContentBackground(.hidden)
-                .padding(10)
-                .frame(minHeight: 116, maxHeight: 116)
-                .background(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(Color.white.opacity(0.055))
+            ZStack(alignment: .topLeading) {
+                XPostComposerTextView(
+                    text: $model.draftText,
+                    isEnabled: !model.isPosting && !model.isSigningIn,
+                    focusRequestID: model.composerFocusRequestID,
+                    onFocusChange: { isComposerFocused = $0 },
+                    onFocusRequestHandled: { model.markComposerFocusRequestHandled($0) },
+                    onSubmit: submitFromComposer
                 )
-                .overlay {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(textEditorStrokeColor, lineWidth: 1)
+                .padding(10)
+
+                if model.draftText.isEmpty {
+                    Text("What's happening?")
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundStyle(.white.opacity(0.34))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 13)
+                        .allowsHitTesting(false)
                 }
+            }
+            .frame(minHeight: 116, maxHeight: 116)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.white.opacity(isComposerFocused ? 0.072 : 0.055))
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(composerStrokeColor, lineWidth: isComposerFocused ? 1.4 : 1)
+            }
 
             HStack(spacing: 10) {
                 Text(validationMessage)
@@ -182,11 +207,165 @@ struct XPostModuleContentView: View {
         return Color.green.opacity(0.82)
     }
 
-    private var textEditorStrokeColor: Color {
+    private var composerStrokeColor: Color {
         if model.validation.containsURL || model.validation.isOverLimit {
-            return Color.red.opacity(0.32)
+            return Color.red.opacity(isComposerFocused ? 0.74 : 0.32)
+        }
+
+        if isComposerFocused {
+            return Color.white.opacity(0.46)
         }
 
         return Color.white.opacity(0.06)
+    }
+
+    private func submitFromComposer() {
+        guard model.canPost else {
+            return
+        }
+
+        model.submitPost()
+    }
+}
+
+private struct XPostComposerTextView: NSViewRepresentable {
+    @Binding var text: String
+
+    let isEnabled: Bool
+    let focusRequestID: UUID?
+    let onFocusChange: (Bool) -> Void
+    let onFocusRequestHandled: (UUID) -> Void
+    let onSubmit: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            text: $text,
+            onFocusChange: onFocusChange,
+            onFocusRequestHandled: onFocusRequestHandled,
+            onSubmit: onSubmit
+        )
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+
+        let textView = NSTextView()
+        textView.delegate = context.coordinator
+        textView.drawsBackground = false
+        textView.isEditable = isEnabled
+        textView.isSelectable = true
+        textView.allowsUndo = true
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.string = text
+        textView.font = .systemFont(ofSize: 14, weight: .regular)
+        textView.textColor = NSColor.white.withAlphaComponent(0.94)
+        textView.insertionPointColor = .white
+        textView.textContainerInset = .zero
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.minSize = .zero
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.backgroundColor = .clear
+
+        scrollView.documentView = textView
+        context.coordinator.textView = textView
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? NSTextView else {
+            return
+        }
+
+        if textView.string != text {
+            textView.string = text
+        }
+        textView.isEditable = isEnabled
+        textView.textColor = NSColor.white.withAlphaComponent(isEnabled ? 0.94 : 0.48)
+        context.coordinator.focusIfNeeded(requestID: focusRequestID)
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        let text: Binding<String>
+        let onFocusChange: (Bool) -> Void
+        let onFocusRequestHandled: (UUID) -> Void
+        let onSubmit: () -> Void
+        weak var textView: NSTextView?
+
+        private var handledFocusRequestID: UUID?
+
+        init(
+            text: Binding<String>,
+            onFocusChange: @escaping (Bool) -> Void,
+            onFocusRequestHandled: @escaping (UUID) -> Void,
+            onSubmit: @escaping () -> Void
+        ) {
+            self.text = text
+            self.onFocusChange = onFocusChange
+            self.onFocusRequestHandled = onFocusRequestHandled
+            self.onSubmit = onSubmit
+        }
+
+        func focusIfNeeded(requestID: UUID?) {
+            guard let requestID,
+                  handledFocusRequestID != requestID,
+                  let textView else {
+                return
+            }
+
+            handledFocusRequestID = requestID
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) { [weak self, weak textView] in
+                guard let self,
+                      let textView else {
+                    return
+                }
+
+                textView.window?.makeFirstResponder(textView)
+                onFocusRequestHandled(requestID)
+            }
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else {
+                return
+            }
+
+            text.wrappedValue = textView.string
+        }
+
+        func textDidBeginEditing(_ notification: Notification) {
+            onFocusChange(true)
+        }
+
+        func textDidEndEditing(_ notification: Notification) {
+            onFocusChange(false)
+        }
+
+        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            guard commandSelector == #selector(NSResponder.insertNewline(_:)) else {
+                return false
+            }
+
+            if textView.hasMarkedText() {
+                return false
+            }
+
+            let modifiers = NSApp.currentEvent?.modifierFlags ?? []
+            if modifiers.contains(.shift) || modifiers.contains(.option) {
+                textView.insertNewlineIgnoringFieldEditor(nil)
+                return true
+            }
+
+            onSubmit()
+            return true
+        }
     }
 }

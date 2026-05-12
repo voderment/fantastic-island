@@ -191,11 +191,19 @@ struct IslandSettingsView: View {
             }
 
             SettingsCard(title: "Keyboard Shortcut") {
-                ShortcutRow(
-                    title: "Expand Notch Area",
-                    detail: "Expands the notch surface from anywhere.",
-                    shortcut: model.expandShortcutDisplayText
-                )
+                VStack(alignment: .leading, spacing: 12) {
+                    ShortcutRow(
+                        title: "Expand Notch Area",
+                        detail: "Expands the notch surface from anywhere.",
+                        shortcut: model.expandShortcutDisplayText
+                    )
+
+                    ShortcutRow(
+                        title: "Open Twitter Composer",
+                        detail: "Opens Twitter and focuses the post box.",
+                        shortcut: model.twitterShortcutDisplayText
+                    )
+                }
             }
 
             SettingsCard(title: "Interface Language") {
@@ -897,10 +905,9 @@ struct IslandSettingsView: View {
         VStack(alignment: .leading, spacing: 22) {
             SettingsCard {
                 VStack(alignment: .leading, spacing: 16) {
-                    SettingsSectionHeader(
-                        title: "X Developer App",
-                        detail: "Use your own X OAuth 2.0 Native/Public app with PKCE. Fantastic Island does not ship maintainer API credits."
-                    )
+                    Text("X Developer App")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(.white)
 
                     SettingsField(
                         title: "Client ID",
