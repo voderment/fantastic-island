@@ -7,8 +7,6 @@ struct XPostModuleContentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            header
-
             if !model.configuredClientID.isEmpty, model.isAuthenticated {
                 composer
             } else {
@@ -18,41 +16,6 @@ struct XPostModuleContentView: View {
             feedback
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-    }
-
-    private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.white.opacity(0.10))
-
-                if let iconAssetName = model.iconAssetName {
-                    Image(iconAssetName)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 21, height: 21)
-                        .foregroundStyle(.white.opacity(0.9))
-                } else {
-                    Image(systemName: model.symbolName)
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.88))
-                }
-            }
-            .frame(width: 42, height: 42)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Twitter")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(.white)
-
-                Text(LocalizedStringKey(model.accountStatusText))
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.55))
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 0)
-        }
     }
 
     private var setupState: some View {
@@ -130,16 +93,16 @@ struct XPostModuleContentView: View {
             .shadow(color: composerGlowColor, radius: isComposerFocused ? 7 : 0)
 
             HStack(spacing: 10) {
-                Text(validationMessage)
+                Text(LocalizedStringKey(footerMessage))
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(validationTint)
+                    .foregroundStyle(footerTint)
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
 
                 Text("\(model.validation.weightedLength)/\(XPostTextValidator.maxWeightedLength)")
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundStyle(validationTint)
+                    .foregroundStyle(counterTint)
 
                 Button {
                     model.submitPost()
@@ -192,20 +155,27 @@ struct XPostModuleContentView: View {
         if model.validation.isOverLimit {
             return "Post is too long."
         }
-        if model.validation.isEmpty {
-            return "Text-only posts. URLs, media, replies, and threads are not supported."
-        }
-        return "Ready to post text only."
+        return model.accountStatusText
     }
 
-    private var validationTint: Color {
+    private var footerMessage: String {
+        validationMessage
+    }
+
+    private var footerTint: Color {
         if model.validation.containsURL || model.validation.isOverLimit {
             return Color.red.opacity(0.9)
         }
-        if model.validation.isEmpty {
-            return Color.white.opacity(0.48)
+
+        return Color.white.opacity(0.48)
+    }
+
+    private var counterTint: Color {
+        if model.validation.containsURL || model.validation.isOverLimit {
+            return Color.red.opacity(0.9)
         }
-        return Color.green.opacity(0.82)
+
+        return Color.white.opacity(0.62)
     }
 
     private var composerStrokeColor: Color {

@@ -54,7 +54,7 @@ final class XPostModuleModel: ObservableObject, IslandModule {
     static let moduleID = "xpost"
 
     private static let preferredExpandedContentHeight: CGFloat =
-        CodexIslandChromeMetrics.moduleChromeHeight + 292
+        CodexIslandChromeMetrics.moduleChromeHeight + 236
 
     let id = XPostModuleModel.moduleID
     let title = "Twitter"
