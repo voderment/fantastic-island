@@ -5,6 +5,8 @@ struct XPostModuleContentView: View {
     @ObservedObject var model: XPostModuleModel
     @State private var isComposerFocused = false
 
+    private let composerTextInset = EdgeInsets(top: 16, leading: 18, bottom: 16, trailing: 18)
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             if !model.configuredClientID.isEmpty, model.isAuthenticated {
@@ -65,19 +67,18 @@ struct XPostModuleContentView: View {
                 XPostComposerTextView(
                     text: $model.draftText,
                     isEnabled: !model.isPosting && !model.isSigningIn,
+                    textInset: composerTextInset,
                     focusRequestID: model.composerFocusRequestID,
                     onFocusChange: { isComposerFocused = $0 },
                     onFocusRequestHandled: { model.markComposerFocusRequestHandled($0) },
                     onSubmit: submitFromComposer
                 )
-                .padding(10)
 
                 if model.draftText.isEmpty {
                     Text("What's happening?")
                         .font(.system(size: 14, weight: .regular))
                         .foregroundStyle(.white.opacity(0.34))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 13)
+                        .padding(composerTextInset)
                         .allowsHitTesting(false)
                 }
             }
@@ -211,6 +212,7 @@ private struct XPostComposerTextView: NSViewRepresentable {
     @Binding var text: String
 
     let isEnabled: Bool
+    let textInset: EdgeInsets
     let focusRequestID: UUID?
     let onFocusChange: (Bool) -> Void
     let onFocusRequestHandled: (UUID) -> Void
@@ -229,9 +231,13 @@ private struct XPostComposerTextView: NSViewRepresentable {
         let scrollView = NSScrollView()
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
-        scrollView.hasVerticalScroller = true
+        scrollView.hasVerticalScroller = false
         scrollView.hasHorizontalScroller = false
-        scrollView.autohidesScrollers = true
+        scrollView.autohidesScrollers = false
+        scrollView.automaticallyAdjustsContentInsets = false
+        scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+        scrollView.scrollerInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+        scrollView.contentView.drawsBackground = false
 
         let textView = XPostNativeTextView()
         textView.delegate = context.coordinator
@@ -248,8 +254,12 @@ private struct XPostComposerTextView: NSViewRepresentable {
         textView.font = .systemFont(ofSize: 14, weight: .regular)
         textView.textColor = NSColor.white.withAlphaComponent(0.94)
         textView.insertionPointColor = .white
-        textView.textContainerInset = .zero
+        textView.textContainerInset = NSSize(
+            width: textInset.leading,
+            height: textInset.top
+        )
         textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.widthTracksTextView = true
         textView.minSize = .zero
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.isVerticallyResizable = true
@@ -272,6 +282,10 @@ private struct XPostComposerTextView: NSViewRepresentable {
         }
         textView.isEditable = isEnabled
         textView.textColor = NSColor.white.withAlphaComponent(isEnabled ? 0.94 : 0.48)
+        textView.textContainerInset = NSSize(
+            width: textInset.leading,
+            height: textInset.top
+        )
         context.coordinator.setFocused(textView.window?.firstResponder === textView)
         context.coordinator.focusIfNeeded(requestID: focusRequestID)
     }
