@@ -62,6 +62,65 @@ struct CodexSessionAppIconView: View {
     }
 }
 
+struct CodexWorkspaceBadge: View {
+    enum Prominence {
+        case standard
+        case compact
+    }
+
+    let title: String
+    var prominence: Prominence = .standard
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: fontSize, weight: .semibold, design: .monospaced))
+            .foregroundStyle(.white.opacity(0.62))
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .padding(.horizontal, horizontalPadding)
+            .padding(.vertical, verticalPadding)
+            .frame(maxWidth: maxWidth)
+            .background(Color(red: 0.14, green: 0.14, blue: 0.15), in: Capsule())
+            .accessibilityLabel("Project \(title)")
+    }
+
+    private var fontSize: CGFloat {
+        switch prominence {
+        case .standard:
+            return 9
+        case .compact:
+            return 9
+        }
+    }
+
+    private var horizontalPadding: CGFloat {
+        switch prominence {
+        case .standard:
+            return 7
+        case .compact:
+            return 7
+        }
+    }
+
+    private var verticalPadding: CGFloat {
+        switch prominence {
+        case .standard:
+            return 3.5
+        case .compact:
+            return 3.5
+        }
+    }
+
+    private var maxWidth: CGFloat {
+        switch prominence {
+        case .standard:
+            return 116
+        case .compact:
+            return 96
+        }
+    }
+}
+
 struct CodexIslandSessionRow: View {
     enum SurfaceStyle {
         case standard
@@ -153,7 +212,7 @@ struct CodexIslandSessionRow: View {
                 .padding(.top, statusDotTopPadding)
 
             VStack(alignment: .leading, spacing: headerContentSpacing) {
-                HStack(alignment: .top, spacing: headerContentSpacing) {
+                HStack(alignment: .center, spacing: headerContentSpacing) {
                     Text(headlineText)
                         .font(.system(size: headlineFontSize, weight: .semibold))
                         .foregroundStyle(headlineColor)
@@ -164,6 +223,7 @@ struct CodexIslandSessionRow: View {
                     Spacer(minLength: titleTrailingSpacerMinLength)
 
                     HStack(spacing: badgeSpacing) {
+                        CodexWorkspaceBadge(title: workspaceName, prominence: workspaceBadgeProminence)
                         compactBadge(toolLabel, tone: statusBadgeTone)
                         compactBadge(CodexIslandSessionPresentation.ageBadge(for: session, now: referenceDate))
                         appIconAccessory
@@ -172,15 +232,8 @@ struct CodexIslandSessionRow: View {
                     .layoutPriority(1)
                 }
 
-                if showsPromptLineInHeader, let promptLineText {
-                    Text(promptLineText)
-                        .font(.system(size: promptFontSize, weight: .medium))
-                        .foregroundStyle(.white.opacity(promptOpacity))
-                        .lineLimit(1)
-                }
-
-                if showsActivityLineInHeader, let activityLineText {
-                    Text(activityLineText)
+                if showsSecondaryLineInHeader, let secondaryLineText {
+                    Text(secondaryLineText)
                         .font(.system(size: activityFontSize, weight: .medium))
                         .foregroundStyle(activityColor.opacity(activityOpacity))
                         .lineLimit(1)
@@ -194,9 +247,9 @@ struct CodexIslandSessionRow: View {
     private var headlineText: String {
         if let prompt = session.latestUserPrompt?.trimmingCharacters(in: .whitespacesAndNewlines),
            !prompt.isEmpty {
-            return "\(workspaceName) · \(prompt)"
+            return prompt
         }
-        return "\(workspaceName) · \(displayTitle)"
+        return displayTitle
     }
 
     private var workspaceName: String {
@@ -211,9 +264,25 @@ struct CodexIslandSessionRow: View {
     private var displayTitle: String {
         let trimmed = session.title.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
-            return trimmed
+            return titleTextWithoutWorkspace(trimmed)
         }
         return "Codex"
+    }
+
+    private func titleTextWithoutWorkspace(_ title: String) -> String {
+        let fallbackTitle = "Codex · \(workspaceName)"
+        if title == workspaceName || title == fallbackTitle {
+            return "Codex"
+        }
+
+        let workspacePrefix = "\(workspaceName) · "
+        if title.hasPrefix(workspacePrefix) {
+            let cleaned = String(title.dropFirst(workspacePrefix.count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return cleaned.isEmpty ? "Codex" : cleaned
+        }
+
+        return title
     }
 
     private var toolLabel: String {
@@ -253,20 +322,13 @@ struct CodexIslandSessionRow: View {
 
     @ViewBuilder
     private var appIconAccessory: some View {
-        if let target = session.jumpTarget {
+        if let target = session.jumpTarget,
+           !CodexTerminalAppRegistry.isCodexAppTarget(target) {
             CodexSessionAppIconView(target: target)
         }
     }
 
-    private var promptLineText: String? {
-        if let prompt = session.latestUserPrompt?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !prompt.isEmpty {
-            return "You: \(prompt)"
-        }
-        return nil
-    }
-
-    private var activityLineText: String? {
+    private var secondaryLineText: String? {
         if let request = session.permissionRequest?.summary.trimmingCharacters(in: .whitespacesAndNewlines),
            !request.isEmpty {
             return request
@@ -277,11 +339,26 @@ struct CodexIslandSessionRow: View {
             return question
         }
 
+        if session.phase == .completed {
+            return completedAgentSummaryLineText
+        }
+
         if let preview = session.currentCommandPreview?.trimmingCharacters(in: .whitespacesAndNewlines),
            !preview.isEmpty {
             return preview
         }
 
+        return agentSummaryLineText ?? session.phase.displayName
+    }
+
+    private var completedAgentSummaryLineText: String? {
+        agentSummaryLineText
+            ?? session.completionMessageMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? session.currentCommandPreview?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? session.phase.displayName
+    }
+
+    private var agentSummaryLineText: String? {
         if let assistant = session.latestAssistantMessage?.trimmingCharacters(in: .whitespacesAndNewlines),
            !assistant.isEmpty {
             return assistant
@@ -292,14 +369,10 @@ struct CodexIslandSessionRow: View {
             return summary
         }
 
-        return session.phase.displayName
+        return nil
     }
 
-    private var showsPromptLineInHeader: Bool {
-        !(usesPeekStyle && session.phase.requiresAttention)
-    }
-
-    private var showsActivityLineInHeader: Bool {
+    private var showsSecondaryLineInHeader: Bool {
         !(usesPeekStyle && session.phase.requiresAttention)
     }
 
@@ -369,12 +442,8 @@ struct CodexIslandSessionRow: View {
         usesPeekStyle ? CodexPeekMetrics.badgeSpacing : 6
     }
 
-    private var promptFontSize: CGFloat {
-        usesPeekStyle ? CodexPeekMetrics.promptFontSize : 11.5
-    }
-
-    private var promptOpacity: CGFloat {
-        usesPeekStyle ? CodexPeekMetrics.promptOpacity : 0.62
+    private var workspaceBadgeProminence: CodexWorkspaceBadge.Prominence {
+        usesPeekStyle ? .compact : .standard
     }
 
     private var activityFontSize: CGFloat {

@@ -77,6 +77,15 @@ enum CodexTerminalAppRegistry {
         return renderedIcon
     }
 
+    static func isCodexAppTarget(_ target: CodexTerminalJumpTarget) -> Bool {
+        if normalizedBundleIdentifier(for: target) == "com.openai.codex" {
+            return true
+        }
+
+        let appName = target.terminalApp.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return appName == "codex" || appName == "codex.app"
+    }
+
     static func deepLinkURL(for target: CodexTerminalJumpTarget) -> URL? {
         guard normalizedBundleIdentifier(for: target) == "com.openai.codex",
               UUID(uuidString: target.sessionID) != nil else {

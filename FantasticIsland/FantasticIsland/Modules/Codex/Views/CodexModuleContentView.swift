@@ -122,7 +122,7 @@ struct CodexModuleContentView: View {
                     .padding(.top, CodexPeekMetrics.statusDotTopPadding)
 
                 VStack(alignment: .leading, spacing: CodexPeekMetrics.contentSpacing) {
-                    HStack(alignment: .top, spacing: CodexPeekMetrics.contentSpacing) {
+                    HStack(alignment: .center, spacing: CodexPeekMetrics.contentSpacing) {
                         Text(completedActivityTitle(for: session))
                             .font(.system(size: CodexPeekMetrics.titleFontSize, weight: .semibold))
                             .foregroundStyle(.white)
@@ -132,6 +132,7 @@ struct CodexModuleContentView: View {
                         Spacer(minLength: CodexPeekMetrics.titleTrailingSpacerMinLength)
 
                         HStack(spacing: CodexPeekMetrics.badgeSpacing) {
+                            CodexWorkspaceBadge(title: completedWorkspaceName(for: session), prominence: .compact)
                             compactStatusBadge("Completed")
                             compactNeutralBadge(CodexIslandSessionPresentation.ageBadge(for: session, now: .now))
                         }
@@ -169,7 +170,7 @@ struct CodexModuleContentView: View {
                     .padding(.top, 5)
 
                 VStack(alignment: .leading, spacing: 7) {
-                    HStack(alignment: .top, spacing: 8) {
+                    HStack(alignment: .center, spacing: 8) {
                         Text(completedActivityTitle(for: session))
                             .font(.system(size: CodexExpandedMetrics.titleFontSize, weight: .semibold))
                             .foregroundStyle(.white)
@@ -179,6 +180,7 @@ struct CodexModuleContentView: View {
                         Spacer(minLength: 8)
 
                         HStack(spacing: 6) {
+                            CodexWorkspaceBadge(title: completedWorkspaceName(for: session))
                             compactStatusBadge("Completed")
                             compactNeutralBadge(CodexIslandSessionPresentation.ageBadge(for: session, now: .now))
                             completedAppIconAccessory(for: session)
@@ -408,19 +410,14 @@ struct CodexModuleContentView: View {
 
     @ViewBuilder
     private func completedAppIconAccessory(for session: SessionSnapshot) -> some View {
-        if let target = session.jumpTarget {
+        if let target = session.jumpTarget,
+           !CodexTerminalAppRegistry.isCodexAppTarget(target) {
             CodexSessionAppIconView(target: target)
         }
     }
 
     private func completedActivityTitle(for session: SessionSnapshot) -> String {
-        let workspaceName = completedWorkspaceName(for: session)
-        let displayTitle = completedDisplayTitle(for: session)
-        guard displayTitle != workspaceName else {
-            return workspaceName
-        }
-
-        return "\(workspaceName) · \(displayTitle)"
+        completedDisplayTitle(for: session)
     }
 
     private func completedActivityPromptLine(for session: SessionSnapshot) -> String? {
@@ -481,9 +478,26 @@ struct CodexModuleContentView: View {
     private func completedDisplayTitle(for session: SessionSnapshot) -> String {
         let trimmed = session.title.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
-            return trimmed
+            return completedTitleTextWithoutWorkspace(trimmed, for: session)
         }
 
-        return completedWorkspaceName(for: session)
+        return "Codex"
+    }
+
+    private func completedTitleTextWithoutWorkspace(_ title: String, for session: SessionSnapshot) -> String {
+        let workspaceName = completedWorkspaceName(for: session)
+        let fallbackTitle = "Codex · \(workspaceName)"
+        if title == workspaceName || title == fallbackTitle {
+            return "Codex"
+        }
+
+        let workspacePrefix = "\(workspaceName) · "
+        if title.hasPrefix(workspacePrefix) {
+            let cleaned = String(title.dropFirst(workspacePrefix.count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return cleaned.isEmpty ? "Codex" : cleaned
+        }
+
+        return title
     }
 }
