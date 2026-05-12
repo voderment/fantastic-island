@@ -125,8 +125,9 @@ struct XPostModuleContentView: View {
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(composerStrokeColor, lineWidth: isComposerFocused ? 1.4 : 1)
+                    .stroke(composerStrokeColor, lineWidth: isComposerFocused ? 1.8 : 1)
             }
+            .shadow(color: composerGlowColor, radius: isComposerFocused ? 7 : 0)
 
             HStack(spacing: 10) {
                 Text(validationMessage)
@@ -213,10 +214,18 @@ struct XPostModuleContentView: View {
         }
 
         if isComposerFocused {
-            return Color.white.opacity(0.46)
+            return Color.white.opacity(0.78)
         }
 
         return Color.white.opacity(0.06)
+    }
+
+    private var composerGlowColor: Color {
+        if model.validation.containsURL || model.validation.isOverLimit {
+            return Color.red.opacity(isComposerFocused ? 0.28 : 0)
+        }
+
+        return Color.white.opacity(isComposerFocused ? 0.12 : 0)
     }
 
     private func submitFromComposer() {
@@ -254,8 +263,11 @@ private struct XPostComposerTextView: NSViewRepresentable {
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
 
-        let textView = NSTextView()
+        let textView = XPostNativeTextView()
         textView.delegate = context.coordinator
+        textView.onFocusChange = { [weak coordinator = context.coordinator] isFocused in
+            coordinator?.setFocused(isFocused)
+        }
         textView.drawsBackground = false
         textView.isEditable = isEnabled
         textView.isSelectable = true
@@ -290,7 +302,28 @@ private struct XPostComposerTextView: NSViewRepresentable {
         }
         textView.isEditable = isEnabled
         textView.textColor = NSColor.white.withAlphaComponent(isEnabled ? 0.94 : 0.48)
+        context.coordinator.setFocused(textView.window?.firstResponder === textView)
         context.coordinator.focusIfNeeded(requestID: focusRequestID)
+    }
+
+    private final class XPostNativeTextView: NSTextView {
+        var onFocusChange: ((Bool) -> Void)?
+
+        override func becomeFirstResponder() -> Bool {
+            let didBecomeFirstResponder = super.becomeFirstResponder()
+            if didBecomeFirstResponder {
+                onFocusChange?(true)
+            }
+            return didBecomeFirstResponder
+        }
+
+        override func resignFirstResponder() -> Bool {
+            let didResignFirstResponder = super.resignFirstResponder()
+            if didResignFirstResponder {
+                onFocusChange?(false)
+            }
+            return didResignFirstResponder
+        }
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
@@ -301,6 +334,7 @@ private struct XPostComposerTextView: NSViewRepresentable {
         weak var textView: NSTextView?
 
         private var handledFocusRequestID: UUID?
+        private var isFocused = false
 
         init(
             text: Binding<String>,
@@ -312,6 +346,15 @@ private struct XPostComposerTextView: NSViewRepresentable {
             self.onFocusChange = onFocusChange
             self.onFocusRequestHandled = onFocusRequestHandled
             self.onSubmit = onSubmit
+        }
+
+        func setFocused(_ focused: Bool) {
+            guard isFocused != focused else {
+                return
+            }
+
+            isFocused = focused
+            onFocusChange(focused)
         }
 
         func focusIfNeeded(requestID: UUID?) {
@@ -329,6 +372,7 @@ private struct XPostComposerTextView: NSViewRepresentable {
                 }
 
                 textView.window?.makeFirstResponder(textView)
+                setFocused(textView.window?.firstResponder === textView)
                 onFocusRequestHandled(requestID)
             }
         }
@@ -342,11 +386,11 @@ private struct XPostComposerTextView: NSViewRepresentable {
         }
 
         func textDidBeginEditing(_ notification: Notification) {
-            onFocusChange(true)
+            setFocused(true)
         }
 
         func textDidEndEditing(_ notification: Notification) {
-            onFocusChange(false)
+            setFocused(false)
         }
 
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
