@@ -973,29 +973,6 @@ struct IslandSettingsView: View {
                     }
                 }
             }
-
-            SettingsCard {
-                VStack(alignment: .leading, spacing: 14) {
-                    SettingsSectionHeader(
-                        title: "Posting Policy",
-                        detail: "Version 1 only publishes text posts through the official X API."
-                    )
-
-                    SettingsInfoBlock(
-                        title: "Supported",
-                        value: "Plain text posts",
-                        monospaced: false,
-                        valueColor: .white.opacity(0.76)
-                    )
-
-                    SettingsInfoBlock(
-                        title: "Blocked",
-                        value: "URLs, media, replies, quotes, threads, timelines, and browser compose fallbacks",
-                        monospaced: false,
-                        valueColor: Color.orange.opacity(0.86)
-                    )
-                }
-            }
         }
     }
 

@@ -377,12 +377,6 @@
 "Sign in with X" = "Sign in with X";
 "Signing in..." = "Signing in...";
 "Disconnect" = "Disconnect";
-"Posting Policy" = "Posting Policy";
-"Version 1 only publishes text posts through the official X API." = "Version 1 only publishes text posts through the official X API.";
-"Supported" = "Supported";
-"Plain text posts" = "Plain text posts";
-"Blocked" = "Blocked";
-"URLs, media, replies, quotes, threads, timelines, and browser compose fallbacks" = "URLs, media, replies, quotes, threads, timelines, and browser compose fallbacks";
 "Client ID Required" = "Client ID Required";
 "Sign in Required" = "Sign in Required";
 "Configure your own X OAuth 2.0 Client ID in settings. Fantastic Island never uses maintainer API credits." = "Configure your own X OAuth 2.0 Client ID in settings. Fantastic Island never uses maintainer API credits.";

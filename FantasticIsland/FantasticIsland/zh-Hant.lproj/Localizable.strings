@@ -377,12 +377,6 @@
 "Sign in with X" = "使用 X 登入";
 "Signing in..." = "正在登入...";
 "Disconnect" = "斷開連線";
-"Posting Policy" = "發布策略";
-"Version 1 only publishes text posts through the official X API." = "第一版只透過官方 X API 發布純文字貼文。";
-"Supported" = "支援";
-"Plain text posts" = "純文字貼文";
-"Blocked" = "已阻止";
-"URLs, media, replies, quotes, threads, timelines, and browser compose fallbacks" = "URL、媒體、回覆、引用、串文、時間軸和瀏覽器發文降級";
 "Client ID Required" = "需要 Client ID";
 "Sign in Required" = "需要登入";
 "Configure your own X OAuth 2.0 Client ID in settings. Fantastic Island never uses maintainer API credits." = "請在設定中配置你自己的 X OAuth 2.0 Client ID。Fantastic Island 不使用維護者的 API 額度。";
