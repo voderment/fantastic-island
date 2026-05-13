@@ -90,7 +90,7 @@ struct XPostModuleContentView: View {
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(composerStrokeColor, lineWidth: isComposerFocused ? 1.8 : 1)
+                    .strokeBorder(composerStrokeColor, lineWidth: isComposerFocused ? 1.8 : 1)
             }
             .shadow(color: composerGlowColor, radius: isComposerFocused ? 7 : 0)
 
@@ -230,25 +230,7 @@ private struct XPostComposerTextView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSView {
         let hostView = XPostComposerHostView()
-        let scrollView = hostView.scrollView
-        scrollView.drawsBackground = false
-        scrollView.wantsLayer = true
-        scrollView.layer?.backgroundColor = NSColor.clear.cgColor
-        scrollView.borderType = .noBorder
-        scrollView.hasVerticalScroller = false
-        scrollView.hasHorizontalScroller = false
-        scrollView.verticalScroller = nil
-        scrollView.horizontalScroller = nil
-        scrollView.scrollerStyle = .overlay
-        scrollView.autohidesScrollers = false
-        scrollView.automaticallyAdjustsContentInsets = false
-        scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
-        scrollView.scrollerInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
-        scrollView.contentView.drawsBackground = false
-        scrollView.contentView.wantsLayer = true
-        scrollView.contentView.layer?.backgroundColor = NSColor.clear.cgColor
-
-        let textView = XPostNativeTextView()
+        let textView = hostView.textView
         textView.delegate = context.coordinator
         textView.onFocusChange = { [weak coordinator = context.coordinator] isFocused in
             coordinator?.setFocused(isFocused)
@@ -263,14 +245,10 @@ private struct XPostComposerTextView: NSViewRepresentable {
         textView.font = .systemFont(ofSize: 14, weight: .regular)
         textView.textColor = NSColor.white.withAlphaComponent(0.94)
         textView.insertionPointColor = .white
-        textView.wantsLayer = true
-        textView.layer?.backgroundColor = NSColor.clear.cgColor
-        textView.textContainerInset = NSSize(
-            width: textInset.leading,
-            height: textInset.top
-        )
+        textView.focusRingType = .none
         textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.heightTracksTextView = false
         textView.minSize = .zero
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.isVerticallyResizable = true
@@ -278,7 +256,7 @@ private struct XPostComposerTextView: NSViewRepresentable {
         textView.autoresizingMask = [.width]
         textView.backgroundColor = .clear
 
-        hostView.setDocumentView(textView)
+        hostView.updateTextInset(textInset)
         context.coordinator.textView = textView
         return hostView
     }
@@ -288,35 +266,35 @@ private struct XPostComposerTextView: NSViewRepresentable {
             return
         }
 
-        let scrollView = hostView.scrollView
-        guard let textView = scrollView.documentView as? NSTextView else {
-            return
-        }
+        let textView = hostView.textView
 
         if textView.string != text {
             textView.string = text
         }
         textView.isEditable = isEnabled
         textView.textColor = NSColor.white.withAlphaComponent(isEnabled ? 0.94 : 0.48)
-        textView.textContainerInset = NSSize(
-            width: textInset.leading,
-            height: textInset.top
-        )
+        hostView.updateTextInset(textInset)
         context.coordinator.setFocused(textView.window?.firstResponder === textView)
         context.coordinator.focusIfNeeded(requestID: focusRequestID)
         hostView.needsLayout = true
     }
 
     private final class XPostComposerHostView: NSView {
-        let scrollView = XPostComposerScrollView()
+        let textView = XPostNativeTextView(frame: .zero)
+
+        private var textInset = EdgeInsets()
+
+        override var intrinsicContentSize: NSSize {
+            NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric)
+        }
 
         override init(frame frameRect: NSRect) {
             super.init(frame: frameRect)
             wantsLayer = true
             layer?.backgroundColor = NSColor.clear.cgColor
-            scrollView.frame = bounds
-            scrollView.autoresizingMask = [.width, .height]
-            addSubview(scrollView)
+            textView.frame = bounds
+            textView.autoresizingMask = [.width, .height]
+            addSubview(textView)
         }
 
         required init?(coder: NSCoder) {
@@ -325,53 +303,26 @@ private struct XPostComposerTextView: NSViewRepresentable {
 
         override func layout() {
             super.layout()
-            scrollView.frame = bounds
-            scrollView.layoutSubtreeIfNeeded()
+            textView.frame = bounds
+            updateTextContainerSize()
         }
 
-        func setDocumentView(_ textView: NSTextView) {
-            scrollView.documentView = textView
+        func updateTextInset(_ inset: EdgeInsets) {
+            textInset = inset
+            textView.textContainerInset = NSSize(width: inset.leading, height: inset.top)
+            updateTextContainerSize()
             needsLayout = true
         }
-    }
 
-    private final class XPostComposerScrollView: NSScrollView {
-        override func layout() {
-            super.layout()
-            updateDocumentFrame()
-        }
-
-        private func updateDocumentFrame() {
-            guard let textView = documentView as? NSTextView else {
+        private func updateTextContainerSize() {
+            guard let textContainer = textView.textContainer else {
                 return
             }
 
-            let visibleSize = contentView.bounds.size
-            guard visibleSize.width > 0, visibleSize.height > 0 else {
-                return
-            }
-
-            var targetFrame = textView.frame
-            targetFrame.origin = .zero
-            targetFrame.size.width = visibleSize.width
-            targetFrame.size.height = max(visibleSize.height, measuredTextHeight(for: textView))
-
-            if abs(textView.frame.width - targetFrame.width) > 0.5 ||
-                abs(textView.frame.height - targetFrame.height) > 0.5 ||
-                textView.frame.origin != targetFrame.origin {
-                textView.frame = targetFrame
-            }
-        }
-
-        private func measuredTextHeight(for textView: NSTextView) -> CGFloat {
-            guard let layoutManager = textView.layoutManager,
-                  let textContainer = textView.textContainer else {
-                return contentView.bounds.height
-            }
-
-            layoutManager.ensureLayout(for: textContainer)
-            let usedRect = layoutManager.usedRect(for: textContainer)
-            return ceil(usedRect.height + textView.textContainerInset.height * 2)
+            textContainer.containerSize = NSSize(
+                width: max(0, bounds.width - textInset.leading - textInset.trailing),
+                height: CGFloat.greatestFiniteMagnitude
+            )
         }
     }
 
