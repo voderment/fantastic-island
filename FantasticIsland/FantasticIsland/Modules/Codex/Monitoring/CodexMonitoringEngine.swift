@@ -2,20 +2,30 @@ import Foundation
 
 final class CodexMonitoringEngine {
     private let queue: DispatchQueue
+    private let tokenUsageQueue: DispatchQueue
     private let discovery: CodexSessionDiscovery
     private let reducer: CodexSessionReducer
     private let tailer: CodexRolloutTailer
+    private let tokenUsageScanner: CodexTokenUsageHistoryScanner
+    private var latestTokenUsageHistory = CodexTokenUsageHistory.empty
+    private var lastTokenUsageScanAt = Date.distantPast
+    private var isTokenUsageScanInFlight = false
+    private let tokenUsageScanInterval: TimeInterval = 60
 
     init(
         discovery: CodexSessionDiscovery = CodexSessionDiscovery(),
         reducer: CodexSessionReducer = CodexSessionReducer(),
         tailer: CodexRolloutTailer = CodexRolloutTailer(),
-        queue: DispatchQueue = DispatchQueue(label: "fantastic-island.monitoring", qos: .utility)
+        tokenUsageScanner: CodexTokenUsageHistoryScanner = CodexTokenUsageHistoryScanner(),
+        queue: DispatchQueue = DispatchQueue(label: "fantastic-island.monitoring", qos: .utility),
+        tokenUsageQueue: DispatchQueue = DispatchQueue(label: "fantastic-island.codex-token-usage", qos: .utility)
     ) {
         self.discovery = discovery
         self.reducer = reducer
         self.tailer = tailer
+        self.tokenUsageScanner = tokenUsageScanner
         self.queue = queue
+        self.tokenUsageQueue = tokenUsageQueue
     }
 
     func poll(completion: @escaping (CodexMonitoringSnapshot) -> Void) {
@@ -23,6 +33,7 @@ final class CodexMonitoringEngine {
             let sessions = discovery.discoverRecentSessions()
             tailer.sync(with: sessions, reducer: reducer)
             publishSnapshot(completion)
+            refreshTokenUsageHistoryIfNeeded(now: .now, completion: completion)
         }
     }
 
@@ -53,6 +64,7 @@ final class CodexMonitoringEngine {
             }
 
             publishSnapshot(completion)
+            refreshTokenUsageHistoryIfNeeded(now: .now, force: payload.transcriptPath != nil, completion: completion)
         }
     }
 
@@ -66,11 +78,34 @@ final class CodexMonitoringEngine {
     private func publishSnapshot(_ completion: @escaping (CodexMonitoringSnapshot) -> Void) {
         let snapshot = CodexMonitoringSnapshot(
             sessions: reducer.allSessions,
-            quotaSnapshot: reducer.latestQuotaSnapshot
+            quotaSnapshot: reducer.latestQuotaSnapshot,
+            tokenUsageHistory: latestTokenUsageHistory
         )
 
         DispatchQueue.main.async {
             completion(snapshot)
+        }
+    }
+
+    private func refreshTokenUsageHistoryIfNeeded(
+        now: Date,
+        force: Bool = false,
+        completion: @escaping (CodexMonitoringSnapshot) -> Void
+    ) {
+        guard !isTokenUsageScanInFlight,
+              force || now.timeIntervalSince(lastTokenUsageScanAt) >= tokenUsageScanInterval else {
+            return
+        }
+
+        isTokenUsageScanInFlight = true
+        lastTokenUsageScanAt = now
+        tokenUsageQueue.async { [self] in
+            let history = tokenUsageScanner.scan(now: now)
+            queue.async { [self] in
+                latestTokenUsageHistory = history
+                isTokenUsageScanInFlight = false
+                publishSnapshot(completion)
+            }
         }
     }
 }

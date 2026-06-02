@@ -129,7 +129,13 @@ struct IslandShellView: View {
     }
 
     private var incomingExpandedSnapshot: IslandModuleRenderSnapshot? {
-        if transitionPlan?.to.visualMode == .expanded {
+        if let transitionPlan, transitionPlan.to.visualMode == .expanded {
+            if transitionPlan.from.visualMode != .expanded,
+               model.transitionPhase != .revealingContent,
+               model.transitionPhase != .stable {
+                return nil
+            }
+
             return model.frozenExpandedSnapshot
         }
 
@@ -754,6 +760,7 @@ struct IslandShellView: View {
 
     private func shouldPremeasureModuleContent(width: CGFloat) -> Bool {
         width > 0
+            && model.selectedModuleID != CodexModuleModel.moduleID
             && !model.islandExpanded
             && !model.islandPeeking
             && !model.islandExpansionAnimationInFlight

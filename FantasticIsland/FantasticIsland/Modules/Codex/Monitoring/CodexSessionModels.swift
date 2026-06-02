@@ -856,11 +856,115 @@ struct CodexQuotaSnapshot: Equatable {
     }
 }
 
+struct CodexTokenUsageSample: Equatable {
+    var capturedAt: Date
+    var lastTokens: Int?
+    var cumulativeTokens: Int?
+
+    static func fromRolloutObject(_ object: [String: Any]) -> CodexTokenUsageSample? {
+        guard object["type"] as? String == "event_msg",
+              let payload = object["payload"] as? [String: Any],
+              payload["type"] as? String == "token_count",
+              let timestamp = parseTimestamp(object["timestamp"] as? String) else {
+            return nil
+        }
+
+        let info =
+            (payload["info"] as? [String: Any])
+            ?? (object["info"] as? [String: Any])
+        guard let info else {
+            return nil
+        }
+
+        let lastTokens = tokenTotal(from: info["last_token_usage"] as? [String: Any])
+        let cumulativeTokens = tokenTotal(from: info["total_token_usage"] as? [String: Any])
+        guard lastTokens != nil || cumulativeTokens != nil else {
+            return nil
+        }
+
+        return CodexTokenUsageSample(
+            capturedAt: timestamp,
+            lastTokens: lastTokens,
+            cumulativeTokens: cumulativeTokens
+        )
+    }
+
+    private static func tokenTotal(from usage: [String: Any]?) -> Int? {
+        guard let usage else {
+            return nil
+        }
+
+        if let totalTokens = positiveTokenCount(usage["total_tokens"]) {
+            return totalTokens
+        }
+
+        let inputTokens = positiveTokenCount(usage["input_tokens"]) ?? 0
+        let outputTokens = positiveTokenCount(usage["output_tokens"]) ?? 0
+        let total = inputTokens + outputTokens
+        return total > 0 ? total : nil
+    }
+
+    private static func positiveTokenCount(_ value: Any?) -> Int? {
+        guard let count = intValue(from: value), count > 0 else {
+            return nil
+        }
+
+        return count
+    }
+}
+
+struct CodexTokenUsageDay: Identifiable, Equatable {
+    var date: Date
+    var totalTokens: Int
+
+    var id: Date { date }
+}
+
+struct CodexTokenUsageHistory: Equatable {
+    private var totalsByDay: [Date: Int] = [:]
+
+    static let empty = CodexTokenUsageHistory()
+
+    var isEmpty: Bool {
+        totalsByDay.values.allSatisfy { $0 <= 0 }
+    }
+
+    mutating func record(tokens: Int, at date: Date, calendar: Calendar = .autoupdatingCurrent) {
+        guard tokens > 0 else {
+            return
+        }
+
+        let day = calendar.startOfDay(for: date)
+        totalsByDay[day, default: 0] += tokens
+    }
+
+    func days(endingAt endDate: Date = .now, dayCount: Int, calendar: Calendar = .autoupdatingCurrent) -> [CodexTokenUsageDay] {
+        guard dayCount > 0 else {
+            return []
+        }
+
+        let endDay = calendar.startOfDay(for: endDate)
+        let startDay = calendar.date(byAdding: .day, value: -(dayCount - 1), to: endDay) ?? endDay
+        return (0..<dayCount).compactMap { offset in
+            guard let date = calendar.date(byAdding: .day, value: offset, to: startDay) else {
+                return nil
+            }
+
+            return CodexTokenUsageDay(date: date, totalTokens: totalsByDay[date] ?? 0)
+        }
+    }
+}
+
 struct CodexMonitoringSnapshot {
     var sessions: [SessionSnapshot]
     var quotaSnapshot: CodexQuotaSnapshot?
+    var tokenUsageHistory: CodexTokenUsageHistory
 
-    static let empty = CodexMonitoringSnapshot(sessions: [], quotaSnapshot: nil)
+    static let empty = CodexMonitoringSnapshot(
+        sessions: [],
+        quotaSnapshot: nil,
+        tokenUsageHistory: .empty
+    )
 }
 
 enum CodexProcessMonitor {

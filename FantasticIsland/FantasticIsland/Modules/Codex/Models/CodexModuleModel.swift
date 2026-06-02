@@ -54,6 +54,8 @@ final class CodexModuleModel: ObservableObject, IslandModule {
         CodexIslandChromeMetrics.expandedContentTopPadding
         + CodexIslandChromeMetrics.windDrivePanelHeight
     private static let estimatedGlobalInfoCardHeight: CGFloat = 58
+    private static let estimatedTokenHeatmapCardHeight: CGFloat = 96
+    private static let tokenUsageHeatmapDayCount = 365
     private static let estimatedContentSpacing: CGFloat = 12
     private static let estimatedSessionRowHeight: CGFloat = 88
     private static let estimatedSessionRowSpacing: CGFloat = 6
@@ -88,6 +90,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     private var pollTimer: Timer?
     private var monitoredSessions: [SessionSnapshot] = []
     private var latestQuotaSnapshot: CodexQuotaSnapshot?
+    private var tokenUsageHistory = CodexTokenUsageHistory.empty
     private var lastActivityRefreshAt = Date()
     private var displayedScore = 0.0
     private let pollInterval = 1.0
@@ -171,6 +174,12 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     var globalInfoWeekValueText: String { quotaValueText(quotaSnapshot?.weekRemainingPercent) }
     var globalInfoFiveHourResetCompactText: String { quotaResetTimeCompactText(quotaSnapshot?.fiveHourResetAt) }
     var globalInfoWeekResetCompactText: String { quotaResetCompactText(quotaSnapshot?.weekResetAt) }
+    var tokenUsageHeatmapDays: [CodexTokenUsageDay] { tokenUsageHistory.days(dayCount: Self.tokenUsageHeatmapDayCount) }
+    var tokenUsageHeatmapPeriodText: String { "\(Self.tokenUsageHeatmapDayCount)D \(formatTokenCount(tokenUsageHeatmapDays.map(\.totalTokens).reduce(0, +)))" }
+    var tokenUsageHeatmapPeakText: String {
+        let peak = tokenUsageHeatmapDays.map(\.totalTokens).max() ?? 0
+        return peak > 0 ? "PEAK \(formatTokenCount(peak))" : "PEAK --"
+    }
     var expandedFiveHourQuotaText: String { expandedQuotaText(title: "5H Left", value: quotaSnapshot?.fiveHourRemainingPercent) }
     var expandedWeekQuotaText: String { expandedQuotaText(title: "Week Left", value: quotaSnapshot?.weekRemainingPercent) }
     var fiveHourResetDescriptionText: String { quotaResetText(quotaSnapshot?.fiveHourResetAt) }
@@ -302,6 +311,8 @@ final class CodexModuleModel: ObservableObject, IslandModule {
         let estimatedContentHeight =
             Self.estimatedGlobalInfoCardHeight
             + Self.estimatedContentSpacing
+            + Self.estimatedTokenHeatmapCardHeight
+            + Self.estimatedContentSpacing
             + estimatedSessionSectionHeight
         let estimatedOpenedHeight = CodexIslandChromeMetrics.moduleChromeHeight + estimatedContentHeight
         return min(
@@ -397,6 +408,9 @@ final class CodexModuleModel: ObservableObject, IslandModule {
             globalInfoWeekValueText: globalInfoWeekValueText,
             globalInfoFiveHourResetCompactText: globalInfoFiveHourResetCompactText,
             globalInfoWeekResetCompactText: globalInfoWeekResetCompactText,
+            tokenUsageHeatmapDays: tokenUsageHeatmapDays,
+            tokenUsageHeatmapPeriodText: tokenUsageHeatmapPeriodText,
+            tokenUsageHeatmapPeakText: tokenUsageHeatmapPeakText,
             approvePermission: { [weak self] sessionID, action in
                 Task { @MainActor in
                     self?.approvePermission(for: sessionID, action: action)
@@ -924,6 +938,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     private func applyMonitoringSnapshot(_ snapshot: CodexMonitoringSnapshot, refreshedAt now: Date) {
         monitoredSessions = snapshot.sessions.filter { !$0.isInternalSupportSession }
         latestQuotaSnapshot = snapshot.quotaSnapshot
+        tokenUsageHistory = snapshot.tokenUsageHistory
         reconcileSessionSurface()
         refreshActivityState(now: now)
     }
@@ -1012,5 +1027,18 @@ final class CodexModuleModel: ObservableObject, IslandModule {
         }
 
         return date.formatted(date: .omitted, time: .shortened)
+    }
+
+    private func formatTokenCount(_ value: Int) -> String {
+        let absoluteValue = abs(value)
+        if absoluteValue >= 1_000_000 {
+            return String(format: "%.1fM", Double(value) / 1_000_000)
+        }
+
+        if absoluteValue >= 1_000 {
+            return String(format: "%.1fK", Double(value) / 1_000)
+        }
+
+        return "\(value)"
     }
 }

@@ -23,6 +23,9 @@ struct CodexModuleRenderState {
     let globalInfoWeekValueText: String
     let globalInfoFiveHourResetCompactText: String
     let globalInfoWeekResetCompactText: String
+    let tokenUsageHeatmapDays: [CodexTokenUsageDay]
+    let tokenUsageHeatmapPeriodText: String
+    let tokenUsageHeatmapPeakText: String
     let approvePermission: (String, CodexApprovalAction) -> Void
     let answerQuestion: (String, CodexQuestionResponse) -> Void
     let replyToSession: (String, String) -> Void
@@ -55,6 +58,7 @@ struct CodexModuleContentView: View {
         case .standard:
             VStack(alignment: .leading, spacing: CodexExpandedMetrics.contentSpacing) {
                 globalInfoCard
+                tokenHeatmapCard
 
                 if state.islandListSessions.isEmpty {
                     emptyStateCard
@@ -334,6 +338,16 @@ struct CodexModuleContentView: View {
         .background(Color.white.opacity(0.06), in: Capsule())
     }
 
+    private var tokenHeatmapCard: some View {
+        tokenHeatmapSectionCard {
+            CodexTokenHeatmapView(
+                days: state.tokenUsageHeatmapDays,
+                periodText: state.tokenUsageHeatmapPeriodText,
+                peakText: state.tokenUsageHeatmapPeakText
+            )
+        }
+    }
+
     private func quotaBadge(title: String, value: String, resetText: String) -> some View {
         HStack(spacing: 8) {
             Text(title)
@@ -375,7 +389,12 @@ struct CodexModuleContentView: View {
     }
 
     private var emptyStateMinimumHeight: CGFloat {
-        let remainingHeight = Self.alignedModuleBodyHeight - measuredGlobalInfoCardHeight - CodexExpandedMetrics.contentSpacing
+        let heatmapHeight: CGFloat = 96
+        let remainingHeight =
+            Self.alignedModuleBodyHeight
+            - measuredGlobalInfoCardHeight
+            - heatmapHeight
+            - (CodexExpandedMetrics.contentSpacing * 2)
         return max(CodexExpandedMetrics.emptyStateMinimumHeight, remainingHeight)
     }
 
@@ -384,6 +403,17 @@ struct CodexModuleContentView: View {
             content()
         }
         .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .islandModuleCardSurface()
+    }
+
+    private func tokenHeatmapSectionCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            content()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
         .islandModuleCardSurface()
     }
@@ -499,5 +529,204 @@ struct CodexModuleContentView: View {
         }
 
         return title
+    }
+}
+
+private struct CodexTokenHeatmapView: View {
+    let days: [CodexTokenUsageDay]
+    let periodText: String
+    let peakText: String
+
+    @State private var hoveredDayID: Date?
+
+    private let minCellSize: CGFloat = 6.5
+    private let maxCellSize: CGFloat = 8.5
+    private let preferredCellSpacing: CGFloat = 2.5
+    private let rowCount = 7
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text("Tokens")
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.86))
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+
+                Text(periodText)
+                    .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.62))
+                    .lineLimit(1)
+
+                Text(peakText)
+                    .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.42))
+                    .lineLimit(1)
+            }
+
+            heatmapGrid
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Codex token usage heatmap")
+    }
+
+    private var heatmapGrid: some View {
+        GeometryReader { geometry in
+            let columns = weekColumns
+            let spacing = cellSpacing(for: geometry.size.width, columnCount: columns.count)
+            let cellSize = cellSize(for: geometry.size.width, columnCount: columns.count, spacing: spacing)
+
+            HStack(alignment: .top, spacing: spacing) {
+                ForEach(Array(columns.enumerated()), id: \.offset) { _, week in
+                    VStack(spacing: spacing) {
+                        ForEach(0..<rowCount, id: \.self) { row in
+                            let day = row < week.count ? week[row] : nil
+                            tokenCell(day: day, row: row, cellSize: cellSize)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(height: gridHeight)
+    }
+
+    private var gridHeight: CGFloat {
+        (maxCellSize * CGFloat(rowCount)) + (preferredCellSpacing * CGFloat(rowCount - 1))
+    }
+
+    @ViewBuilder
+    private func tokenCell(day: CodexTokenUsageDay?, row: Int, cellSize: CGFloat) -> some View {
+        let cornerRadius = max(1.5, cellSize * 0.18)
+
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(fillColor(for: day?.totalTokens ?? 0))
+            .frame(width: cellSize, height: cellSize)
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(Color.white.opacity(day == nil ? 0 : 0.06), lineWidth: 0.5)
+            }
+            .overlay(alignment: .top) {
+                if let day, hoveredDayID == day.id {
+                    CodexTokenHeatmapTooltip(
+                        dateText: day.date.formatted(.dateTime.month().day().year()),
+                        tokenText: exactTokenText(day.totalTokens)
+                    )
+                    .offset(y: row < 2 ? cellSize + 7 : -34)
+                    .allowsHitTesting(false)
+                    .zIndex(20)
+                }
+            }
+            .contentShape(Rectangle())
+            .onHover { isHovering in
+                guard let day else {
+                    return
+                }
+
+                if isHovering {
+                    hoveredDayID = day.id
+                } else if hoveredDayID == day.id {
+                    hoveredDayID = nil
+                }
+            }
+            .zIndex(day.map { hoveredDayID == $0.id ? 10 : 0 } ?? 0)
+    }
+
+    private var weekColumns: [[CodexTokenUsageDay?]] {
+        guard let firstDay = days.first else {
+            return []
+        }
+
+        let calendar = Calendar.autoupdatingCurrent
+        let weekday = calendar.component(.weekday, from: firstDay.date)
+        let leadingEmptyDays = (weekday - calendar.firstWeekday + 7) % 7
+        var paddedDays = Array(repeating: Optional<CodexTokenUsageDay>.none, count: leadingEmptyDays)
+        paddedDays.append(contentsOf: days.map(Optional.some))
+
+        let remainder = paddedDays.count % rowCount
+        if remainder > 0 {
+            paddedDays.append(contentsOf: Array(repeating: Optional<CodexTokenUsageDay>.none, count: rowCount - remainder))
+        }
+
+        return stride(from: 0, to: paddedDays.count, by: rowCount).map { startIndex in
+            Array(paddedDays[startIndex..<min(startIndex + rowCount, paddedDays.count)])
+        }
+    }
+
+    private var maxTokenCount: Int {
+        max(days.map(\.totalTokens).max() ?? 0, 1)
+    }
+
+    private func cellSpacing(for width: CGFloat, columnCount: Int) -> CGFloat {
+        guard columnCount > 1 else {
+            return preferredCellSpacing
+        }
+
+        return max(2.5, min(preferredCellSpacing, width / 260))
+    }
+
+    private func cellSize(for width: CGFloat, columnCount: Int, spacing: CGFloat) -> CGFloat {
+        guard columnCount > 0 else {
+            return minCellSize
+        }
+
+        let availableWidth = max(0, width - (CGFloat(columnCount - 1) * spacing))
+        return min(maxCellSize, max(minCellSize, availableWidth / CGFloat(columnCount)))
+    }
+
+    private func fillColor(for tokens: Int) -> Color {
+        guard tokens > 0 else {
+            return Color.white.opacity(0.055)
+        }
+
+        let ratio = Double(tokens) / Double(maxTokenCount)
+        switch ratio {
+        case ..<0.20:
+            return Color.white.opacity(0.18)
+        case ..<0.40:
+            return Color.white.opacity(0.32)
+        case ..<0.65:
+            return Color.white.opacity(0.50)
+        case ..<0.85:
+            return Color.white.opacity(0.68)
+        default:
+            return Color.white.opacity(0.9)
+        }
+    }
+
+    private func exactTokenText(_ value: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        let formatted = formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+        return "\(formatted) tokens"
+    }
+}
+
+private struct CodexTokenHeatmapTooltip: View {
+    let dateText: String
+    let tokenText: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(tokenText)
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.92))
+                .lineLimit(1)
+
+            Text(dateText)
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.50))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(Color.black.opacity(0.86), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(Color.white.opacity(0.16), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
+        .fixedSize(horizontal: true, vertical: true)
     }
 }

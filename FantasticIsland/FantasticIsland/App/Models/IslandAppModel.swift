@@ -541,8 +541,6 @@ final class IslandAppModel: ObservableObject {
     }
 
     func toggleIslandExpansionFromShortcut() {
-        NSApplication.shared.activate(ignoringOtherApps: true)
-
         if islandExpanded {
             collapseIsland()
         } else {
