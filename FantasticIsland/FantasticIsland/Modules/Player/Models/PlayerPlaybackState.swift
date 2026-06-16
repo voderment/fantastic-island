@@ -97,6 +97,7 @@ struct PlayerTrackMetadata: Equatable {
 struct PlayerNowPlayingState: Equatable {
     var source: PlayerSourceKind?
     var sourceDisplayName: String?
+    var sourceBundleIdentifier: String?
     var playbackStatus: PlayerPlaybackStatus
     var track: PlayerTrackMetadata?
     var shuffleMode: PlayerShuffleMode
@@ -107,6 +108,7 @@ struct PlayerNowPlayingState: Equatable {
     static let empty = PlayerNowPlayingState(
         source: nil,
         sourceDisplayName: nil,
+        sourceBundleIdentifier: nil,
         playbackStatus: .stopped,
         track: nil,
         shuffleMode: .unsupported,
@@ -119,6 +121,7 @@ struct PlayerNowPlayingState: Equatable {
         PlayerNowPlayingState(
             source: nil,
             sourceDisplayName: nil,
+            sourceBundleIdentifier: nil,
             playbackStatus: .stopped,
             track: nil,
             shuffleMode: .unsupported,
@@ -132,6 +135,7 @@ struct PlayerNowPlayingState: Equatable {
         PlayerNowPlayingState(
             source: source,
             sourceDisplayName: nil,
+            sourceBundleIdentifier: nil,
             playbackStatus: .stopped,
             track: nil,
             shuffleMode: .unsupported,
@@ -144,6 +148,7 @@ struct PlayerNowPlayingState: Equatable {
     static func == (lhs: PlayerNowPlayingState, rhs: PlayerNowPlayingState) -> Bool {
         lhs.source == rhs.source
             && lhs.sourceDisplayName == rhs.sourceDisplayName
+            && lhs.sourceBundleIdentifier == rhs.sourceBundleIdentifier
             && lhs.playbackStatus == rhs.playbackStatus
             && lhs.track == rhs.track
             && lhs.shuffleMode == rhs.shuffleMode
@@ -234,6 +239,7 @@ struct PlayerNowPlayingState: Equatable {
         return [
             source?.rawValue ?? "player",
             sourceDisplayName ?? "",
+            sourceBundleIdentifier ?? "",
             track.title,
             track.artist,
             track.album ?? "",

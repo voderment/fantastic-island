@@ -146,7 +146,11 @@ enum PlayerSourceRegistry {
             return nil
         }
 
-        guard let applicationURL = applicationURL(for: sourceKind.bundleIdentifier) else {
+        return appIcon(bundleIdentifier: sourceKind.bundleIdentifier)
+    }
+
+    static func appIcon(bundleIdentifier: String) -> NSImage? {
+        guard let applicationURL = applicationURL(for: bundleIdentifier) else {
             return nil
         }
 

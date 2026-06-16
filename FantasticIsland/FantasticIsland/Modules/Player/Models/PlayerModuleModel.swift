@@ -233,6 +233,8 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
                 return (sourceKind, image)
             }
         )
+        let activeSourceIconImage = nowPlayingState.sourceBundleIdentifier
+            .flatMap(PlayerSourceRegistry.appIcon(bundleIdentifier:))
 
         return PlayerModuleRenderState(
             presentation: presentation,
@@ -245,6 +247,7 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
             sourceOptions: defaultSourceOptions,
             selectedSource: defaultSourceSelection,
             sourceIconImages: sourceIconImages,
+            activeSourceIconImage: activeSourceIconImage,
             previousTrack: { [weak self] in Task { @MainActor in self?.previousTrack() } },
             togglePlayPause: { [weak self] in Task { @MainActor in self?.togglePlayPause() } },
             nextTrack: { [weak self] in Task { @MainActor in self?.nextTrack() } },

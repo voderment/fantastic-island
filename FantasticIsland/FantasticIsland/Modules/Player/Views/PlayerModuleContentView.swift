@@ -12,6 +12,7 @@ struct PlayerModuleRenderState {
     let sourceOptions: [PlayerSourceKind]
     let selectedSource: PlayerSourceKind
     let sourceIconImages: [PlayerSourceKind: NSImage]
+    let activeSourceIconImage: NSImage?
     let previousTrack: () -> Void
     let togglePlayPause: () -> Void
     let nextTrack: () -> Void
@@ -186,6 +187,7 @@ struct PlayerModuleContentView: View {
             options: state.sourceOptions,
             currentSourceLabel: state.nowPlayingState.sourceLabel,
             iconImages: state.sourceIconImages,
+            activeSourceIconImage: state.activeSourceIconImage,
             selectSource: state.selectSource
         )
     }
@@ -524,6 +526,7 @@ private struct PlayerSourceSelectorView: View {
     let options: [PlayerSourceKind]
     let currentSourceLabel: String
     let iconImages: [PlayerSourceKind: NSImage]
+    let activeSourceIconImage: NSImage?
     let selectSource: (PlayerSourceKind) -> Void
 
     var body: some View {
@@ -539,7 +542,7 @@ private struct PlayerSourceSelectorView: View {
             localizeLabel: false,
             localizeMenuItems: false,
             maxLabelWidth: 62,
-            icon: { iconImages[$0] },
+            icon: { icon(for: $0) },
             iconSize: 12,
             itemSpacing: 4,
             horizontalPadding: 6,
@@ -554,6 +557,14 @@ private struct PlayerSourceSelectorView: View {
         .frame(width: max(68, PlayerExpandedMetrics.artworkSize + 8), height: 24)
         .clipShape(Capsule())
         .help("Switch playback source")
+    }
+
+    private func icon(for source: PlayerSourceKind) -> NSImage? {
+        if source == .nowPlaying, let activeSourceIconImage {
+            return activeSourceIconImage
+        }
+
+        return iconImages[source]
     }
 
     private func sourceLabel(for source: PlayerSourceKind) -> String {

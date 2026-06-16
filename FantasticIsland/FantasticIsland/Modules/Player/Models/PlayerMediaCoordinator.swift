@@ -25,6 +25,7 @@ private nonisolated final class PlayerMediaRemoteBridge: @unchecked Sendable {
         let track: PlayerTrackMetadata?
         let artworkImage: NSImage?
         let sourceDisplayName: String?
+        let sourceBundleIdentifier: String?
     }
 
     private struct HelperPayload: Decodable {
@@ -616,7 +617,8 @@ private nonisolated final class PlayerMediaRemoteBridge: @unchecked Sendable {
             playbackStatus: playbackStatus,
             track: track,
             artworkImage: artworkImage,
-            sourceDisplayName: sourceDisplayName(for: displayID)
+            sourceDisplayName: sourceDisplayName(for: displayID),
+            sourceBundleIdentifier: nilIfEmpty(displayID)
         )
     }
 
@@ -905,6 +907,7 @@ final class PlayerMediaCoordinator {
             return PlayerNowPlayingState(
                 source: .nowPlaying,
                 sourceDisplayName: snapshot.sourceDisplayName,
+                sourceBundleIdentifier: snapshot.sourceBundleIdentifier,
                 playbackStatus: snapshot.playbackStatus,
                 track: snapshot.track,
                 shuffleMode: .unsupported,
@@ -967,6 +970,7 @@ final class PlayerMediaCoordinator {
                 return PlayerNowPlayingState(
                     source: .nowPlaying,
                     sourceDisplayName: snapshot.sourceDisplayName,
+                    sourceBundleIdentifier: snapshot.sourceBundleIdentifier,
                     playbackStatus: snapshot.playbackStatus,
                     track: snapshot.track,
                     shuffleMode: .unsupported,
@@ -1236,6 +1240,7 @@ final class PlayerMediaCoordinator {
         PlayerNowPlayingState(
             source: snapshot.source,
             sourceDisplayName: nil,
+            sourceBundleIdentifier: snapshot.source.bundleIdentifier,
             playbackStatus: snapshot.playbackStatus,
             track: snapshot.track,
             shuffleMode: snapshot.shuffleMode,
