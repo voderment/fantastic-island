@@ -354,6 +354,11 @@ final class IslandLogicTests: XCTestCase {
         XCTAssertNil(controller.completionDate)
     }
 
+    func testHorizonTimerPresetsStayOrderedAndCompact() {
+        XCTAssertEqual(HorizonTimerController.islandPresetMinutes, [1, 5, 10, 15, 25, 45])
+        XCTAssertEqual(HorizonTimerController.islandPresetMinutes, HorizonTimerController.islandPresetMinutes.sorted())
+    }
+
     func testHookDiagnosticsReportsProviderReadinessAndUsageBridgeState() throws {
         let root = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

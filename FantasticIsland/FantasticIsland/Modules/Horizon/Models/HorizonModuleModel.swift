@@ -796,8 +796,8 @@ private struct TimerModuleContentView: View {
     @ObservedObject var controller: HorizonTimerController
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(alignment: .center, spacing: 10) {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .center, spacing: 9) {
                 ZStack {
                     Circle()
                         .stroke(Color.white.opacity(0.08), lineWidth: 3)
@@ -809,11 +809,11 @@ private struct TimerModuleContentView: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(timerTint)
                 }
-                .frame(width: 36, height: 36)
+                .frame(width: 34, height: 34)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(controller.snapshot.displayText)
-                        .font(.system(size: 22, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 21, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.94))
                         .lineLimit(1)
 
@@ -835,6 +835,8 @@ private struct TimerModuleContentView: View {
                     if controller.snapshot.mode != .idle {
                         timerIconButton("arrow.counterclockwise", label: "Reset") { controller.reset() }
                     }
+
+                    timerIconButton("clock", label: "Open Clock") { _ = controller.openNativeClockApp() }
                 }
             }
 
@@ -849,17 +851,17 @@ private struct TimerModuleContentView: View {
             }
             .frame(height: 4)
 
-            HStack(spacing: 6) {
-                ForEach([1, 5, 10, 25, 45], id: \.self) { minutes in
+            HStack(spacing: 5) {
+                ForEach(HorizonTimerController.islandPresetMinutes, id: \.self) { minutes in
                     Button("\(minutes)m") {
                         controller.start(minutes: minutes)
                     }
-                    .buttonStyle(HorizonTimerButtonStyle(isQuiet: minutes == 1 || minutes == 45))
+                    .buttonStyle(HorizonTimerButtonStyle(isSelected: selectedPresetMinutes == minutes))
                 }
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -874,6 +876,10 @@ private struct TimerModuleContentView: View {
         case .completed:
             return Color.green.opacity(0.9)
         }
+    }
+
+    private var selectedPresetMinutes: Int? {
+        controller.snapshot.mode == .idle ? nil : controller.snapshot.presetMinutes
     }
 
     private var timerStatusText: String {
@@ -1152,18 +1158,22 @@ private struct HorizonShelfChip: View {
 }
 
 private struct HorizonTimerButtonStyle: ButtonStyle {
-    var isQuiet = false
+    var isSelected = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 10.5, weight: .bold, design: .monospaced))
-            .foregroundStyle(.white.opacity(configuration.isPressed ? 0.94 : (isQuiet ? 0.46 : 0.68)))
-            .frame(minWidth: 36, minHeight: 22)
+            .foregroundStyle(.white.opacity(configuration.isPressed || isSelected ? 0.94 : 0.64))
+            .frame(minWidth: 34, minHeight: 22)
             .padding(.horizontal, 3)
             .background(
-                Color.white.opacity(configuration.isPressed ? 0.095 : (isQuiet ? 0.035 : 0.055)),
+                Color.white.opacity(configuration.isPressed ? 0.1 : (isSelected ? 0.085 : 0.04)),
                 in: RoundedRectangle(cornerRadius: 6, style: .continuous)
             )
+            .overlay {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(Color.white.opacity(isSelected ? 0.11 : 0.055), lineWidth: 0.7)
+            }
     }
 }
 

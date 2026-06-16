@@ -42,6 +42,7 @@ final class HorizonTimerController: ObservableObject {
     @Published private(set) var snapshot = HorizonTimerSnapshot.idle
     private(set) var completionDate: Date?
     var playsCompletionSound = true
+    static let islandPresetMinutes = [1, 5, 10, 15, 25, 45]
 
     private var tickTimer: Timer?
     private var endDate: Date?
@@ -100,6 +101,16 @@ final class HorizonTimerController: ObservableObject {
         completionDate = nil
         snapshot = HorizonTimerSnapshot.idle
         stopTicking()
+    }
+
+    @discardableResult
+    func openNativeClockApp() -> Bool {
+        guard let clockURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.clock") else {
+            return false
+        }
+
+        NSWorkspace.shared.openApplication(at: clockURL, configuration: NSWorkspace.OpenConfiguration())
+        return true
     }
 
     private func startTicking() {
