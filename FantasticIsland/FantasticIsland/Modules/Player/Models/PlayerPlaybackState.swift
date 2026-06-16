@@ -170,7 +170,7 @@ struct PlayerNowPlayingState: Equatable {
     }
 
     var artistText: String {
-        track?.artist ?? automationIssue?.detailText ?? "No active media source"
+        track?.artist ?? automationIssue?.detailText ?? "Start audio or video in any media app"
     }
 
     var durationText: String {

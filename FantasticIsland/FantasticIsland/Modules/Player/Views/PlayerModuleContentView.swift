@@ -9,9 +9,6 @@ struct PlayerModuleRenderState {
     let automationIssue: PlayerAutomationIssue?
     let canRequestAutomationAccess: Bool
     let isResolvingAutomationAccess: Bool
-    let sourceOptions: [PlayerSourceKind]
-    let selectedSource: PlayerSourceKind
-    let sourceIconImages: [PlayerSourceKind: NSImage]
     let activeSourceIconImage: NSImage?
     let previousTrack: () -> Void
     let togglePlayPause: () -> Void
@@ -22,7 +19,6 @@ struct PlayerModuleRenderState {
     let requestAutomationAccess: () -> Void
     let openAutomationSettings: () -> Void
     let refresh: () -> Void
-    let selectSource: (PlayerSourceKind) -> Void
 }
 
 struct PlayerModuleLiveContentView: View {
@@ -60,7 +56,7 @@ struct PlayerModuleContentView: View {
             HStack(alignment: .top, spacing: PlayerExpandedMetrics.primaryColumnSpacing) {
                 artworkView
 
-                VStack(alignment: .leading, spacing: PlayerExpandedMetrics.controlsSpacing + 4) {
+                VStack(alignment: .leading, spacing: PlayerExpandedMetrics.controlsSpacing) {
                     titleBlock
 
                     if showsAutomationIssue {
@@ -134,7 +130,6 @@ struct PlayerModuleContentView: View {
 
     private var artworkView: some View {
         artworkBody
-            .help("Switch playback source")
     }
 
     private var artworkBody: some View {
@@ -153,8 +148,18 @@ struct PlayerModuleContentView: View {
     }
 
     private var titleBlock: some View {
-        VStack(alignment: .leading, spacing: PlayerExpandedMetrics.titleBlockSpacing) {
-            HStack(alignment: .center, spacing: 10) {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                sourceBadge
+
+                if !showsAutomationIssue, state.nowPlayingState.playbackStatus.isPlaying {
+                    PlayerVisualizerView(isPlaying: true)
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 PlayerAnimatedTitleText(
                     title: state.nowPlayingState.titleText,
                     lineLimit: showsAutomationIssue ? 2 : 1
@@ -163,12 +168,7 @@ struct PlayerModuleContentView: View {
 
                 Spacer(minLength: 0)
 
-                if !showsAutomationIssue, state.nowPlayingState.playbackStatus.isPlaying {
-                    PlayerVisualizerView(isPlaying: true)
-                }
-
                 if !showsAutomationIssue {
-                    sourceSelector
                     playbackModeControls
                 }
             }
@@ -181,15 +181,36 @@ struct PlayerModuleContentView: View {
         }
     }
 
-    private var sourceSelector: some View {
-        PlayerSourceSelectorView(
-            selectedSource: state.selectedSource,
-            options: state.sourceOptions,
-            currentSourceLabel: state.nowPlayingState.sourceLabel,
-            iconImages: state.sourceIconImages,
-            activeSourceIconImage: state.activeSourceIconImage,
-            selectSource: state.selectSource
-        )
+    private var sourceBadge: some View {
+        HStack(spacing: 5) {
+            if let activeSourceIconImage = state.activeSourceIconImage {
+                Image(nsImage: activeSourceIconImage)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFill()
+                    .frame(width: 12, height: 12)
+                    .clipShape(.rect(cornerRadius: 2.5, style: .continuous))
+            } else {
+                Image(systemName: "waveform")
+                    .font(.system(size: 10.5, weight: .bold))
+            }
+
+            Text(sourceBadgeText)
+                .font(.system(size: 10.5, weight: .bold))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .minimumScaleFactor(0.78)
+        }
+        .foregroundStyle(.white.opacity(0.72))
+        .padding(.horizontal, 7)
+        .frame(height: 20)
+        .frame(maxWidth: 128, alignment: .leading)
+        .background(Color.white.opacity(0.075), in: Capsule())
+        .overlay {
+            Capsule()
+                .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.7)
+        }
+        .help("Now Playing follows the current media app")
     }
 
     private var automationIssueActionRow: some View {
@@ -255,19 +276,19 @@ struct PlayerModuleContentView: View {
 
     private var controlsRow: some View {
         HStack(spacing: PlayerExpandedMetrics.controlsSpacing) {
-            controlButton(systemName: "backward.fill", iconSize: 18, frameWidth: 34, frameHeight: 28, action: state.previousTrack)
+            controlButton(systemName: "backward.fill", iconSize: 16, frameWidth: 30, frameHeight: 26, action: state.previousTrack)
                 .disabled(!state.supportsTransportControls)
 
             controlButton(
                 systemName: state.nowPlayingState.playbackStatus.isPlaying ? "pause.fill" : "play.fill",
-                iconSize: 22,
-                frameWidth: 34,
-                frameHeight: 30,
+                iconSize: 20,
+                frameWidth: 32,
+                frameHeight: 28,
                 action: state.togglePlayPause
             )
             .disabled(!state.supportsTransportControls)
 
-            controlButton(systemName: "forward.fill", iconSize: 18, frameWidth: 34, frameHeight: 28, action: state.nextTrack)
+            controlButton(systemName: "forward.fill", iconSize: 16, frameWidth: 30, frameHeight: 26, action: state.nextTrack)
                 .disabled(!state.supportsTransportControls)
         }
         .opacity(state.supportsTransportControls ? 1 : PlayerExpandedMetrics.controlButtonOpacityDisabled)
@@ -362,6 +383,19 @@ struct PlayerModuleContentView: View {
 
     private var showsAutomationIssue: Bool {
         state.automationIssue != nil
+    }
+
+    private var sourceBadgeText: String {
+        let label = state.nowPlayingState.sourceLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !label.isEmpty, label != "Player" else {
+            return "Now Playing"
+        }
+
+        if label == PlayerSourceKind.nowPlaying.displayName {
+            return "Now Playing"
+        }
+
+        return label
     }
 
     private var displayedElapsedText: String {
@@ -518,67 +552,6 @@ private struct PlayerArtworkThumbnailView: View {
                 displayedArtworkRevision = nil
                 displayedArtworkTrackIdentity = trackIdentity
             }
-        }
-    }
-}
-
-private struct PlayerSourceSelectorView: View {
-    let selectedSource: PlayerSourceKind
-    let options: [PlayerSourceKind]
-    let currentSourceLabel: String
-    let iconImages: [PlayerSourceKind: NSImage]
-    let activeSourceIconImage: NSImage?
-    let selectSource: (PlayerSourceKind) -> Void
-
-    var body: some View {
-        CapsuleMenuPicker(
-            selection: Binding(
-                get: { selectedSource },
-                set: { selectSource($0) }
-            ),
-            options: options,
-            title: \.displayName,
-            labelTitle: { sourceLabel(for: $0) },
-            isEnabled: options.count > 1,
-            localizeLabel: false,
-            localizeMenuItems: false,
-            maxLabelWidth: 62,
-            icon: { icon(for: $0) },
-            iconSize: 12,
-            itemSpacing: 4,
-            horizontalPadding: 6,
-            verticalPadding: 4,
-            backgroundColor: .black,
-            backgroundOpacity: 0.72,
-            disabledBackgroundOpacity: 0.62,
-            strokeColor: .white,
-            strokeOpacity: 0.16,
-            strokeLineWidth: 0.8
-        )
-        .frame(width: max(68, PlayerExpandedMetrics.artworkSize + 8), height: 24)
-        .clipShape(Capsule())
-        .help("Switch playback source")
-    }
-
-    private func icon(for source: PlayerSourceKind) -> NSImage? {
-        if source == .nowPlaying, let activeSourceIconImage {
-            return activeSourceIconImage
-        }
-
-        return iconImages[source]
-    }
-
-    private func sourceLabel(for source: PlayerSourceKind) -> String {
-        switch source {
-        case .nowPlaying:
-            let label = currentSourceLabel.trimmingCharacters(in: .whitespacesAndNewlines)
-            return label.isEmpty || label == PlayerSourceKind.nowPlaying.displayName ? "Now" : label
-        case .music:
-            return "Music"
-        case .podcasts:
-            return "Podcasts"
-        case .spotify:
-            return "Spotify"
         }
     }
 }

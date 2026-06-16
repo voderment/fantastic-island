@@ -9,8 +9,8 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
     private static let transientNotificationAutoDismissDelay: TimeInterval = 1.5
     private static let trackSwitchActivityPriority = 240
     private static let minimumRefreshInterval: TimeInterval = 0.18
-    private static let estimatedArtworkBlockHeight: CGFloat = 62
-    private static let estimatedProgressSectionHeight: CGFloat = 22
+    private static let estimatedArtworkBlockHeight: CGFloat = 54
+    private static let estimatedProgressSectionHeight: CGFloat = 20
     private static let estimatedOuterSpacing: CGFloat = 7
 
     private struct TrackIdentity: Equatable {
@@ -168,7 +168,15 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
             return false
         }
 
-        return nowPlayingState.supportsTransportControls || defaultSource != nil
+        if nowPlayingState.supportsTransportControls {
+            return true
+        }
+
+        guard let defaultSource else {
+            return false
+        }
+
+        return defaultSource != .nowPlaying
     }
 
     var automationIssue: PlayerAutomationIssue? {
@@ -226,15 +234,6 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
             resolvedNotification = nil
         }
 
-        let sourceIconImages = Dictionary(
-            uniqueKeysWithValues: defaultSourceOptions.compactMap { sourceKind -> (PlayerSourceKind, NSImage)? in
-                guard let image = PlayerSourceRegistry.appIcon(for: sourceKind) else {
-                    return nil
-                }
-
-                return (sourceKind, image)
-            }
-        )
         let activeSourceIconImage = nowPlayingState.sourceBundleIdentifier
             .flatMap(PlayerSourceRegistry.appIcon(bundleIdentifier:))
 
@@ -246,9 +245,6 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
             automationIssue: automationIssue,
             canRequestAutomationAccess: canRequestAutomationAccess,
             isResolvingAutomationAccess: isResolvingAutomationAccess,
-            sourceOptions: defaultSourceOptions,
-            selectedSource: defaultSourceSelection,
-            sourceIconImages: sourceIconImages,
             activeSourceIconImage: activeSourceIconImage,
             previousTrack: { [weak self] in Task { @MainActor in self?.previousTrack() } },
             togglePlayPause: { [weak self] in Task { @MainActor in self?.togglePlayPause() } },
@@ -258,8 +254,7 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
             cycleRepeat: { [weak self] in Task { @MainActor in self?.cycleRepeat() } },
             requestAutomationAccess: { [weak self] in Task { @MainActor in self?.requestAutomationAccess() } },
             openAutomationSettings: { [weak self] in Task { @MainActor in self?.openAutomationSettings() } },
-            refresh: { [weak self] in Task { @MainActor in self?.refresh() } },
-            selectSource: { [weak self] source in Task { @MainActor in self?.selectPlaybackSource(source) } }
+            refresh: { [weak self] in Task { @MainActor in self?.refresh() } }
         )
     }
 
