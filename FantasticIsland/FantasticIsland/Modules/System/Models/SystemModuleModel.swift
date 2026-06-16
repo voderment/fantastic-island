@@ -406,6 +406,9 @@ private struct SystemModuleContentView: View {
 }
 
 private struct SystemMetricCell: View {
+    private static let horizontalPadding: CGFloat = 9
+    private static let trackHeight: CGFloat = 18
+
     let symbolName: String
     let title: String
     let subtitle: String
@@ -414,6 +417,28 @@ private struct SystemMetricCell: View {
     @State private var isDragging = false
 
     var body: some View {
+        GeometryReader { proxy in
+            let cell = metricContent
+                .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
+                .padding(.horizontal, Self.horizontalPadding)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.white.opacity(isDragging ? 0.055 : (onChange == nil ? 0 : 0.018)))
+                )
+
+            if onChange != nil {
+                cell
+                    .contentShape(Rectangle())
+                    .gesture(cellDragGesture(width: proxy.size.width))
+            } else {
+                cell
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 58, maxHeight: 58, alignment: .leading)
+        .help(onChange == nil ? subtitle : "Drag to adjust \(subtitle.lowercased())")
+    }
+
+    private var metricContent: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 7) {
                 Image(systemName: symbolName)
@@ -432,9 +457,6 @@ private struct SystemMetricCell: View {
                 .foregroundStyle(.white.opacity(0.46))
                 .lineLimit(1)
         }
-        .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
-        .padding(.horizontal, 9)
-        .help(onChange == nil ? subtitle : "Drag to adjust \(subtitle.lowercased())")
     }
 
     private var levelControl: some View {
@@ -446,41 +468,43 @@ private struct SystemMetricCell: View {
             ZStack(alignment: .leading) {
                 Capsule()
                     .fill(Color.white.opacity(isEditable ? 0.11 : 0.07))
-                    .frame(height: 5)
+                    .frame(height: isEditable ? 7 : 5)
 
                 Capsule()
                     .fill(IslandVisualLanguage.accent.opacity(isEditable ? 0.74 : 0.38))
-                    .frame(width: fillWidth, height: 5)
+                    .frame(width: fillWidth, height: isEditable ? 7 : 5)
 
                 Circle()
                     .fill(Color.white.opacity(isEditable ? 0.92 : 0.34))
-                    .frame(width: isDragging ? 9 : 7, height: isDragging ? 9 : 7)
+                    .frame(width: isDragging ? 11 : 8, height: isDragging ? 11 : 8)
                     .shadow(color: .black.opacity(isEditable ? 0.24 : 0), radius: 2, y: 1)
-                    .offset(x: max(0, min(proxy.size.width - 7, fillWidth - 3.5)))
+                    .offset(x: max(0, min(proxy.size.width - 8, fillWidth - 4)))
                     .opacity(isEditable || clampedFill > 0 ? 1 : 0)
             }
             .frame(maxHeight: .infinity, alignment: .center)
             .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        guard let onChange else { return }
-                        isDragging = true
-                        onChange(progress(for: value.location.x, width: proxy.size.width))
-                    }
-                    .onEnded { value in
-                        guard let onChange else { return }
-                        onChange(progress(for: value.location.x, width: proxy.size.width))
-                        isDragging = false
-                    }
-            )
             .animation(.easeOut(duration: 0.12), value: isDragging)
         }
-        .frame(height: 18)
+        .frame(height: Self.trackHeight)
     }
 
-    private func progress(for locationX: CGFloat, width: CGFloat) -> CGFloat {
-        guard width > 0 else { return 0 }
-        return max(0, min(1, locationX / width))
+    private func cellDragGesture(width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                guard let onChange else { return }
+                isDragging = true
+                onChange(progress(for: value.location.x, cellWidth: width))
+            }
+            .onEnded { value in
+                guard let onChange else { return }
+                onChange(progress(for: value.location.x, cellWidth: width))
+                isDragging = false
+            }
+    }
+
+    private func progress(for locationX: CGFloat, cellWidth: CGFloat) -> CGFloat {
+        let trackWidth = max(1, cellWidth - (Self.horizontalPadding * 2))
+        let trackLocation = locationX - Self.horizontalPadding
+        return max(0, min(1, trackLocation / trackWidth))
     }
 }
