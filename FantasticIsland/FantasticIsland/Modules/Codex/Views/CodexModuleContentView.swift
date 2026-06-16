@@ -382,7 +382,7 @@ struct CodexModuleContentView: View {
                 .fill(state.activityState.inProgressSessionCount > 0 ? Color.green.opacity(0.95) : Color.white.opacity(0.22))
                 .frame(width: 7, height: 7)
 
-            Text("LIVE \(state.globalInfoLiveCountText)")
+            Text("AGENTS \(state.globalInfoLiveCountText)")
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundStyle(state.activityState.inProgressSessionCount > 0 ? Color.green.opacity(0.95) : Color.white.opacity(0.52))
         }

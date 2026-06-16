@@ -49,7 +49,7 @@ struct IslandAboutPage: View {
                             .font(.system(size: 24, weight: .bold))
                             .foregroundStyle(.white)
 
-                        Text("A notch-first macOS utility that brings agents, playback, and lightweight system context into one compact island surface.")
+                        Text("A notch-first macOS utility that brings agents, playback, timers, file shelf, and lightweight system context into one compact island surface.")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(.white.opacity(0.56))
                             .fixedSize(horizontal: false, vertical: true)
@@ -67,7 +67,7 @@ struct IslandAboutPage: View {
 
                 AboutInfoBlock(
                     title: "Product concept",
-                    value: "Fantastic Island treats the notch as a shared command surface instead of a passive status strip. Agents, playback, and horizon context stay close enough to read, reply, and act without leaving the island."
+                    value: "Fantastic Island treats the notch as a shared command surface instead of a passive status strip. Agents, playback, timers, shelf items, and horizon context stay close enough to read, reply, and act without leaving the island."
                 )
             }
         }
@@ -93,7 +93,7 @@ struct IslandAboutPage: View {
 
                 AboutAuditRow(
                     title: "Product modules",
-                    value: "Agents, Player, Horizon"
+                    value: "Agents, Player, Horizon, Timer, Shelf"
                 )
 
                 AboutAuditRow(

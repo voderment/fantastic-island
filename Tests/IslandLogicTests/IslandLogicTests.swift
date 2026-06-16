@@ -675,6 +675,7 @@ final class IslandLogicTests: XCTestCase {
         XCTAssertEqual(sessions.first?.cwd, workspace.path)
         XCTAssertEqual(sessions.first?.assistantSummary, "Codex surfaced from rollout.")
         XCTAssertEqual(sessions.first?.sessionSurface, .terminal)
+        XCTAssertNotNil(sessions.first?.modifiedAt)
     }
 
     func testDiscoveryFindsClaudeProjectTranscript() throws {

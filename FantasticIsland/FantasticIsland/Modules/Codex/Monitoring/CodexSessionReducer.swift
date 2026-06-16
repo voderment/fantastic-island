@@ -32,6 +32,11 @@ final class CodexSessionReducer {
         snapshot.transcriptPath = session.transcriptPath
         snapshot.sourceFlags.insert(.rollout)
         snapshot.sessionSurface = snapshot.sessionSurface.merged(with: session.sessionSurface)
+        if snapshot.lastEventAt == nil,
+           let modifiedAt = session.modifiedAt,
+           modifiedAt > (snapshot.lastEventAt ?? .distantPast) {
+            snapshot.lastEventAt = modifiedAt
+        }
         if let jumpTarget = session.jumpTarget {
             snapshot.jumpTarget = snapshot.jumpTarget.map { $0.merged(with: jumpTarget) } ?? jumpTarget
         }

@@ -15,6 +15,7 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
 
     private struct TrackIdentity: Equatable {
         let source: PlayerSourceKind
+        let sourceBundleIdentifier: String
         let title: String
         let artist: String
         let album: String
@@ -25,11 +26,12 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
                 return nil
             }
 
-            self.init(source: source, track: track)
+            self.init(source: source, sourceBundleIdentifier: state.sourceBundleIdentifier, track: track)
         }
 
-        init(source: PlayerSourceKind, track: PlayerTrackMetadata) {
+        init(source: PlayerSourceKind, sourceBundleIdentifier: String?, track: PlayerTrackMetadata) {
             self.source = source
+            self.sourceBundleIdentifier = sourceBundleIdentifier ?? ""
             self.title = track.title
             self.artist = track.artist
             self.album = track.album ?? ""

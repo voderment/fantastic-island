@@ -40,6 +40,7 @@ final class IslandShellController {
     private static let maximumExpandedContentWidth: CGFloat = 408
     private static let expandedContentWidthFactor: CGFloat = 0.18
     private static let openedContentBottomPadding: CGFloat = CodexIslandChromeMetrics.openedSurfaceBottomInset
+    private static let closedHoverOpenDelay: TimeInterval = 0.18
 
     fileprivate weak var model: IslandAppModel?
     private var panel: IslandShellPanel?
@@ -48,6 +49,7 @@ final class IslandShellController {
     private var globalClickMonitor: Any?
     private var localClickMonitor: Any?
     private var pendingCloseResize: DispatchWorkItem?
+    private var pendingHoverOpen: DispatchWorkItem?
     private var rootViewMetrics: RootViewMetrics?
     private(set) var notchRect: NSRect = .zero
 
@@ -64,6 +66,7 @@ final class IslandShellController {
     }
 
     deinit {
+        pendingHoverOpen?.cancel()
         if let screenObserver {
             NotificationCenter.default.removeObserver(screenObserver)
         }
@@ -588,7 +591,27 @@ final class IslandShellController {
     }
 
     fileprivate func handleClosedActivationHover(_ hovering: Bool) {
+        pendingHoverOpen?.cancel()
+        pendingHoverOpen = nil
         model?.setIslandClosedHovering(hovering)
+
+        guard hovering, let model, !model.islandExpanded else {
+            return
+        }
+
+        let workItem = DispatchWorkItem { [weak self, weak model] in
+            guard let self,
+                  let model,
+                  model.islandClosedHovering,
+                  !model.islandExpanded else {
+                return
+            }
+
+            model.expandIsland(reason: .manualTap)
+            self.pendingHoverOpen = nil
+        }
+        pendingHoverOpen = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.closedHoverOpenDelay, execute: workItem)
     }
 
     private func screenPoint(for event: NSEvent) -> NSPoint {

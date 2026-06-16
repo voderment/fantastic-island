@@ -9,6 +9,7 @@ struct DiscoveredSession: Equatable {
     let jumpTarget: CodexTerminalJumpTarget?
     let assistantSummary: String?
     let sessionSurface: CodexSessionSurface
+    let modifiedAt: Date?
 
     init(
         id: String,
@@ -18,7 +19,8 @@ struct DiscoveredSession: Equatable {
         transcriptPath: String,
         jumpTarget: CodexTerminalJumpTarget? = nil,
         assistantSummary: String? = nil,
-        sessionSurface: CodexSessionSurface = .unknown
+        sessionSurface: CodexSessionSurface = .unknown,
+        modifiedAt: Date? = nil
     ) {
         self.id = id
         self.provider = provider
@@ -28,6 +30,7 @@ struct DiscoveredSession: Equatable {
         self.jumpTarget = jumpTarget
         self.assistantSummary = assistantSummary
         self.sessionSurface = sessionSurface
+        self.modifiedAt = modifiedAt
     }
 }
 
@@ -113,7 +116,7 @@ struct CodexSessionDiscovery {
             }
             .prefix(maxFiles)
             .compactMap { candidate in
-                discoverSession(at: candidate.url)
+                discoverSession(at: candidate.url, modifiedAt: candidate.modifiedAt)
             }
     }
 
@@ -138,7 +141,8 @@ struct CodexSessionDiscovery {
                 transcriptPath: stored.transcriptPath,
                 jumpTarget: stored.jumpTarget,
                 assistantSummary: stored.assistantSummary,
-                sessionSurface: stored.sessionSurface
+                sessionSurface: stored.sessionSurface,
+                modifiedAt: stored.modifiedAt
             )
         }
     }
@@ -190,10 +194,10 @@ struct CodexSessionDiscovery {
         return candidates
             .sorted { $0.modifiedAt > $1.modifiedAt }
             .prefix(maxFiles)
-            .compactMap { discoverProviderSession(at: $0.url, provider: provider) }
+            .compactMap { discoverProviderSession(at: $0.url, provider: provider, modifiedAt: $0.modifiedAt) }
     }
 
-    private func discoverProviderSession(at url: URL, provider: AgentProvider) -> DiscoveredSession? {
+    private func discoverProviderSession(at url: URL, provider: AgentProvider, modifiedAt: Date?) -> DiscoveredSession? {
         let metadata = AgentTranscriptParser.extractMetadata(at: url.path, provider: provider)
         let sessionID = metadata.sessionID ?? url.deletingPathExtension().lastPathComponent
         let cwd = metadata.cwd ?? inferWorkspacePath(from: url, provider: provider) ?? FileManager.default.homeDirectoryForCurrentUser.path
@@ -214,7 +218,8 @@ struct CodexSessionDiscovery {
             transcriptPath: url.path,
             jumpTarget: insights.jumpTarget,
             assistantSummary: metadata.assistantSummary ?? turns.last(where: { $0.role == .assistant })?.text,
-            sessionSurface: insights.sessionSurface
+            sessionSurface: insights.sessionSurface,
+            modifiedAt: modifiedAt
         )
     }
 
@@ -304,7 +309,7 @@ struct CodexSessionDiscovery {
         session.transcriptPath.hasPrefix(sessionStore.rootURL.path)
     }
 
-    func discoverSession(at url: URL) -> DiscoveredSession? {
+    func discoverSession(at url: URL, modifiedAt: Date? = nil) -> DiscoveredSession? {
         guard let handle = try? FileHandle(forReadingFrom: url) else {
             return nil
         }
@@ -360,8 +365,13 @@ struct CodexSessionDiscovery {
             transcriptPath: url.path,
             jumpTarget: insights.jumpTarget,
             assistantSummary: insights.assistantSummary ?? turns.last(where: { $0.role == .assistant })?.text,
-            sessionSurface: sessionSurface.merged(with: insights.sessionSurface)
+            sessionSurface: sessionSurface.merged(with: insights.sessionSurface),
+            modifiedAt: modifiedAt ?? transcriptModificationDate(at: url)
         )
+    }
+
+    private func transcriptModificationDate(at url: URL) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date) ?? nil
     }
 
     private func surface(fromSessionMetaPayload payload: [String: Any]) -> CodexSessionSurface {

@@ -27,7 +27,7 @@ struct IslandDesignTokens: Codable, Equatable {
     // The app's runtime startup baseline must come from `sourceDefaults()`,
     // which reads the current writeback-owned source constants.
     struct ShellTokens: Codable, Equatable {
-        var openedShadowHorizontalInset: Double = 18
+        var openedShadowHorizontalInset: Double = 4
         var openedShadowBottomInset: Double = 0
         var openedSurfaceBottomInset: Double = 0
         var openedSurfaceContentHorizontalInset: Double = 14

@@ -216,8 +216,8 @@ final class CodexModuleModel: ObservableObject, IslandModule {
 
     var compactFiveHourQuotaText: String { compactQuotaText(prefix: "5H", value: quotaSnapshot?.fiveHourRemainingPercent) }
     var compactWeekQuotaText: String { compactQuotaText(prefix: "W", value: quotaSnapshot?.weekRemainingPercent) }
-    var compactLiveSessionsText: String { "LIVE \(activityState.inProgressSessionCount)" }
-    var globalInfoLiveCountText: String { "\(activityState.inProgressSessionCount)" }
+    var compactLiveSessionsText: String { "AGENTS \(visibleAgentSessionCount)" }
+    var globalInfoLiveCountText: String { "\(visibleAgentSessionCount)" }
     var globalInfoFiveHourValueText: String { quotaValueText(quotaSnapshot?.fiveHourRemainingPercent) }
     var globalInfoWeekValueText: String { quotaValueText(quotaSnapshot?.weekRemainingPercent) }
     var globalInfoFiveHourResetCompactText: String { quotaResetTimeCompactText(quotaSnapshot?.fiveHourResetAt) }
@@ -241,6 +241,10 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     var expandedWeekQuotaText: String { expandedQuotaText(title: "Week Left", value: quotaSnapshot?.weekRemainingPercent) }
     var fiveHourResetDescriptionText: String { quotaResetText(quotaSnapshot?.fiveHourResetAt) }
     var weekResetDescriptionText: String { quotaResetText(quotaSnapshot?.weekResetAt) }
+
+    private var visibleAgentSessionCount: Int {
+        sessionBuckets.primary.count
+    }
 
     var hooksActionTitle: String {
         hooksStatus.isInstalled

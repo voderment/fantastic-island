@@ -353,6 +353,7 @@ struct PlayerModuleContentView: View {
 
         return [
             state.nowPlayingState.source?.rawValue ?? "player",
+            state.nowPlayingState.sourceBundleIdentifier ?? "",
             track.title,
             track.artist,
             track.album ?? "",

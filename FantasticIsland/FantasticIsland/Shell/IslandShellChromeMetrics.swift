@@ -25,7 +25,7 @@ import SwiftUI
 // Modified for Fantastic Island on 2026-04-13.
 @MainActor
 enum CodexIslandChromeMetrics {
-    static let defaultOpenedShadowHorizontalInset: CGFloat = 12
+    static let defaultOpenedShadowHorizontalInset: CGFloat = 4
     static let defaultOpenedShadowBottomInset: CGFloat = 0
     static let defaultOpenedSurfaceBottomInset: CGFloat = 0
     static let defaultOpenedSurfaceContentHorizontalInset: CGFloat = 16

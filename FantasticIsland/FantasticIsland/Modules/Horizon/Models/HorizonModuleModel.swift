@@ -181,7 +181,7 @@ final class HorizonModuleModel: ObservableObject, IslandModule {
     }
 
     var preferredOpenedContentHeight: CGFloat {
-        286
+        158
     }
 
     var allowsInternalScrolling: Bool { false }
@@ -473,19 +473,103 @@ final class HorizonModuleModel: ObservableObject, IslandModule {
     }
 }
 
+@MainActor
+final class TimerModuleModel: ObservableObject, IslandModule {
+    static let moduleID = "timer"
+
+    let id = TimerModuleModel.moduleID
+    let title = "Timer"
+    let symbolName = "timer"
+    let timerController: HorizonTimerController
+
+    private var cancellables: Set<AnyCancellable> = []
+
+    init(timerController: HorizonTimerController) {
+        self.timerController = timerController
+        timerController.objectWillChange
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+    }
+
+    var collapsedSummaryItems: [CollapsedSummaryItem] {
+        [
+            CollapsedSummaryItem(
+                id: "\(id).summary.remaining",
+                moduleID: id,
+                title: "Timer",
+                text: timerController.snapshot.mode == .idle ? "Ready" : timerController.snapshot.displayText,
+                isEnabledByDefault: false
+            ),
+        ]
+    }
+
+    var taskActivityContribution: TaskActivityContribution {
+        TaskActivityContribution(
+            activeTaskCount: timerController.snapshot.mode == .idle ? 0 : 1,
+            inProgressTaskCount: timerController.snapshot.mode == .running ? 1 : 0,
+            lastEventAt: timerController.snapshot.mode == .idle ? nil : .now
+        )
+    }
+
+    var preferredOpenedContentHeight: CGFloat { 150 }
+    var allowsInternalScrolling: Bool { false }
+
+    func makeLiveContentView(presentation _: IslandModulePresentationContext) -> AnyView {
+        AnyView(TimerModuleContentView(controller: timerController))
+    }
+}
+
+@MainActor
+final class ShelfModuleModel: ObservableObject, IslandModule {
+    static let moduleID = "shelf"
+
+    let id = ShelfModuleModel.moduleID
+    let title = "Shelf"
+    let symbolName = "tray.and.arrow.down"
+    let horizonModule: HorizonModuleModel
+
+    private var cancellables: Set<AnyCancellable> = []
+
+    init(horizonModule: HorizonModuleModel) {
+        self.horizonModule = horizonModule
+        horizonModule.objectWillChange
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+    }
+
+    var collapsedSummaryItems: [CollapsedSummaryItem] {
+        [
+            CollapsedSummaryItem(
+                id: "\(id).summary.count",
+                moduleID: id,
+                title: "Shelf",
+                text: "\(horizonModule.shelfItems.count)/5",
+                isEnabledByDefault: false
+            ),
+        ]
+    }
+
+    var taskActivityContribution: TaskActivityContribution { TaskActivityContribution() }
+    var preferredOpenedContentHeight: CGFloat { 162 }
+    var allowsInternalScrolling: Bool { false }
+
+    func makeLiveContentView(presentation _: IslandModulePresentationContext) -> AnyView {
+        AnyView(ShelfModuleContentView(model: horizonModule))
+    }
+}
+
 private struct HorizonModuleContentView: View {
     @ObservedObject var model: HorizonModuleModel
-    @State private var isShelfDropTargeted = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             horizonSectionDivider
             calendarRemindersSection
-            horizonSectionDivider
-            timerSection
-            horizonSectionDivider
-            shelf
         }
     }
 
@@ -544,7 +628,12 @@ private struct HorizonModuleContentView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var timerSection: some View {
+}
+
+private struct TimerModuleContentView: View {
+    @ObservedObject var controller: HorizonTimerController
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 8) {
                 Image(systemName: "timer")
@@ -553,7 +642,7 @@ private struct HorizonModuleContentView: View {
                     .font(IslandVisualLanguage.islandLabel(12))
                     .foregroundStyle(.white.opacity(0.62))
                 Spacer(minLength: 0)
-                Text(model.timerController.snapshot.displayText)
+                Text(controller.snapshot.displayText)
                     .font(IslandVisualLanguage.islandLabel(12))
                     .foregroundStyle(.white.opacity(0.88))
             }
@@ -561,31 +650,47 @@ private struct HorizonModuleContentView: View {
             HStack(spacing: 8) {
                 ForEach([5, 10, 25], id: \.self) { minutes in
                     Button("\(minutes)m") {
-                        model.timerController.start(minutes: minutes)
+                        controller.start(minutes: minutes)
                     }
                     .buttonStyle(HorizonTimerButtonStyle())
                 }
 
-                if model.timerController.snapshot.mode == .running {
-                    Button("Pause") { model.timerController.pause() }
+                if controller.snapshot.mode == .running {
+                    Button("Pause") { controller.pause() }
                         .buttonStyle(HorizonTimerButtonStyle())
-                } else if model.timerController.snapshot.mode == .paused {
-                    Button("Resume") { model.timerController.resume() }
+                } else if controller.snapshot.mode == .paused {
+                    Button("Resume") { controller.resume() }
                         .buttonStyle(HorizonTimerButtonStyle())
                 }
 
-                if model.timerController.snapshot.mode != .idle {
-                    Button("Reset") { model.timerController.reset() }
+                if controller.snapshot.mode != .idle {
+                    Button("Reset") { controller.reset() }
                         .buttonStyle(HorizonTimerButtonStyle())
                 }
             }
+
+            HStack(spacing: 8) {
+                ForEach([1, 15, 45], id: \.self) { minutes in
+                    Button("\(minutes)m") {
+                        controller.start(minutes: minutes)
+                    }
+                    .buttonStyle(HorizonTimerButtonStyle())
+                }
+            }
+            .padding(.top, 2)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 7)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var shelf: some View {
+}
+
+private struct ShelfModuleContentView: View {
+    @ObservedObject var model: HorizonModuleModel
+    @State private var isShelfDropTargeted = false
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 8) {
                 Image(systemName: "tray.and.arrow.down")
@@ -640,8 +745,12 @@ private struct HorizonModuleContentView: View {
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 7)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(isShelfDropTargeted ? IslandVisualLanguage.accent.opacity(0.1) : Color.clear)
+        )
         .overlay(alignment: .top) {
             if isShelfDropTargeted {
                 Rectangle()

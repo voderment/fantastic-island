@@ -577,7 +577,7 @@ enum CodexHookDirective: Equatable, Codable {
         case deny
     }
 
-    static func allow(for eventName: CodexHookEventName) -> CodexHookDirective? {
+    nonisolated static func allow(for eventName: CodexHookEventName) -> CodexHookDirective? {
         switch eventName {
         case .permissionRequest:
             return .permissionRequestAllow
@@ -586,7 +586,7 @@ enum CodexHookDirective: Equatable, Codable {
         }
     }
 
-    static func deny(reason: String, for eventName: CodexHookEventName) -> CodexHookDirective {
+    nonisolated static func deny(reason: String, for eventName: CodexHookEventName) -> CodexHookDirective {
         switch eventName {
         case .permissionRequest:
             return .permissionRequestDeny(reason: reason)

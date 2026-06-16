@@ -64,6 +64,8 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
         private var accumulatedHorizontal: CGFloat = 0
         private var accumulatedVertical: CGFloat = 0
         private var lastSwitchAt = Date.distantPast
+        private var lastScrollEventAt = Date.distantPast
+        private var hasSwitchedDuringGesture = false
 
         init(model: IslandAppModel) {
             self.model = model
@@ -84,8 +86,14 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
         }
 
         private func handle(_ event: NSEvent) -> Bool {
+            let now = Date()
+            if now.timeIntervalSince(lastScrollEventAt) > 0.42 {
+                resetGestureState()
+            }
+            lastScrollEventAt = now
+
             if shouldResetAccumulation(for: event) {
-                resetAccumulation()
+                resetGestureState()
                 return false
             }
 
@@ -113,10 +121,15 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
                 return false
             }
 
+            if hasSwitchedDuringGesture {
+                return true
+            }
+
             if abs(accumulatedHorizontal) > 24,
-               Date().timeIntervalSince(lastSwitchAt) > 0.24 {
+               now.timeIntervalSince(lastSwitchAt) > 0.24 {
                 model.selectAdjacentModule(offset: accumulatedHorizontal > 0 ? 1 : -1)
-                lastSwitchAt = Date()
+                lastSwitchAt = now
+                hasSwitchedDuringGesture = true
                 resetAccumulation()
             }
 
@@ -145,6 +158,11 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
         private func resetAccumulation() {
             accumulatedHorizontal = 0
             accumulatedVertical = 0
+        }
+
+        private func resetGestureState() {
+            resetAccumulation()
+            hasSwitchedDuringGesture = false
         }
     }
 }
@@ -540,9 +558,9 @@ struct IslandShellView: View {
         }
         .scaleEffect(usesOpenedVisualState ? 1 : (isClosedHovering ? CodexIslandChromeMetrics.closedHoverScale : 1), anchor: .top)
         .shadow(
-            color: .black.opacity(usesOpenedVisualState ? 0.42 : 0),
-            radius: usesOpenedVisualState ? 26 : 0,
-            y: usesOpenedVisualState ? 10 : 0
+            color: .black.opacity(usesOpenedVisualState ? 0.32 : 0),
+            radius: usesOpenedVisualState ? 14 : 0,
+            y: usesOpenedVisualState ? 8 : 0
         )
         .padding(.horizontal, panelShadowHorizontalInset)
         .padding(.bottom, panelShadowBottomInset)

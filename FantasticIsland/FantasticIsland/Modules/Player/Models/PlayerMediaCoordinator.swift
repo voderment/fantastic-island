@@ -1045,7 +1045,11 @@ final class PlayerMediaCoordinator {
 
         switch source {
         case .nowPlaying:
-            cacheKey = nowPlayingArtworkCacheKey(for: track, artworkURL: track.artworkURL)
+            cacheKey = nowPlayingArtworkCacheKey(
+                for: track,
+                artworkURL: track.artworkURL,
+                sourceBundleIdentifier: state.sourceBundleIdentifier
+            )
             remoteArtworkURL = track.artworkURL
         case .music:
             cacheKey = musicArtworkCacheKey(for: track)
@@ -1663,13 +1667,18 @@ final class PlayerMediaCoordinator {
         ].joined(separator: "\u{1F}")
     }
 
-    private func nowPlayingArtworkCacheKey(for track: PlayerTrackMetadata, artworkURL: URL?) -> String {
+    private func nowPlayingArtworkCacheKey(
+        for track: PlayerTrackMetadata,
+        artworkURL: URL?,
+        sourceBundleIdentifier: String?
+    ) -> String {
         if let artworkURL {
-            return "now-playing:\(artworkURL.absoluteString)"
+            return "now-playing:\(sourceBundleIdentifier ?? ""):\(artworkURL.absoluteString)"
         }
 
         return [
             "now-playing",
+            sourceBundleIdentifier ?? "",
             track.title,
             track.artist,
             track.album ?? "",

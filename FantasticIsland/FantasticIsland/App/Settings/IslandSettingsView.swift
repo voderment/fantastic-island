@@ -257,6 +257,20 @@ struct IslandSettingsView: View {
                     playerModulePage
                 case HorizonModuleModel.moduleID:
                     horizonModulePage
+                case TimerModuleModel.moduleID:
+                    SettingsCard(title: "Timer") {
+                        PlaceholderRow(
+                            title: "Compact timer",
+                            detail: "Timer controls live directly in the island for quick starts, pause, resume, and reset."
+                        )
+                    }
+                case ShelfModuleModel.moduleID:
+                    SettingsCard(title: "Shelf") {
+                        PlaceholderRow(
+                            title: "File drop shelf",
+                            detail: "Drop files onto the island and keep compact open, reveal, share, and remove actions close by."
+                        )
+                    }
                 case XPostModuleModel.moduleID:
                     postModulePage
                 default:
@@ -591,7 +605,11 @@ struct IslandSettingsView: View {
         case PlayerModuleModel.moduleID:
             return "Review the current media integration state and keep transport controls close at hand."
         case HorizonModuleModel.moduleID:
-            return "Keep calendar, reminders, battery, and shelf behavior native and glanceable."
+            return "Keep calendar, reminders, weather, and battery native and glanceable."
+        case TimerModuleModel.moduleID:
+            return "Run short timers without turning Horizon into a crowded dashboard."
+        case ShelfModuleModel.moduleID:
+            return "Drop files into a compact island shelf with quick open, reveal, share, and remove actions."
         case XPostModuleModel.moduleID:
             return "Draft and publish a compact text post without leaving the island."
         default:

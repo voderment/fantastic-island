@@ -130,6 +130,8 @@ final class IslandAppModel: ObservableObject {
     let agentsModule: CodexModuleModel
     let playerModule: PlayerModuleModel
     let horizonModule: HorizonModuleModel
+    let timerModule: TimerModuleModel
+    let shelfModule: ShelfModuleModel
     let postModule: XPostModuleModel
     let moduleRegistry: IslandModuleRegistry
     let designTokenStore = IslandDebugTokenStore()
@@ -190,15 +192,19 @@ final class IslandAppModel: ObservableObject {
         let agentsModule = CodexModuleModel()
         let playerModule = PlayerModuleModel()
         let horizonModule = HorizonModuleModel()
+        let timerModule = TimerModuleModel(timerController: horizonModule.timerController)
+        let shelfModule = ShelfModuleModel(horizonModule: horizonModule)
         let postModule = XPostModuleModel()
         IslandDefaults.migrateLegacyValues()
-        let allModules: [any IslandModule] = [agentsModule, playerModule, horizonModule, postModule]
+        let allModules: [any IslandModule] = [agentsModule, playerModule, horizonModule, timerModule, shelfModule, postModule]
         let defaults = UserDefaults.standard
         let loadedEnabledModuleIDs = Self.loadEnabledModuleIDs(defaults: defaults, availableModules: allModules)
 
         self.agentsModule = agentsModule
         self.playerModule = playerModule
         self.horizonModule = horizonModule
+        self.timerModule = timerModule
+        self.shelfModule = shelfModule
         self.postModule = postModule
         self.moduleRegistry = IslandModuleRegistry(modules: allModules)
         self.isAudioMuted = defaults.object(forKey: IslandDefaults.audioMutedKey) as? Bool ?? true
@@ -874,6 +880,8 @@ final class IslandAppModel: ObservableObject {
         bindModule(agentsModule)
         bindModule(playerModule)
         bindModule(horizonModule)
+        bindModule(timerModule)
+        bindModule(shelfModule)
         bindModule(postModule)
 
         designTokenStore.objectWillChange
@@ -1754,6 +1762,8 @@ final class IslandAppModel: ObservableObject {
             CodexModuleModel.moduleID,
             PlayerModuleModel.moduleID,
             HorizonModuleModel.moduleID,
+            TimerModuleModel.moduleID,
+            ShelfModuleModel.moduleID,
         ]
         let sanitizedDefaults = availableIDs.intersection(defaultIDs)
 
@@ -1761,7 +1771,14 @@ final class IslandAppModel: ObservableObject {
             return sanitizedDefaults.isEmpty ? availableIDs : sanitizedDefaults
         }
 
-        let sanitizedIDs = availableIDs.intersection(storedIDs)
+        var sanitizedIDs = availableIDs.intersection(storedIDs)
+        if defaults.object(forKey: IslandDefaults.horizonUtilityModulesMigrationKey) == nil,
+           sanitizedIDs.contains(HorizonModuleModel.moduleID) {
+            sanitizedIDs.insert(TimerModuleModel.moduleID)
+            sanitizedIDs.insert(ShelfModuleModel.moduleID)
+            defaults.set(Array(sanitizedIDs), forKey: IslandDefaults.enabledModuleIDsKey)
+        }
+        defaults.set(true, forKey: IslandDefaults.horizonUtilityModulesMigrationKey)
         return sanitizedIDs.isEmpty ? (sanitizedDefaults.isEmpty ? availableIDs : sanitizedDefaults) : sanitizedIDs
     }
 
