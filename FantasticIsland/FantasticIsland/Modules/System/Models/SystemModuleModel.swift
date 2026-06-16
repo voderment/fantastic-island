@@ -350,7 +350,7 @@ private struct SystemModuleContentView: View {
         HStack(spacing: 8) {
             Image(systemName: "switch.2")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.68))
+                .foregroundStyle(.white.opacity(0.62))
             Text("System")
                 .font(IslandVisualLanguage.islandLabel(12))
                 .foregroundStyle(.white.opacity(0.62))
@@ -359,8 +359,8 @@ private struct SystemModuleContentView: View {
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundStyle(ProcessInfo.processInfo.isLowPowerModeEnabled ? .yellow.opacity(0.82) : .white.opacity(0.38))
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
     }
 
     private var metrics: some View {
@@ -393,8 +393,8 @@ private struct SystemModuleContentView: View {
                 onChange: model.setBrightness
             )
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 
     private var divider: some View {
@@ -411,9 +411,10 @@ private struct SystemMetricCell: View {
     let subtitle: String
     let fill: CGFloat
     let onChange: ((CGFloat) -> Void)?
+    @State private var isDragging = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 7) {
                 Image(systemName: symbolName)
                     .font(.system(size: 13, weight: .semibold))
@@ -424,24 +425,7 @@ private struct SystemMetricCell: View {
                     .lineLimit(1)
             }
 
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.white.opacity(0.08))
-                    Capsule()
-                        .fill(IslandVisualLanguage.accent.opacity(0.68))
-                        .frame(width: proxy.size.width * max(0, min(1, fill)))
-                }
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            guard let onChange else { return }
-                            onChange(progress(for: value.location.x, width: proxy.size.width))
-                        }
-                )
-            }
-            .frame(height: 4)
+            levelControl
 
             Text(subtitle)
                 .font(IslandVisualLanguage.islandBody(10))
@@ -451,6 +435,48 @@ private struct SystemMetricCell: View {
         .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
         .padding(.horizontal, 9)
         .help(onChange == nil ? subtitle : "Drag to adjust \(subtitle.lowercased())")
+    }
+
+    private var levelControl: some View {
+        GeometryReader { proxy in
+            let clampedFill = max(0, min(1, fill))
+            let fillWidth = proxy.size.width * clampedFill
+            let isEditable = onChange != nil
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.white.opacity(isEditable ? 0.11 : 0.07))
+                    .frame(height: 5)
+
+                Capsule()
+                    .fill(IslandVisualLanguage.accent.opacity(isEditable ? 0.74 : 0.38))
+                    .frame(width: fillWidth, height: 5)
+
+                Circle()
+                    .fill(Color.white.opacity(isEditable ? 0.92 : 0.34))
+                    .frame(width: isDragging ? 9 : 7, height: isDragging ? 9 : 7)
+                    .shadow(color: .black.opacity(isEditable ? 0.24 : 0), radius: 2, y: 1)
+                    .offset(x: max(0, min(proxy.size.width - 7, fillWidth - 3.5)))
+                    .opacity(isEditable || clampedFill > 0 ? 1 : 0)
+            }
+            .frame(maxHeight: .infinity, alignment: .center)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        guard let onChange else { return }
+                        isDragging = true
+                        onChange(progress(for: value.location.x, width: proxy.size.width))
+                    }
+                    .onEnded { value in
+                        guard let onChange else { return }
+                        onChange(progress(for: value.location.x, width: proxy.size.width))
+                        isDragging = false
+                    }
+            )
+            .animation(.easeOut(duration: 0.12), value: isDragging)
+        }
+        .frame(height: 18)
     }
 
     private func progress(for locationX: CGFloat, width: CGFloat) -> CGFloat {
