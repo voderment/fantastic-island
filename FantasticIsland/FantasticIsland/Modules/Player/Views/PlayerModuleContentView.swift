@@ -12,6 +12,7 @@ struct PlayerModuleRenderState {
     let sourceOptions: [PlayerSourceKind]
     let selectedSource: PlayerSourceKind
     let selectPlaybackSource: (PlayerSourceKind) -> Void
+    let openNowPlayingApp: () -> Void
     let previousTrack: () -> Void
     let togglePlayPause: () -> Void
     let nextTrack: () -> Void
@@ -96,6 +97,9 @@ struct PlayerModuleContentView: View {
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: state.openNowPlayingApp)
+            .help("Open \(sourceBadgeText)")
 
             sourceMenu
         }
@@ -190,6 +194,9 @@ struct PlayerModuleContentView: View {
 
     private var artworkView: some View {
         artworkBody
+            .contentShape(RoundedRectangle(cornerRadius: PlayerExpandedMetrics.artworkCornerRadius, style: .continuous))
+            .onTapGesture(perform: state.openNowPlayingApp)
+            .help("Open \(sourceBadgeText)")
     }
 
     private var artworkBody: some View {

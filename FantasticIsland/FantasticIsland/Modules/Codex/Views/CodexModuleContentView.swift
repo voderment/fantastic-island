@@ -91,7 +91,6 @@ struct CodexModuleContentView: View {
                 } else {
                     agentsHeaderBar
                     sessionList
-                    providerQuotaFooter
                 }
             }
         case let .activity(activity):
@@ -266,19 +265,25 @@ struct CodexModuleContentView: View {
 
     @ViewBuilder
     private var sessionList: some View {
-        if state.isNotificationMode, let session = state.activeNotificationSession {
-            CodexIslandSessionRow(
-                session: session,
-                referenceDate: .now,
-                isActionable: true,
-                canReply: state.canReplyToSession(session),
-                replyPlaceholder: state.replyPlaceholder(session),
-                onApprove: { state.approvePermission(session.id, $0) },
-                onAnswer: { state.answerQuestion(session.id, $0) },
-                onReply: { state.replyToSession(session.id, $0) },
-                onOpenConversation: { state.openConversation(session.id) },
-                onOpenApp: { state.openSessionApp(session.id) }
-            )
+        VStack(spacing: 0) {
+            if state.islandListSessions.isEmpty {
+                emptyStateCard
+            }
+
+            ForEach(state.islandListSessions) { session in
+                CodexIslandSessionRow(
+                    session: session,
+                    referenceDate: .now,
+                    isActionable: state.activeNotificationSession?.id == session.id,
+                    canReply: state.canReplyToSession(session),
+                    replyPlaceholder: state.replyPlaceholder(session),
+                    onApprove: { state.approvePermission(session.id, $0) },
+                    onAnswer: { state.answerQuestion(session.id, $0) },
+                    onReply: { state.replyToSession(session.id, $0) },
+                    onOpenConversation: { state.openConversation(session.id) },
+                    onOpenApp: { state.openSessionApp(session.id) }
+                )
+            }
 
             if state.shouldShowShowAllButton {
                 Button("Show all \(state.sessionListTotalCount) sessions") {
@@ -289,27 +294,6 @@ struct CodexModuleContentView: View {
                 .foregroundStyle(.white.opacity(0.45))
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.vertical, 8)
-            }
-        } else {
-            VStack(spacing: 0) {
-                if state.islandListSessions.isEmpty {
-                    emptyStateCard
-                }
-
-                ForEach(state.islandListSessions) { session in
-                    CodexIslandSessionRow(
-                        session: session,
-                        referenceDate: .now,
-                        isActionable: false,
-                        canReply: state.canReplyToSession(session),
-                        replyPlaceholder: state.replyPlaceholder(session),
-                        onApprove: { state.approvePermission(session.id, $0) },
-                        onAnswer: { state.answerQuestion(session.id, $0) },
-                        onReply: { state.replyToSession(session.id, $0) },
-                        onOpenConversation: { state.openConversation(session.id) },
-                        onOpenApp: { state.openSessionApp(session.id) }
-                    )
-                }
             }
         }
     }
@@ -555,22 +539,22 @@ struct CodexModuleContentView: View {
 
     private func conversationDetail(for session: SessionSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .center, spacing: 10) {
+            HStack(alignment: .center, spacing: 8) {
                 Button {
                     state.showAllSessions()
                 } label: {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 12, weight: .bold))
-                        .frame(width: 24, height: 24)
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(width: 22, height: 22)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.white.opacity(0.78))
+                .foregroundStyle(.white.opacity(0.70))
                 .help("Back to conversations")
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(conversationTitle(for: session))
-                            .font(.system(size: 13.5, weight: .semibold))
+                            .font(.system(size: 12.5, weight: .semibold))
                             .foregroundStyle(.white.opacity(0.95))
                             .lineLimit(1)
 
@@ -578,7 +562,7 @@ struct CodexModuleContentView: View {
                     }
 
                     Text(conversationWorkspace(for: session))
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.42))
                         .lineLimit(1)
                 }
@@ -590,59 +574,58 @@ struct CodexModuleContentView: View {
                 } label: {
                     Label("Open App", systemImage: "arrow.up.forward.app")
                         .labelStyle(.iconOnly)
-                        .frame(width: 28, height: 28)
+                        .frame(width: 24, height: 24)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.white.opacity(0.82))
-                .islandGlassCapsule()
+                .foregroundStyle(.white.opacity(0.70))
                 .help("Open \(session.provider.displayName)")
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
 
             Rectangle()
-                .fill(.white.opacity(0.055))
+                .fill(.white.opacity(0.04))
                 .frame(height: 1)
 
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 5) {
-                    let turns = state.transcriptTurnsForSession(session)
-                    if turns.isEmpty {
-                        if let prompt = session.latestUserPrompt?.trimmingCharacters(in: .whitespacesAndNewlines), !prompt.isEmpty {
-                            conversationBubble(label: "You", text: prompt, isUser: true, role: .user)
+                        let turns = state.transcriptTurnsForSession(session)
+                        if turns.isEmpty {
+                            if let prompt = session.latestUserPrompt?.trimmingCharacters(in: .whitespacesAndNewlines), !prompt.isEmpty {
+                                conversationBubble(label: "You", text: prompt, isUser: true, role: .user)
+                            }
+                            if let body = conversationBody(for: session) {
+                                conversationBubble(label: session.provider.compactName, text: body, isUser: false, role: .assistant)
+                            }
+                        } else {
+                            ForEach(turns) { turn in
+                                conversationBubble(
+                                    label: conversationLabel(for: turn),
+                                    text: turn.text,
+                                    isUser: turn.role == .user,
+                                    role: turn.role
+                                )
+                            }
                         }
-                        if let body = conversationBody(for: session) {
-                            conversationBubble(label: session.provider.compactName, text: body, isUser: false, role: .assistant)
-                        }
-                    } else {
-                        ForEach(turns) { turn in
-                            conversationBubble(
-                                label: conversationLabel(for: turn),
-                                text: turn.text,
-                                isUser: turn.role == .user,
-                                role: turn.role
-                            )
-                        }
-                    }
 
-                    if session.phase == .waitingForApproval, let request = session.permissionRequest {
-                        approvalPanel(session: session, request: request)
-                    }
+                        if session.phase == .waitingForApproval, let request = session.permissionRequest {
+                            approvalPanel(session: session, request: request)
+                        }
 
-                    if session.phase == .waitingForAnswer, let prompt = session.questionPrompt {
-                        questionPanel(session: session, prompt: prompt)
+                        if session.phase == .waitingForAnswer, let prompt = session.questionPrompt {
+                            questionPanel(session: session, prompt: prompt)
+                        }
+                        Color.clear
+                            .frame(height: 1)
+                            .id("conversation-bottom")
                     }
-                    Color.clear
-                        .frame(height: 1)
-                        .id("conversation-bottom")
-                }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 7)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 6)
                     .frame(maxWidth: .infinity, alignment: .bottomLeading)
-                    .frame(minHeight: 188, alignment: .bottom)
+                    .frame(minHeight: 154, alignment: .bottom)
                 }
-                .frame(minHeight: 188, maxHeight: 264)
+                .frame(minHeight: 154, maxHeight: 210)
                 .onAppear {
                     proxy.scrollTo("conversation-bottom", anchor: .bottom)
                 }
@@ -652,7 +635,7 @@ struct CodexModuleContentView: View {
             }
 
             Rectangle()
-                .fill(.white.opacity(0.055))
+                .fill(.white.opacity(0.04))
                 .frame(height: 1)
 
             if state.canReplyToSession(session) {
@@ -660,11 +643,6 @@ struct CodexModuleContentView: View {
             } else {
                 unsupportedReplyFooter(for: session)
             }
-        }
-        .background(Color.white.opacity(0.014), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 0.75)
         }
     }
 
@@ -816,10 +794,10 @@ struct CodexModuleContentView: View {
     private func replyComposer(for session: SessionSnapshot) -> some View {
         let placeholder = state.replyPlaceholder(session)
 
-        return HStack(spacing: 8) {
+        return HStack(spacing: 7) {
             TextField(placeholder, text: $conversationReplyText)
                 .textFieldStyle(.plain)
-                .font(IslandVisualLanguage.islandBody(12.5, weight: .medium))
+                .font(IslandVisualLanguage.islandBody(12, weight: .medium))
                 .foregroundStyle(.white.opacity(0.9))
 
             Button {
@@ -829,15 +807,15 @@ struct CodexModuleContentView: View {
                 state.replyToSession(session.id, reply)
             } label: {
                 Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 24))
+                    .font(.system(size: 22))
             }
             .buttonStyle(.plain)
             .foregroundStyle(.white.opacity(0.9))
             .disabled(conversationReplyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .background(Color.white.opacity(0.025))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color.white.opacity(0.018))
     }
 
     private func unsupportedReplyFooter(for session: SessionSnapshot) -> some View {
@@ -863,38 +841,34 @@ struct CodexModuleContentView: View {
             .foregroundStyle(.white.opacity(0.82))
             .islandGlassCapsule()
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(Color.white.opacity(0.025))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color.white.opacity(0.018))
     }
 
     private func conversationBubble(label: String, text: String, isUser: Bool, role: AgentTranscriptTurn.Role) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 Capsule()
-                    .fill(conversationAccent(for: role).opacity(0.75))
-                    .frame(width: 5, height: 5)
+                    .fill(conversationAccent(for: role).opacity(0.58))
+                    .frame(width: 4, height: 4)
 
                 Text(label)
-                    .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.54))
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.46))
                     .lineLimit(1)
             }
 
             Text(text)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white.opacity(isUser ? 0.9 : 0.84))
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(.white.opacity(isUser ? 0.86 : 0.78))
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(isUser ? 0.055 : 0.032), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .stroke(conversationAccent(for: role).opacity(isUser ? 0.14 : 0.08), lineWidth: 0.7)
-        }
+        .background(Color.white.opacity(isUser ? 0.036 : 0.018), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 
     private func conversationAccent(for role: AgentTranscriptTurn.Role) -> Color {

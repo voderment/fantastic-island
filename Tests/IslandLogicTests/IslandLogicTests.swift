@@ -488,17 +488,20 @@ final class IslandLogicTests: XCTestCase {
             from: buckets.primary,
             activeNotificationSession: sessions[0],
             isNotificationMode: true,
-            isShowingAllSessions: false
+            isShowingAllSessions: false,
+            limit: 3
         )
-        XCTAssertEqual(focused.map(\.id), ["approval"])
+        XCTAssertEqual(focused.map(\.id), ["approval", "running-tool", "busy"])
+        XCTAssertEqual(Set(focused.map(\.id)).count, focused.count)
 
         let expanded = CodexIslandSessionPresentation.overviewSessions(
             from: buckets.primary,
-            activeNotificationSession: nil,
-            isNotificationMode: false,
+            activeNotificationSession: sessions[0],
+            isNotificationMode: true,
             isShowingAllSessions: true
         )
         XCTAssertEqual(expanded.count, buckets.primary.count)
+        XCTAssertEqual(expanded.first?.id, "approval")
     }
 
     func testInProgressSessionsRemainIslandVisibleUntilEnded() {

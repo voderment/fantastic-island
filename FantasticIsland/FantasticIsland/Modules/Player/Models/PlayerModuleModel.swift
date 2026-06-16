@@ -245,6 +245,7 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
             sourceOptions: defaultSourceOptions,
             selectedSource: defaultSourceSelection,
             selectPlaybackSource: { [weak self] source in Task { @MainActor in self?.selectPlaybackSource(source) } },
+            openNowPlayingApp: { [weak self] in Task { @MainActor in self?.activateCurrentSource() } },
             previousTrack: { [weak self] in Task { @MainActor in self?.previousTrack() } },
             togglePlayPause: { [weak self] in Task { @MainActor in self?.togglePlayPause() } },
             nextTrack: { [weak self] in Task { @MainActor in self?.nextTrack() } },
@@ -312,11 +313,15 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
     }
 
     func activateCurrentSource() {
-        guard canActivateCurrentSource else {
+        if activateApplication(bundleIdentifier: nowPlayingState.sourceBundleIdentifier) {
             return
         }
 
-        mediaCoordinator.activateSourceApplication(for: nowPlayingState.source)
+        if mediaCoordinator.activateSourceApplication(for: nowPlayingState.source) {
+            return
+        }
+
+        _ = mediaCoordinator.activateSourceApplication(for: defaultSource)
     }
 
     func toggleShuffle() {
@@ -377,6 +382,27 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
                 return
             }
         }
+    }
+
+    @discardableResult
+    private func activateApplication(bundleIdentifier: String?) -> Bool {
+        guard let bundleIdentifier = bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !bundleIdentifier.isEmpty else {
+            return false
+        }
+
+        if let runningApplication = NSRunningApplication
+            .runningApplications(withBundleIdentifier: bundleIdentifier)
+            .first {
+            return runningApplication.activate(options: [.activateAllWindows])
+        }
+
+        guard let applicationURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) else {
+            return false
+        }
+
+        NSWorkspace.shared.openApplication(at: applicationURL, configuration: NSWorkspace.OpenConfiguration())
+        return true
     }
 
     private func refreshSoon(after delay: TimeInterval = 0.25) {

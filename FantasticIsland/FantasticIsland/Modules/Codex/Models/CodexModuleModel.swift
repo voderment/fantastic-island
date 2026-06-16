@@ -63,6 +63,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     private static let estimatedQuestionSessionHeight: CGFloat = 206
     private static let estimatedTransientSessionHeight: CGFloat = 136
     private static let estimatedPeekNotificationHeight: CGFloat = 120
+    private static let estimatedConversationDetailHeight: CGFloat = 252
     private static let estimatedFooterButtonHeight: CGFloat = 28
     private static let transientNotificationAutoDismissDelay: TimeInterval = 3
 
@@ -385,6 +386,12 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     }
 
     var preferredOpenedContentHeight: CGFloat {
+        if selectedConversationSession != nil {
+            return CodexIslandChromeMetrics.moduleChromeHeight
+                + Self.estimatedConversationDetailHeight
+                + CodexIslandChromeMetrics.expandedContentBottomPadding
+        }
+
         guard !islandListSessions.isEmpty else {
             return Self.preferredEmptyExpandedContentHeight
         }
@@ -401,18 +408,22 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     }
 
     private var estimatedSessionSectionHeight: CGFloat {
-        if isNotificationMode, activeNotificationSession != nil {
-            let showsFooter = shouldShowShowAllButton
-            return estimatedActionableSessionHeight(for: activeNotificationSession)
-                + (showsFooter ? Self.estimatedContentSpacing + Self.estimatedFooterButtonHeight : 0)
-        }
-
         let sessionCount = islandListSessions.count
         let rowsHeight =
             (CGFloat(sessionCount) * Self.estimatedSessionRowHeight)
             + (CGFloat(max(sessionCount - 1, 0)) * Self.estimatedSessionRowSpacing)
+        let actionableUplift: CGFloat
+        if let activeNotificationSession,
+           islandListSessions.contains(where: { $0.id == activeNotificationSession.id }) {
+            actionableUplift =
+                estimatedActionableSessionHeight(for: activeNotificationSession)
+                - Self.estimatedSessionRowHeight
+        } else {
+            actionableUplift = 0
+        }
         let showsFooter = canCollapseSessionList
         return rowsHeight
+            + actionableUplift
             + (showsFooter ? Self.estimatedContentSpacing + Self.estimatedFooterButtonHeight : 0)
     }
 

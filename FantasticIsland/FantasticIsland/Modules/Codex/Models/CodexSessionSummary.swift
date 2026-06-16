@@ -98,7 +98,13 @@ enum CodexIslandSessionPresentation {
         limit: Int = compactOverviewSessionLimit
     ) -> [SessionSnapshot] {
         if isNotificationMode, let activeNotificationSession {
-            return [activeNotificationSession]
+            let remainingSessions = primarySessions.filter { $0.id != activeNotificationSession.id }
+            if isShowingAllSessions {
+                return [activeNotificationSession] + remainingSessions
+            }
+
+            let resolvedLimit = max(1, limit)
+            return Array(([activeNotificationSession] + remainingSessions).prefix(resolvedLimit))
         }
 
         if isShowingAllSessions {
