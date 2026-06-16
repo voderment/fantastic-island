@@ -54,36 +54,31 @@ struct PlayerModuleContentView: View {
     }
 
     private var standardContent: some View {
-        HStack(alignment: .center, spacing: 11) {
+        HStack(alignment: .center, spacing: 9) {
             artworkView
 
             if showsAutomationIssue {
-                VStack(alignment: .leading, spacing: 7) {
+                VStack(alignment: .leading, spacing: 6) {
                     titleBlock
                     automationIssueActionRow
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                VStack(alignment: .leading, spacing: 7) {
+                VStack(alignment: .leading, spacing: 6) {
                     playerTitleRow
                     playerControlStrip
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(Color.white.opacity(0.014), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.75)
-        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
     }
 
     private var playerTitleRow: some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 7) {
+        HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
                     PlayerAnimatedTitleText(
                         title: state.nowPlayingState.titleText,
                         lineLimit: 1
@@ -96,7 +91,7 @@ struct PlayerModuleContentView: View {
                 }
 
                 Text(state.nowPlayingState.artistText)
-                    .font(.system(size: 12.5, weight: .medium))
+                    .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.52))
                     .lineLimit(1)
             }
@@ -107,11 +102,11 @@ struct PlayerModuleContentView: View {
     }
 
     private var playerControlStrip: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: 8) {
             controlsRow
                 .layoutPriority(1)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 PlayerProgressBar(
                     progress: displayedProgress,
                     isEnabled: state.nowPlayingState.supportsSeeking,
@@ -123,7 +118,7 @@ struct PlayerModuleContentView: View {
                         state.seek(progress)
                     }
                 )
-                .frame(height: 10)
+                .frame(height: 8)
 
                 HStack(spacing: 0) {
                     Text(displayedElapsedText)
@@ -266,29 +261,21 @@ struct PlayerModuleContentView: View {
             }
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: "waveform")
-                    .font(.system(size: 10.5, weight: .bold))
-                    .frame(width: 12, height: 12)
-
                 Text(sourceBadgeText)
-                    .font(.system(size: 10.5, weight: .bold))
+                    .font(.system(size: 9.5, weight: .bold))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .minimumScaleFactor(0.78)
 
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 7, weight: .bold))
+                    .font(.system(size: 6.5, weight: .bold))
                     .foregroundStyle(.white.opacity(0.42))
             }
-            .foregroundStyle(.white.opacity(0.72))
-            .padding(.horizontal, 8)
-            .frame(height: 22)
-            .frame(maxWidth: 142, alignment: .leading)
-            .background(Color.white.opacity(0.065), in: Capsule())
-            .overlay {
-                Capsule()
-                    .strokeBorder(Color.white.opacity(0.11), lineWidth: 0.7)
-            }
+            .foregroundStyle(.white.opacity(0.60))
+            .padding(.horizontal, 6)
+            .frame(height: 18)
+            .frame(maxWidth: 82, alignment: .trailing)
+            .background(Color.white.opacity(0.032), in: Capsule())
         }
         .menuStyle(.borderlessButton)
         .fixedSize(horizontal: true, vertical: false)
@@ -311,7 +298,7 @@ struct PlayerModuleContentView: View {
     }
 
     private var playbackModeControls: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 3) {
             modeButton(
                 systemName: state.nowPlayingState.shuffleMode.symbolName,
                 isActive: state.nowPlayingState.shuffleMode == .on,
@@ -328,7 +315,7 @@ struct PlayerModuleContentView: View {
                 action: state.cycleRepeat
             )
         }
-        .frame(height: 24)
+        .frame(height: 20)
     }
 
     private var progressSection: some View {
@@ -344,7 +331,7 @@ struct PlayerModuleContentView: View {
                     state.seek(progress)
                 }
             )
-            .frame(height: 12)
+            .frame(height: 8)
 
             HStack {
                 Text(displayedElapsedText)
@@ -358,19 +345,19 @@ struct PlayerModuleContentView: View {
 
     private var controlsRow: some View {
         HStack(spacing: 2) {
-            controlButton(systemName: "backward.fill", iconSize: 14, frameWidth: 26, frameHeight: 24, action: state.previousTrack)
+            controlButton(systemName: "backward.fill", iconSize: 13, frameWidth: 24, frameHeight: 22, action: state.previousTrack)
                 .disabled(!state.supportsTransportControls)
 
             controlButton(
                 systemName: state.nowPlayingState.playbackStatus.isPlaying ? "pause.fill" : "play.fill",
-                iconSize: 18,
-                frameWidth: 30,
-                frameHeight: 26,
+                iconSize: 16,
+                frameWidth: 28,
+                frameHeight: 24,
                 action: state.togglePlayPause
             )
             .disabled(!state.supportsTransportControls)
 
-            controlButton(systemName: "forward.fill", iconSize: 14, frameWidth: 26, frameHeight: 24, action: state.nextTrack)
+            controlButton(systemName: "forward.fill", iconSize: 13, frameWidth: 24, frameHeight: 22, action: state.nextTrack)
                 .disabled(!state.supportsTransportControls)
         }
         .opacity(state.supportsTransportControls ? 1 : PlayerExpandedMetrics.controlButtonOpacityDisabled)
@@ -418,7 +405,7 @@ struct PlayerModuleContentView: View {
             Image(systemName: systemName)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(modeButtonForegroundColor(isActive: isActive, isEnabled: isEnabled))
-                .frame(width: 24, height: 24)
+                .frame(width: 20, height: 20)
                 .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
         .buttonStyle(PlayerModeButtonStyle(isActive: isActive, isEnabled: isEnabled))
@@ -531,7 +518,7 @@ private struct PlayerAnimatedTitleText: View {
 
     var body: some View {
         Text(title)
-                .font(.system(size: 15.5, weight: .bold))
+            .font(.system(size: 14.5, weight: .bold))
             .foregroundStyle(.white.opacity(0.96))
             .lineLimit(lineLimit)
             .contentTransition(.numericText())
@@ -662,7 +649,7 @@ private struct PlayerModeButtonStyle: ButtonStyle {
                         backgroundFill(isPressed: configuration.isPressed)
                     )
             )
-            .shadow(color: shadowColor(isPressed: configuration.isPressed), radius: isActive ? 10 : 4, x: 0, y: 3)
+            .shadow(color: shadowColor(isPressed: configuration.isPressed), radius: isActive ? 3 : 0, x: 0, y: 1)
             .scaleEffect(configuration.isPressed ? 0.94 : 1)
             .animation(.smooth(duration: 0.14), value: configuration.isPressed)
     }
@@ -703,10 +690,10 @@ private struct PlayerModeButtonStyle: ButtonStyle {
         }
 
         if isActive {
-            return .black.opacity(isPressed ? 0.20 : 0.30)
+            return .black.opacity(isPressed ? 0.12 : 0.18)
         }
 
-        return .black.opacity(isPressed ? 0.10 : 0.16)
+        return .clear
     }
 }
 
@@ -739,21 +726,21 @@ private struct PlayerProgressBar: View {
 
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(Color.white.opacity(0.22))
-                    .frame(height: 8)
+                    .fill(Color.white.opacity(0.13))
+                    .frame(height: 5)
 
                 Capsule()
                     .fill(
                         LinearGradient(
                             colors: [
-                                Color.white.opacity(0.98),
-                                Color.white.opacity(0.82),
+                                Color.white.opacity(0.62),
+                                Color.white.opacity(0.48),
                             ],
                             startPoint: .leading,
                             endPoint: .trailing
                         )
                     )
-                    .frame(width: fillWidth, height: 8)
+                    .frame(width: fillWidth, height: 5)
             }
             .frame(maxHeight: .infinity, alignment: .center)
             .contentShape(Rectangle())

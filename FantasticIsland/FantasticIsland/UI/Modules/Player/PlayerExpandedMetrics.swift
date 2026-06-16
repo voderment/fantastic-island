@@ -7,7 +7,7 @@ enum PlayerExpandedMetrics {
     static let defaultTitleBlockSpacing: CGFloat = 4
     static let defaultControlsSpacing: CGFloat = 6
     static let defaultArtworkCornerRadius: CGFloat = 8
-    static let defaultArtworkSize: CGFloat = 50
+    static let defaultArtworkSize: CGFloat = 44
     static let defaultProgressSectionSpacing: CGFloat = 4
     static let defaultControlButtonOpacityDisabled: CGFloat = 0.42
 
