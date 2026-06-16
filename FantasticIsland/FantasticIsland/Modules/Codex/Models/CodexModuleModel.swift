@@ -504,6 +504,9 @@ final class CodexModuleModel: ObservableObject, IslandModule {
             hookDiagnosticItems: hookDiagnosticItems,
             hookDiagnosticsSummaryText: hookDiagnosticsCompactSummaryText,
             hookDiagnosticsHasProblems: hookDiagnosticsHasProblems,
+            bridgeStatusText: bridgeStatusText,
+            appServerStatusText: appServerStatusText,
+            hooksActionTitle: hooksActionTitle,
             tokenUsageHeatmapDays: tokenUsageHeatmapDays,
             tokenUsageHeatmapPeriodText: tokenUsageHeatmapPeriodText,
             tokenUsageHeatmapPeakText: tokenUsageHeatmapPeakText,
@@ -559,6 +562,26 @@ final class CodexModuleModel: ObservableObject, IslandModule {
             collapseSessionList: { [weak self] in
                 Task { @MainActor in
                     self?.collapseSessionList()
+                }
+            },
+            installOrReinstallHooks: { [weak self] in
+                Task { @MainActor in
+                    self?.installOrReinstallHooks()
+                }
+            },
+            installUsageBridges: { [weak self] in
+                Task { @MainActor in
+                    self?.installUsageBridges()
+                }
+            },
+            revealRemoteSSHSetupScript: { [weak self] in
+                Task { @MainActor in
+                    self?.revealRemoteSSHSetupScript()
+                }
+            },
+            openCodexDirectory: { [weak self] in
+                Task { @MainActor in
+                    self?.openCodexDirectory()
                 }
             }
         )
@@ -644,6 +667,20 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     }
 
     func installUsageBridges() {
+        let alert = NSAlert()
+        alert.messageText = NSLocalizedString("Repair Agent Quota Bridge?", comment: "")
+        alert.informativeText = NSLocalizedString(
+            "Fantastic Island will reinstall its managed quota/status bridge where safe. Existing custom status lines are preserved.",
+            comment: ""
+        )
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: NSLocalizedString("Repair", comment: ""))
+        alert.addButton(withTitle: NSLocalizedString("Cancel", comment: ""))
+
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            return
+        }
+
         do {
             try hookManager.installUsageBridges()
             refreshHooksStatus()

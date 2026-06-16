@@ -29,6 +29,9 @@ struct CodexModuleRenderState {
     let hookDiagnosticItems: [AgentHookProviderDiagnostic]
     let hookDiagnosticsSummaryText: String
     let hookDiagnosticsHasProblems: Bool
+    let bridgeStatusText: String
+    let appServerStatusText: String
+    let hooksActionTitle: String
     let tokenUsageHeatmapDays: [CodexTokenUsageDay]
     let tokenUsageHeatmapPeriodText: String
     let tokenUsageHeatmapPeakText: String
@@ -44,6 +47,10 @@ struct CodexModuleRenderState {
     let startNewSession: (AgentNewSessionRequest) -> Void
     let showAllSessions: () -> Void
     let collapseSessionList: () -> Void
+    let installOrReinstallHooks: () -> Void
+    let installUsageBridges: () -> Void
+    let revealRemoteSSHSetupScript: () -> Void
+    let openCodexDirectory: () -> Void
 }
 
 struct AgentProviderQuotaDisplayItem: Identifiable {
@@ -71,6 +78,7 @@ struct CodexModuleContentView: View {
     @State private var conversationReplyText = ""
     @State private var conversationAnswerText = ""
     @State private var conversationIsPinnedToBottom = true
+    @State private var showsAgentHealth = false
 
     private static let estimatedGlobalInfoCardHeight: CGFloat = 58
     private static let conversationViewportHeight: CGFloat = 224
@@ -93,6 +101,9 @@ struct CodexModuleContentView: View {
                     conversationDetail(for: session)
                 } else {
                     agentsHeaderBar
+                    if showsAgentHealth {
+                        agentHealthPanel
+                    }
                     sessionList
                 }
             }
@@ -414,22 +425,195 @@ struct CodexModuleContentView: View {
     @ViewBuilder
     private var hookDiagnosticsButton: some View {
         if !state.hookDiagnosticItems.isEmpty {
-            HStack(spacing: 6) {
-                Image(systemName: state.hookDiagnosticsHasProblems ? "wrench.and.screwdriver.fill" : "checkmark.circle.fill")
-                    .font(.system(size: 10.5, weight: .bold))
+            Button {
+                withAnimation(.easeOut(duration: 0.16)) {
+                    showsAgentHealth.toggle()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: state.hookDiagnosticsHasProblems ? "wrench.and.screwdriver.fill" : "checkmark.circle.fill")
+                        .font(.system(size: 10.5, weight: .bold))
 
-                Text(state.hookDiagnosticsHasProblems ? "HEALTH" : "OK")
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .lineLimit(1)
+                    Text(state.hookDiagnosticsHasProblems ? "HEALTH" : "OK")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 7)
+                .frame(height: 22)
+                .background(Color.white.opacity(state.hookDiagnosticsHasProblems || showsAgentHealth ? 0.075 : 0.045), in: Capsule())
             }
+            .buttonStyle(.plain)
             .foregroundStyle(hookDiagnosticsSummaryTint)
-            .padding(.horizontal, 7)
-            .frame(height: 22)
-            .background(Color.white.opacity(state.hookDiagnosticsHasProblems ? 0.075 : 0.045), in: Capsule())
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Agent hook diagnostics \(state.hookDiagnosticsSummaryText)")
-            .help("Agent Health: \(state.hookDiagnosticsSummaryText)")
+            .help("Show Agent Health: \(state.hookDiagnosticsSummaryText)")
         }
+    }
+
+    private var agentHealthPanel: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .center, spacing: 7) {
+                Circle()
+                    .fill(hookDiagnosticsSummaryTint)
+                    .frame(width: 7, height: 7)
+
+                Text("Agent Health")
+                    .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.72))
+                    .lineLimit(1)
+
+                Text(state.hookDiagnosticsSummaryText.uppercased())
+                    .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(hookDiagnosticsSummaryTint.opacity(0.78))
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+
+                agentHealthStatusChip(title: "BRIDGE", value: state.bridgeStatusText)
+                agentHealthStatusChip(title: "APP", value: appServerCompactText)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+
+            Rectangle()
+                .fill(.white.opacity(0.045))
+                .frame(height: 1)
+
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(), spacing: 6),
+                    GridItem(.flexible(), spacing: 6),
+                ],
+                alignment: .leading,
+                spacing: 5
+            ) {
+                ForEach(state.hookDiagnosticItems) { item in
+                    agentHealthProviderCell(item)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+
+            Rectangle()
+                .fill(.white.opacity(0.045))
+                .frame(height: 1)
+
+            HStack(spacing: 6) {
+                agentHealthActionButton(
+                    symbolName: "arrow.clockwise",
+                    label: state.hooksActionTitle,
+                    action: state.installOrReinstallHooks
+                )
+                agentHealthActionButton(
+                    symbolName: "wrench.and.screwdriver",
+                    label: "Repair quota bridge",
+                    action: state.installUsageBridges
+                )
+                agentHealthActionButton(
+                    symbolName: "terminal",
+                    label: "Reveal SSH setup script",
+                    action: state.revealRemoteSSHSetupScript
+                )
+                agentHealthActionButton(
+                    symbolName: "folder",
+                    label: "Open ~/.codex",
+                    action: state.openCodexDirectory
+                )
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+        }
+        .background(Color.white.opacity(0.018))
+        .overlay(alignment: .top) {
+            Rectangle().fill(hookDiagnosticsSummaryTint.opacity(state.hookDiagnosticsHasProblems ? 0.20 : 0.08)).frame(height: 1)
+        }
+    }
+
+    private func agentHealthProviderCell(_ item: AgentHookProviderDiagnostic) -> some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(hookDiagnosticTint(item))
+                .frame(width: 6, height: 6)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.provider.compactName)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.82))
+                    .lineLimit(1)
+
+                Text(item.statusText.uppercased())
+                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    .foregroundStyle(hookDiagnosticTint(item).opacity(0.82))
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+
+            Text("\(item.installedEventCount)/\(item.expectedEventCount)")
+                .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                .foregroundStyle(.white.opacity(item.hooksInstalled ? 0.56 : 0.30))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 7)
+        .frame(height: 31)
+        .background(Color.white.opacity(item.isHealthy ? 0.026 : 0.055), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .help("\(item.provider.displayName): \(item.statusText)")
+    }
+
+    private func agentHealthActionButton(
+        symbolName: String,
+        label: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbolName)
+                .font(.system(size: 10.5, weight: .bold))
+                .frame(width: 25, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white.opacity(0.68))
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .accessibilityLabel(label)
+        .help(label)
+    }
+
+    private func agentHealthStatusChip(title: String, value: String) -> some View {
+        HStack(spacing: 3) {
+            Text(title)
+                .font(.system(size: 7.5, weight: .bold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.32))
+
+            Text(value.uppercased())
+                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .foregroundStyle(statusTint(value).opacity(0.82))
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .padding(.horizontal, 5)
+        .frame(height: 20)
+        .background(Color.white.opacity(0.038), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+    }
+
+    private var appServerCompactText: String {
+        let status = state.appServerStatusText
+        if status.hasPrefix("Connected") {
+            return "Connected"
+        }
+        return status
+    }
+
+    private func statusTint(_ value: String) -> Color {
+        let normalized = value.lowercased()
+        if normalized.hasPrefix("connected") || normalized == "ready" {
+            return Color.green
+        }
+        if normalized == "starting" || normalized == "connecting" {
+            return Color.orange
+        }
+        return Color.red
     }
 
     private func hookDiagnosticPill(_ item: AgentHookProviderDiagnostic) -> some View {
