@@ -67,6 +67,7 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
         private var lastScrollEventAt = Date.distantPast
         private var suppressWheelEventsUntil = Date.distantPast
         private var hasSwitchedDuringGesture = false
+        private let postSwitchSuppressionDuration: TimeInterval = 1.45
 
         init(model: IslandAppModel) {
             self.model = model
@@ -98,6 +99,10 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
             guard now >= suppressWheelEventsUntil else {
                 lastScrollEventAt = now
                 return true
+            }
+
+            if event.momentumPhase != [] {
+                return hasSwitchedDuringGesture
             }
 
             let idleResetDelay: TimeInterval = hasSwitchedDuringGesture ? 1.35 : 0.42
@@ -136,7 +141,7 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
                now.timeIntervalSince(lastSwitchAt) > 0.58 {
                 _ = model.selectAdjacentModuleFromPointer(offset: accumulatedHorizontal > 0 ? 1 : -1, now: now)
                 lastSwitchAt = now
-                suppressWheelEventsUntil = now.addingTimeInterval(0.82)
+                suppressWheelEventsUntil = now.addingTimeInterval(postSwitchSuppressionDuration)
                 hasSwitchedDuringGesture = true
                 resetAccumulation()
             }
@@ -174,7 +179,7 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
         }
 
         func suppressWheelMomentum(after date: Date = .now) {
-            suppressWheelEventsUntil = date.addingTimeInterval(0.82)
+            suppressWheelEventsUntil = date.addingTimeInterval(postSwitchSuppressionDuration)
             resetAccumulation()
         }
     }

@@ -9,7 +9,6 @@ struct PlayerModuleRenderState {
     let automationIssue: PlayerAutomationIssue?
     let canRequestAutomationAccess: Bool
     let isResolvingAutomationAccess: Bool
-    let activeSourceIconImage: NSImage?
     let sourceOptions: [PlayerSourceKind]
     let selectedSource: PlayerSourceKind
     let selectPlaybackSource: (PlayerSourceKind) -> Void
@@ -267,17 +266,9 @@ struct PlayerModuleContentView: View {
             }
         } label: {
             HStack(spacing: 5) {
-                if let activeSourceIconImage = state.activeSourceIconImage {
-                    Image(nsImage: activeSourceIconImage)
-                        .resizable()
-                        .interpolation(.high)
-                        .scaledToFill()
-                        .frame(width: 12, height: 12)
-                        .clipShape(.rect(cornerRadius: 2.5, style: .continuous))
-                } else {
-                    Image(systemName: "waveform")
-                        .font(.system(size: 10.5, weight: .bold))
-                }
+                Image(systemName: "waveform")
+                    .font(.system(size: 10.5, weight: .bold))
+                    .frame(width: 12, height: 12)
 
                 Text(sourceBadgeText)
                     .font(.system(size: 10.5, weight: .bold))

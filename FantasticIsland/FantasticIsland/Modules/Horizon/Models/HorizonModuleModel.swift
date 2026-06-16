@@ -699,66 +699,97 @@ final class ShelfModuleModel: ObservableObject, IslandModule {
 private struct HorizonModuleContentView: View {
     @ObservedObject var model: HorizonModuleModel
 
+    private let columns = [
+        GridItem(.flexible(), spacing: 7),
+        GridItem(.flexible(), spacing: 7),
+    ]
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            horizonSectionDivider
-            calendarRemindersSection
-        }
-    }
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 7) {
+            HorizonGlanceTile(
+                symbolName: "clock",
+                label: "Now",
+                value: model.timeText,
+                detail: model.dateText
+            )
 
-    private var horizonSectionDivider: some View {
-        Rectangle()
-            .fill(Color.white.opacity(0.07))
-            .frame(height: 1)
-    }
+            HorizonGlanceTile(
+                symbolName: model.weatherService.snapshot.conditionSymbol,
+                label: model.weatherService.snapshot.locationLabel,
+                value: weatherValueText,
+                detail: model.weatherService.snapshot.conditionText
+            )
 
-    private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(model.timeText)
-                    .font(IslandVisualLanguage.islandTitle(23, weight: .semibold))
-                    .foregroundStyle(.white)
-                Text(model.dateText)
-                    .font(IslandVisualLanguage.islandBody(11))
-                    .foregroundStyle(.white.opacity(0.52))
-            }
-
-            Spacer(minLength: 0)
-
-            HorizonWeatherPill(snapshot: model.weatherService.snapshot)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var calendarRemindersSection: some View {
-        HStack(alignment: .top, spacing: 0) {
-            HorizonStatusCard(
+            HorizonGlanceTile(
                 symbolName: "calendar",
                 label: model.calendarStatus,
                 value: model.nextEventTime,
                 detail: model.nextEventTitle
             )
 
-            Rectangle()
-                .fill(Color.white.opacity(0.07))
-                .frame(width: 1)
-                .padding(.vertical, 4)
-
-            HorizonStatusCard(
+            HorizonGlanceTile(
                 symbolName: "checklist",
                 label: model.reminderStatus,
                 value: model.nextReminderTime,
                 detail: model.nextReminderTitle
             )
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 7)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private var weatherValueText: String {
+        if let temperature = model.weatherService.snapshot.temperatureCelsius {
+            return "\(Int(temperature.rounded()))°"
+        }
+
+        return "Weather"
+    }
+}
+
+private struct HorizonGlanceTile: View {
+    let symbolName: String
+    let label: String
+    let value: String
+    let detail: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                Image(systemName: symbolName)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.56))
+                    .frame(width: 13, alignment: .center)
+
+                Text(label)
+                    .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.42))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+            }
+
+            Text(value)
+                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.88))
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+
+            Text(detail)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.56))
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, minHeight: 58, alignment: .topLeading)
+        .background(Color.white.opacity(0.028), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(Color.white.opacity(0.06), lineWidth: 0.7)
+        }
+    }
 }
 
 private struct TimerModuleContentView: View {

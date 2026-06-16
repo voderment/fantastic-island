@@ -234,9 +234,6 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
             resolvedNotification = nil
         }
 
-        let activeSourceIconImage = nowPlayingState.sourceBundleIdentifier
-            .flatMap(PlayerSourceRegistry.appIcon(bundleIdentifier:))
-
         return PlayerModuleRenderState(
             presentation: presentation,
             nowPlayingState: nowPlayingState,
@@ -245,7 +242,6 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
             automationIssue: automationIssue,
             canRequestAutomationAccess: canRequestAutomationAccess,
             isResolvingAutomationAccess: isResolvingAutomationAccess,
-            activeSourceIconImage: activeSourceIconImage,
             sourceOptions: defaultSourceOptions,
             selectedSource: defaultSourceSelection,
             selectPlaybackSource: { [weak self] source in Task { @MainActor in self?.selectPlaybackSource(source) } },
