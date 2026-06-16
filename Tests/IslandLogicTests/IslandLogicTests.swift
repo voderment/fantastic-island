@@ -870,6 +870,42 @@ final class IslandLogicTests: XCTestCase {
         XCTAssertNotNil(sessions.first?.modifiedAt)
     }
 
+    func testDiscoveryDefaultCodexScanKeepsBusyConductorDayVisible() throws {
+        let temp = temporaryDirectory()
+        let workspace = temp.appendingPathComponent("codex-workspace", isDirectory: true)
+        let codexRoot = temp.appendingPathComponent("codex/sessions", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: codexRoot, withIntermediateDirectories: true)
+
+        for index in 0..<96 {
+            let transcript = codexRoot.appendingPathComponent("rollout-session-\(index).jsonl")
+            try writeJSONLines([
+                [
+                    "type": "session_meta",
+                    "payload": [
+                        "id": "codex-session-\(index)",
+                        "cwd": workspace.path,
+                        "source": "cli",
+                    ],
+                ],
+            ], to: transcript)
+            let modifiedAt = Date(timeIntervalSince1970: TimeInterval(1_700_000_000 + index))
+            try FileManager.default.setAttributes([.modificationDate: modifiedAt], ofItemAtPath: transcript.path)
+        }
+
+        let discovery = CodexSessionDiscovery(
+            rootURL: codexRoot,
+            claudeRootURL: temp.appendingPathComponent("claude", isDirectory: true),
+            cursorRootURL: temp.appendingPathComponent("cursor", isDirectory: true),
+            sessionStore: AgentSessionStore(rootURL: temp.appendingPathComponent("store", isDirectory: true))
+        )
+        let sessions = discovery.discoverRecentSessions(now: Date(timeIntervalSince1970: 1_700_000_200))
+
+        XCTAssertEqual(sessions.count, 96)
+        XCTAssertTrue(sessions.contains { $0.id == "codex-session-0" })
+        XCTAssertTrue(sessions.contains { $0.id == "codex-session-95" })
+    }
+
     func testDiscoveryFindsClaudeProjectTranscript() throws {
         let temp = temporaryDirectory()
         let workspace = temp.appendingPathComponent("claude-workspace", isDirectory: true)

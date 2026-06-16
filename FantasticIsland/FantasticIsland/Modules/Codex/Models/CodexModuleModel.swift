@@ -370,7 +370,16 @@ final class CodexModuleModel: ObservableObject, IslandModule {
                     )
                 )
             case .running, .busy:
-                return nil
+                return IslandActivity(
+                    id: "\(id).activity.presence.\(session.id)",
+                    moduleID: id,
+                    sourceID: session.id,
+                    kind: .persistentPresence,
+                    priority: session.phase == .busy ? 170 : 150,
+                    createdAt: updatedAt,
+                    updatedAt: updatedAt,
+                    presentationPolicy: .manualOnly
+                )
             }
         }
     }

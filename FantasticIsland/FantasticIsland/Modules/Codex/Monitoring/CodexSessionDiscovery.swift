@@ -48,7 +48,7 @@ struct CodexSessionDiscovery {
         claudeRootURL: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects", isDirectory: true),
         cursorRootURL: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".cursor/projects", isDirectory: true),
         sessionStore: AgentSessionStore = AgentSessionStore(),
-        maxFiles: Int = 80,
+        maxFiles: Int = 240,
         maxAge: TimeInterval = 86_400 * 14
     ) {
         self.rootURL = rootURL
