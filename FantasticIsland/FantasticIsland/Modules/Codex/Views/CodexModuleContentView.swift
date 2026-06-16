@@ -90,7 +90,6 @@ struct CodexModuleContentView: View {
                     conversationDetail(for: session)
                 } else {
                     agentsHeaderBar
-                    hookDiagnosticsStrip
                     sessionList
                     providerQuotaFooter
                 }
@@ -333,6 +332,8 @@ struct CodexModuleContentView: View {
 
                 Spacer(minLength: 0)
 
+                hookDiagnosticsButton
+
                 Button {
                     state.showNewSession()
                 } label: {
@@ -424,27 +425,23 @@ struct CodexModuleContentView: View {
     }
 
     @ViewBuilder
-    private var hookDiagnosticsStrip: some View {
-        if !state.hookDiagnosticItems.isEmpty, state.hookDiagnosticsHasProblems {
+    private var hookDiagnosticsButton: some View {
+        if !state.hookDiagnosticItems.isEmpty {
             HStack(spacing: 6) {
-                HStack(spacing: 4) {
-                    ForEach(state.hookDiagnosticItems) { item in
-                        hookDiagnosticPill(item)
-                    }
-                }
+                Image(systemName: state.hookDiagnosticsHasProblems ? "wrench.and.screwdriver.fill" : "checkmark.circle.fill")
+                    .font(.system(size: 10.5, weight: .bold))
 
-                Spacer(minLength: 0)
-
-                Text(state.hookDiagnosticsSummaryText.uppercased())
-                    .font(.system(size: 8.5, weight: .bold, design: .monospaced))
-                    .foregroundStyle(hookDiagnosticsSummaryTint)
+                Text(state.hookDiagnosticsHasProblems ? "HEALTH" : "OK")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
                     .lineLimit(1)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .foregroundStyle(hookDiagnosticsSummaryTint)
+            .padding(.horizontal, 7)
+            .frame(height: 22)
+            .background(Color.white.opacity(state.hookDiagnosticsHasProblems ? 0.075 : 0.045), in: Capsule())
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Agent hook diagnostics \(state.hookDiagnosticsSummaryText)")
+            .help("Agent Health: \(state.hookDiagnosticsSummaryText)")
         }
     }
 
@@ -602,8 +599,9 @@ struct CodexModuleContentView: View {
                 .fill(.white.opacity(0.055))
                 .frame(height: 1)
 
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 10) {
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: true) {
+                    VStack(alignment: .leading, spacing: 6) {
                     let turns = state.transcriptTurnsForSession(session)
                     if turns.isEmpty {
                         if let prompt = session.latestUserPrompt?.trimmingCharacters(in: .whitespacesAndNewlines), !prompt.isEmpty {
@@ -630,10 +628,23 @@ struct CodexModuleContentView: View {
                     if session.phase == .waitingForAnswer, let prompt = session.questionPrompt {
                         questionPanel(session: session, prompt: prompt)
                     }
+                    Color.clear
+                        .frame(height: 1)
+                        .id("conversation-bottom")
                 }
-                .padding(14)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .bottomLeading)
+                    .frame(minHeight: 220, alignment: .bottom)
+                }
+                .frame(minHeight: 220, maxHeight: 300)
+                .onAppear {
+                    proxy.scrollTo("conversation-bottom", anchor: .bottom)
+                }
+                .onChange(of: session.lastEventAt) { _, _ in
+                    proxy.scrollTo("conversation-bottom", anchor: .bottom)
+                }
             }
-            .frame(maxHeight: 560)
 
             Rectangle()
                 .fill(.white.opacity(0.055))
@@ -645,7 +656,7 @@ struct CodexModuleContentView: View {
                 unsupportedReplyFooter(for: session)
             }
         }
-        .islandModuleCardSurface()
+        .background(Color.white.opacity(0.018), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var newSessionCard: some View {
@@ -859,22 +870,12 @@ struct CodexModuleContentView: View {
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(12)
+        .padding(9)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            LinearGradient(
-                colors: [
-                    conversationAccent(for: role).opacity(isUser ? 0.15 : 0.09),
-                    Color.white.opacity(isUser ? 0.065 : 0.04),
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-        )
+        .background(Color.white.opacity(isUser ? 0.07 : 0.04), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(conversationAccent(for: role).opacity(isUser ? 0.22 : 0.13), lineWidth: 0.75)
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(conversationAccent(for: role).opacity(isUser ? 0.18 : 0.1), lineWidth: 0.7)
         }
     }
 

@@ -209,8 +209,6 @@ final class IslandAppModel: ObservableObject {
             timerModule,
             shelfModule,
             systemModule,
-            diagnosticsModule,
-            postModule,
         ]
         let defaults = UserDefaults.standard
         let loadedEnabledModuleIDs = Self.loadEnabledModuleIDs(defaults: defaults, availableModules: allModules)
@@ -1821,8 +1819,6 @@ final class IslandAppModel: ObservableObject {
             TimerModuleModel.moduleID,
             ShelfModuleModel.moduleID,
             SystemModuleModel.moduleID,
-            DiagnosticsModuleModel.moduleID,
-            XPostModuleModel.moduleID,
         ]
         let sanitizedDefaults = availableIDs.intersection(defaultIDs)
 
@@ -1844,17 +1840,11 @@ final class IslandAppModel: ObservableObject {
             defaults.set(Array(sanitizedIDs), forKey: IslandDefaults.enabledModuleIDsKey)
         }
         defaults.set(true, forKey: IslandDefaults.systemModuleMigrationKey)
-        if defaults.object(forKey: IslandDefaults.xPostModuleMigrationKey) == nil {
-            sanitizedIDs.insert(XPostModuleModel.moduleID)
-            defaults.set(Array(sanitizedIDs), forKey: IslandDefaults.enabledModuleIDsKey)
-        }
+        sanitizedIDs.remove(XPostModuleModel.moduleID)
         defaults.set(true, forKey: IslandDefaults.xPostModuleMigrationKey)
-        if defaults.object(forKey: IslandDefaults.diagnosticsModuleMigrationKey) == nil,
-           sanitizedIDs.contains(CodexModuleModel.moduleID) {
-            sanitizedIDs.insert(DiagnosticsModuleModel.moduleID)
-            defaults.set(Array(sanitizedIDs), forKey: IslandDefaults.enabledModuleIDsKey)
-        }
+        sanitizedIDs.remove(DiagnosticsModuleModel.moduleID)
         defaults.set(true, forKey: IslandDefaults.diagnosticsModuleMigrationKey)
+        defaults.set(Array(sanitizedIDs), forKey: IslandDefaults.enabledModuleIDsKey)
         return sanitizedIDs.isEmpty ? (sanitizedDefaults.isEmpty ? availableIDs : sanitizedDefaults) : sanitizedIDs
     }
 

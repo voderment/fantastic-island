@@ -17,8 +17,6 @@ The repository currently ships with eight built-in modules:
 - `Timer`
 - `Shelf`
 - `System`
-- `Diagnostics`
-- `X Post`
 
 The app keeps the open-vibe-island notch interaction as a foundation, while the product surface is now a native, provider-aware island rather than a collection of detached demos.
 
@@ -47,10 +45,8 @@ The settings page keeps app-level behavior, module toggles, provider setup, and 
 | `Player` | Follows the current Now Playing source and exposes artwork, progress, visualizer, and transport controls. |
 | `Horizon` | Keeps the next event, reminders, weather, and glance context compact. |
 | `Timer` | Provides focused timer controls as its own module instead of crowding Horizon. |
-| `Shelf` | Holds dropped files with compact open, reveal, share, and remove actions. |
+| `Shelf` | Holds dropped files with bookmark-backed persistence plus compact open, reveal, share, and remove actions. |
 | `System` | Shows battery and hardware status without turning the island into a dashboard. |
-| `Diagnostics` | Surfaces provider hook readiness, quota bridge state, app-server status, and repair actions. |
-| `X Post` | Drafts and publishes compact text posts with user-provided X OAuth credentials. |
 
 ## Module Examples
 
@@ -66,13 +62,9 @@ The `Player` module is here to show and control current playback, so media contr
 
 ![Fantastic Island Player module](./docs/images/island-player.png)
 
-### Horizon, Timer, Shelf, System, And Diagnostics
+### Horizon, Timer, Shelf, And System
 
-Horizon keeps the contextual glance layer small. Timer, Shelf, System, and Diagnostics are separate modules so the island can stay compact while still covering quick utility tasks and agent runtime health.
-
-### X Post
-
-The `X Post` module is a compact composer for text posts. It uses your own X OAuth 2.0 Client ID and stores tokens locally.
+Horizon keeps the contextual glance layer small. Timer, Shelf, and System are separate modules so the island can stay compact while agent runtime health stays inside Agents.
 
 ## Repository Scope
 

@@ -482,7 +482,7 @@ final class IslandLogicTests: XCTestCase {
             isShowingAllSessions: false
         )
         XCTAssertEqual(compact.count, CodexIslandSessionPresentation.compactOverviewSessionLimit)
-        XCTAssertEqual(compact.map(\.id), Array(buckets.primary.prefix(3)).map(\.id))
+        XCTAssertEqual(compact.map(\.id), Array(buckets.primary.prefix(CodexIslandSessionPresentation.compactOverviewSessionLimit)).map(\.id))
 
         let focused = CodexIslandSessionPresentation.overviewSessions(
             from: buckets.primary,

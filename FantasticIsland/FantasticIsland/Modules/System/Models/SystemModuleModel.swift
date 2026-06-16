@@ -121,6 +121,26 @@ final class SystemModuleModel: NSObject, ObservableObject, IslandModule {
         }
     }
 
+    func setVolume(_ level: CGFloat) {
+        let clamped = Float(max(0, min(1, level)))
+        guard Self.writeAudioVolume(clamped) else {
+            refresh()
+            return
+        }
+
+        audioSnapshot = SystemAudioSnapshot(level: clamped, isMuted: clamped <= 0.001)
+    }
+
+    func setBrightness(_ level: CGFloat) {
+        let clamped = Float(max(0, min(1, level)))
+        guard Self.writeDisplayBrightness(clamped) else {
+            refresh()
+            return
+        }
+
+        brightnessSnapshot = SystemBrightnessSnapshot(level: clamped, updatedAt: .now)
+    }
+
     private func startRefreshTimer() {
         let timer = Timer(timeInterval: 8, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
@@ -209,6 +229,46 @@ final class SystemModuleModel: NSObject, ObservableObject, IslandModule {
         return muted != 0
     }
 
+    private static func writeAudioVolume(_ level: Float) -> Bool {
+        let deviceID = systemOutputDeviceID()
+        guard deviceID != kAudioObjectUnknown else {
+            return false
+        }
+
+        var didWrite = false
+        for element in [kAudioObjectPropertyElementMain, 1, 2] {
+            var address = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyVolumeScalar,
+                mScope: kAudioObjectPropertyScopeOutput,
+                mElement: UInt32(element)
+            )
+            guard AudioObjectHasProperty(deviceID, &address) else {
+                continue
+            }
+
+            var mutableLevel = Float32(level)
+            let size = UInt32(MemoryLayout<Float32>.size)
+            if AudioObjectSetPropertyData(deviceID, &address, 0, nil, size, &mutableLevel) == noErr {
+                didWrite = true
+            }
+        }
+
+        if didWrite, level > 0.001 {
+            var muteAddress = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyMute,
+                mScope: kAudioObjectPropertyScopeOutput,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            if AudioObjectHasProperty(deviceID, &muteAddress) {
+                var muted: UInt32 = 0
+                let size = UInt32(MemoryLayout<UInt32>.size)
+                _ = AudioObjectSetPropertyData(deviceID, &muteAddress, 0, nil, size, &muted)
+            }
+        }
+
+        return didWrite
+    }
+
     private static func brightnessLevel(from userInfo: [AnyHashable: Any]?) -> Float? {
         guard let userInfo else {
             return nil
@@ -252,6 +312,24 @@ final class SystemModuleModel: NSObject, ObservableObject, IslandModule {
 
         return max(0, min(1, brightness))
     }
+
+    private static func writeDisplayBrightness(_ level: Float) -> Bool {
+        let frameworkPath = "/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices"
+        guard let handle = dlopen(frameworkPath, RTLD_LAZY) else {
+            return false
+        }
+        defer { dlclose(handle) }
+
+        typealias DisplayServicesSetBrightnessFunction =
+            @convention(c) (CGDirectDisplayID, Float) -> Int32
+
+        guard let symbol = dlsym(handle, "DisplayServicesSetBrightness") else {
+            return false
+        }
+
+        let function = unsafeBitCast(symbol, to: DisplayServicesSetBrightnessFunction.self)
+        return function(CGMainDisplayID(), max(0, min(1, level))) == 0
+    }
 }
 
 private struct SystemModuleContentView: View {
@@ -291,7 +369,8 @@ private struct SystemModuleContentView: View {
                 symbolName: model.horizonModule.batterySnapshot.symbolName,
                 title: model.horizonModule.batterySnapshot.title,
                 subtitle: model.horizonModule.batterySnapshot.subtitle,
-                fill: CGFloat((model.horizonModule.batterySnapshot.percentage ?? 0)) / 100
+                fill: CGFloat((model.horizonModule.batterySnapshot.percentage ?? 0)) / 100,
+                onChange: nil
             )
 
             divider
@@ -300,7 +379,8 @@ private struct SystemModuleContentView: View {
                 symbolName: model.audioSnapshot.symbolName,
                 title: model.audioSnapshot.title,
                 subtitle: model.audioSnapshot.subtitle,
-                fill: CGFloat(model.audioSnapshot.level ?? 0)
+                fill: CGFloat(model.audioSnapshot.level ?? 0),
+                onChange: model.setVolume
             )
 
             divider
@@ -309,7 +389,8 @@ private struct SystemModuleContentView: View {
                 symbolName: "sun.max.fill",
                 title: model.brightnessSnapshot.title,
                 subtitle: model.brightnessSnapshot.subtitle,
-                fill: CGFloat(model.brightnessSnapshot.level ?? 0)
+                fill: CGFloat(model.brightnessSnapshot.level ?? 0),
+                onChange: model.setBrightness
             )
         }
         .padding(.horizontal, 14)
@@ -329,6 +410,7 @@ private struct SystemMetricCell: View {
     let title: String
     let subtitle: String
     let fill: CGFloat
+    let onChange: ((CGFloat) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
@@ -350,6 +432,14 @@ private struct SystemMetricCell: View {
                         .fill(IslandVisualLanguage.accent.opacity(0.68))
                         .frame(width: proxy.size.width * max(0, min(1, fill)))
                 }
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            guard let onChange else { return }
+                            onChange(progress(for: value.location.x, width: proxy.size.width))
+                        }
+                )
             }
             .frame(height: 4)
 
@@ -360,5 +450,11 @@ private struct SystemMetricCell: View {
         }
         .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
         .padding(.horizontal, 9)
+        .help(onChange == nil ? subtitle : "Drag to adjust \(subtitle.lowercased())")
+    }
+
+    private func progress(for locationX: CGFloat, width: CGFloat) -> CGFloat {
+        guard width > 0 else { return 0 }
+        return max(0, min(1, locationX / width))
     }
 }

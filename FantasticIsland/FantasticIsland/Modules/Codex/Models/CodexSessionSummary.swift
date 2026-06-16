@@ -12,7 +12,7 @@ struct CodexIslandSessionBuckets {
 }
 
 enum CodexIslandSessionPresentation {
-    static let compactOverviewSessionLimit = 3
+    static let compactOverviewSessionLimit = 5
 
     private static let inactivityThreshold: TimeInterval = 20 * 60
 

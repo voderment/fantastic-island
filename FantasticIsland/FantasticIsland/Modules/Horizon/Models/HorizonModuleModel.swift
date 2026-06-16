@@ -64,11 +64,38 @@ struct HorizonShelfItem: Identifiable, Equatable, Codable {
     var id = UUID()
     let url: URL
     let addedAt: Date
+    let bookmarkData: Data?
+    let bookmarkIsStale: Bool
 
-    init(id: UUID = UUID(), url: URL, addedAt: Date) {
+    enum CodingKeys: String, CodingKey {
+        case id
+        case url
+        case addedAt
+        case bookmarkData
+        case bookmarkIsStale
+    }
+
+    init(
+        id: UUID = UUID(),
+        url: URL,
+        addedAt: Date,
+        bookmarkData: Data? = nil,
+        bookmarkIsStale: Bool = false
+    ) {
         self.id = id
         self.url = url
         self.addedAt = addedAt
+        self.bookmarkData = bookmarkData
+        self.bookmarkIsStale = bookmarkIsStale
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        self.url = try container.decode(URL.self, forKey: .url)
+        self.addedAt = try container.decode(Date.self, forKey: .addedAt)
+        self.bookmarkData = try container.decodeIfPresent(Data.self, forKey: .bookmarkData)
+        self.bookmarkIsStale = try container.decodeIfPresent(Bool.self, forKey: .bookmarkIsStale) ?? false
     }
 
     var title: String {
@@ -87,6 +114,10 @@ struct HorizonShelfItem: Identifiable, Equatable, Codable {
         }
 
         return "doc"
+    }
+
+    var accessStatusText: String {
+        bookmarkIsStale ? "Bookmark needs refresh" : subtitle
     }
 
     var previewImage: NSImage {
@@ -193,7 +224,7 @@ final class HorizonModuleModel: ObservableObject, IslandModule {
         let existing = Set(shelfItems.map(\.url))
         let newItems = urls
             .filter { !existing.contains($0) }
-            .map { HorizonShelfItem(url: $0, addedAt: .now) }
+            .map { makeShelfItem(for: $0, addedAt: .now) }
 
         guard !newItems.isEmpty else {
             return
@@ -209,31 +240,39 @@ final class HorizonModuleModel: ObservableObject, IslandModule {
     }
 
     func openShelfItem(_ item: HorizonShelfItem) {
-        NSWorkspace.shared.open(item.url)
+        performWithShelfItemAccess(item) { url in
+            NSWorkspace.shared.open(url)
+        }
     }
 
     func revealShelfItem(_ item: HorizonShelfItem) {
-        NSWorkspace.shared.activateFileViewerSelecting([item.url])
+        performWithShelfItemAccess(item) { url in
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
     }
 
     func quickLookShelfItem(_ item: HorizonShelfItem) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/qlmanage")
-        process.arguments = ["-p", item.url.path]
-        process.standardOutput = Pipe()
-        process.standardError = Pipe()
-        try? process.run()
+        performWithShelfItemAccess(item) { url in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/qlmanage")
+            process.arguments = ["-p", url.path]
+            process.standardOutput = Pipe()
+            process.standardError = Pipe()
+            try? process.run()
+        }
     }
 
     func shareShelfItem(_ item: HorizonShelfItem) {
-        if let service = NSSharingService(named: .sendViaAirDrop) {
-            service.perform(withItems: [item.url])
-            return
-        }
+        performWithShelfItemAccess(item) { url in
+            if let service = NSSharingService(named: .sendViaAirDrop) {
+                service.perform(withItems: [url])
+                return
+            }
 
-        let picker = NSSharingServicePicker(items: [item.url])
-        if let view = NSApp.keyWindow?.contentView ?? NSApp.windows.first(where: \.isVisible)?.contentView {
-            picker.show(relativeTo: .zero, of: view, preferredEdge: .minY)
+            let picker = NSSharingServicePicker(items: [url])
+            if let view = NSApp.keyWindow?.contentView ?? NSApp.windows.first(where: \.isVisible)?.contentView {
+                picker.show(relativeTo: .zero, of: view, preferredEdge: .minY)
+            }
         }
     }
 
@@ -262,7 +301,12 @@ final class HorizonModuleModel: ObservableObject, IslandModule {
             return
         }
 
-        shelfItems = Array(decoded.filter { FileManager.default.fileExists(atPath: $0.url.path) }.prefix(5))
+        let resolvedItems = Array(decoded.compactMap(resolveShelfItem(_:)).prefix(5))
+        shelfItems = resolvedItems
+
+        if resolvedItems != Array(decoded.prefix(5)) {
+            persistShelfItems()
+        }
     }
 
     private func persistShelfItems() {
@@ -273,6 +317,80 @@ final class HorizonModuleModel: ObservableObject, IslandModule {
         } catch {
             NSLog("Fantastic Island shelf persistence failed: %@", error.localizedDescription)
         }
+    }
+
+    private func makeShelfItem(for url: URL, addedAt: Date) -> HorizonShelfItem {
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        let bookmarkData = try? url.bookmarkData(
+            options: [.withSecurityScope],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+
+        return HorizonShelfItem(
+            url: url,
+            addedAt: addedAt,
+            bookmarkData: bookmarkData
+        )
+    }
+
+    private func resolveShelfItem(_ item: HorizonShelfItem) -> HorizonShelfItem? {
+        guard let bookmarkData = item.bookmarkData else {
+            return FileManager.default.fileExists(atPath: item.url.path) ? item : nil
+        }
+
+        var isStale = false
+        let resolvedURL: URL
+        do {
+            resolvedURL = try URL(
+                resolvingBookmarkData: bookmarkData,
+                options: [.withSecurityScope],
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            )
+        } catch {
+            return FileManager.default.fileExists(atPath: item.url.path) ? item : nil
+        }
+
+        guard FileManager.default.fileExists(atPath: resolvedURL.path) else {
+            return nil
+        }
+
+        if isStale {
+            let refreshedItem = makeShelfItem(for: resolvedURL, addedAt: item.addedAt)
+            return HorizonShelfItem(
+                id: item.id,
+                url: refreshedItem.url,
+                addedAt: refreshedItem.addedAt,
+                bookmarkData: refreshedItem.bookmarkData ?? bookmarkData,
+                bookmarkIsStale: refreshedItem.bookmarkData == nil
+            )
+        }
+
+        return HorizonShelfItem(
+            id: item.id,
+            url: resolvedURL,
+            addedAt: item.addedAt,
+            bookmarkData: bookmarkData,
+            bookmarkIsStale: false
+        )
+    }
+
+    private func performWithShelfItemAccess(_ item: HorizonShelfItem, action: (URL) -> Void) {
+        let didAccess = item.url.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                item.url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        action(item.url)
     }
 
     private func refreshClock() {
@@ -701,19 +819,12 @@ private struct TimerModuleContentView: View {
             .frame(height: 4)
 
             HStack(spacing: 6) {
-                ForEach([5, 10, 25], id: \.self) { minutes in
+                ForEach([1, 5, 10, 25, 45], id: \.self) { minutes in
                     Button("\(minutes)m") {
                         controller.start(minutes: minutes)
                     }
-                    .buttonStyle(HorizonTimerButtonStyle())
+                    .buttonStyle(HorizonTimerButtonStyle(isQuiet: minutes == 1 || minutes == 45))
                 }
-
-                Spacer(minLength: 0)
-
-                Button("1m") { controller.start(minutes: 1) }
-                    .buttonStyle(HorizonTimerButtonStyle(isQuiet: true))
-                Button("45m") { controller.start(minutes: 45) }
-                    .buttonStyle(HorizonTimerButtonStyle(isQuiet: true))
             }
         }
         .padding(.horizontal, 12)
@@ -1005,7 +1116,7 @@ private struct HorizonShelfChip: View {
             Divider()
             Button("Remove", role: .destructive, action: remove)
         }
-        .help(item.subtitle)
+        .help(item.accessStatusText)
     }
 }
 

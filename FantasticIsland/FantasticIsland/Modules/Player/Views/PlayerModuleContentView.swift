@@ -72,6 +72,8 @@ struct PlayerModuleContentView: View {
                 progressSection
             }
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
     }
 
     private func peekContent(notification: PlayerModuleModel.TrackSwitchNotification) -> some View {
@@ -150,13 +152,13 @@ struct PlayerModuleContentView: View {
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
-                sourceBadge
-
                 if !showsAutomationIssue, state.nowPlayingState.playbackStatus.isPlaying {
                     PlayerVisualizerView(isPlaying: true)
                 }
 
                 Spacer(minLength: 0)
+
+                sourceBadge
             }
 
             HStack(alignment: .firstTextBaseline, spacing: 8) {

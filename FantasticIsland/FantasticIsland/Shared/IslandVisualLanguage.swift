@@ -11,7 +11,7 @@ enum IslandVisualLanguage {
 
     static var shellGradient: LinearGradient {
         LinearGradient(
-            colors: [shellTop, shellBottom],
+            colors: [Color.black, Color.black],
             startPoint: .top,
             endPoint: .bottom
         )
