@@ -29,13 +29,7 @@ struct IslandHUDOverlayView: View {
                     Capsule()
                         .fill(Color.white.opacity(0.14))
                     Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.white.opacity(0.95), Color.white.opacity(0.7)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
+                        .fill(Color.white.opacity(0.82))
                         .frame(width: proxy.size.width * CGFloat(level))
                 }
             }
@@ -48,18 +42,12 @@ struct IslandHUDOverlayView: View {
         .padding(.vertical, 10)
         .background {
             Capsule(style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [Color(red: 0.12, green: 0.12, blue: 0.13), Color.black.opacity(0.92)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+                .fill(Color.black)
         }
         .overlay {
             Capsule(style: .continuous)
-                .stroke(IslandVisualLanguage.shellStrokeGradient, lineWidth: 0.75)
+                .stroke(Color.white.opacity(0.09), lineWidth: 0.75)
         }
-        .shadow(color: .black.opacity(0.35), radius: 16, y: 6)
+        .shadow(color: .black.opacity(0.26), radius: 10, y: 4)
     }
 }

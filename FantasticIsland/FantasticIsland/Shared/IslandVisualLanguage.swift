@@ -2,12 +2,12 @@ import SwiftUI
 
 enum IslandVisualLanguage {
     static let accent = Color(red: 0.29, green: 0.86, blue: 0.46)
-    static let shellTop = Color(red: 0.10, green: 0.10, blue: 0.11)
+    static let shellTop = Color.black
     static let shellBottom = Color.black
     static let closedShell = Color.black
-    static let glassFill = Color.white.opacity(0.055)
-    static let glassStroke = Color.white.opacity(0.11)
-    static let glassHighlight = Color.white.opacity(0.08)
+    static let glassFill = Color.white.opacity(0.038)
+    static let glassStroke = Color.white.opacity(0.08)
+    static let glassHighlight = Color.white.opacity(0.035)
 
     static var shellGradient: LinearGradient {
         LinearGradient(
@@ -57,12 +57,6 @@ private struct IslandGlassCapsuleModifier: ViewModifier {
                 Capsule(style: .continuous)
                     .stroke(IslandVisualLanguage.glassStroke, lineWidth: 0.75)
             }
-            .overlay(alignment: .top) {
-                Capsule(style: .continuous)
-                    .fill(IslandVisualLanguage.glassHighlight)
-                    .frame(height: 1)
-                    .padding(.horizontal, 10)
-            }
     }
 }
 
@@ -73,27 +67,11 @@ private struct IslandGlassPanelModifier: ViewModifier {
         content
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.07),
-                                Color.white.opacity(0.035),
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                    .fill(Color.white.opacity(0.034))
             )
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: [Color.white.opacity(0.16), Color.white.opacity(0.05)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 0.75
-                    )
+                    .stroke(Color.white.opacity(0.075), lineWidth: 0.75)
             }
     }
 }
