@@ -132,6 +132,7 @@ final class IslandAppModel: ObservableObject {
     let horizonModule: HorizonModuleModel
     let timerModule: TimerModuleModel
     let shelfModule: ShelfModuleModel
+    let systemModule: SystemModuleModel
     let postModule: XPostModuleModel
     let moduleRegistry: IslandModuleRegistry
     let designTokenStore = IslandDebugTokenStore()
@@ -194,9 +195,18 @@ final class IslandAppModel: ObservableObject {
         let horizonModule = HorizonModuleModel()
         let timerModule = TimerModuleModel(timerController: horizonModule.timerController)
         let shelfModule = ShelfModuleModel(horizonModule: horizonModule)
+        let systemModule = SystemModuleModel(horizonModule: horizonModule)
         let postModule = XPostModuleModel()
         IslandDefaults.migrateLegacyValues()
-        let allModules: [any IslandModule] = [agentsModule, playerModule, horizonModule, timerModule, shelfModule, postModule]
+        let allModules: [any IslandModule] = [
+            agentsModule,
+            playerModule,
+            horizonModule,
+            timerModule,
+            shelfModule,
+            systemModule,
+            postModule,
+        ]
         let defaults = UserDefaults.standard
         let loadedEnabledModuleIDs = Self.loadEnabledModuleIDs(defaults: defaults, availableModules: allModules)
 
@@ -205,6 +215,7 @@ final class IslandAppModel: ObservableObject {
         self.horizonModule = horizonModule
         self.timerModule = timerModule
         self.shelfModule = shelfModule
+        self.systemModule = systemModule
         self.postModule = postModule
         self.moduleRegistry = IslandModuleRegistry(modules: allModules)
         self.isAudioMuted = defaults.object(forKey: IslandDefaults.audioMutedKey) as? Bool ?? true
@@ -218,6 +229,8 @@ final class IslandAppModel: ObservableObject {
         self.selectedModuleID = loadedEnabledModuleIDs.contains(agentsModule.id)
             ? agentsModule.id
             : (allModules.first { loadedEnabledModuleIDs.contains($0.id) }?.id ?? agentsModule.id)
+        Self.migrateSystemCollapsedSummary(defaults: defaults)
+        self.collapsedSummaryConfiguration = CollapsedSummaryConfiguration.load()
         normalizeSelectedModuleID()
         refreshLaunchAtLoginState()
 
@@ -882,6 +895,7 @@ final class IslandAppModel: ObservableObject {
         bindModule(horizonModule)
         bindModule(timerModule)
         bindModule(shelfModule)
+        bindModule(systemModule)
         bindModule(postModule)
 
         designTokenStore.objectWillChange
@@ -1764,6 +1778,7 @@ final class IslandAppModel: ObservableObject {
             HorizonModuleModel.moduleID,
             TimerModuleModel.moduleID,
             ShelfModuleModel.moduleID,
+            SystemModuleModel.moduleID,
         ]
         let sanitizedDefaults = availableIDs.intersection(defaultIDs)
 
@@ -1779,12 +1794,41 @@ final class IslandAppModel: ObservableObject {
             defaults.set(Array(sanitizedIDs), forKey: IslandDefaults.enabledModuleIDsKey)
         }
         defaults.set(true, forKey: IslandDefaults.horizonUtilityModulesMigrationKey)
+        if defaults.object(forKey: IslandDefaults.systemModuleMigrationKey) == nil,
+           sanitizedIDs.contains(HorizonModuleModel.moduleID) {
+            sanitizedIDs.insert(SystemModuleModel.moduleID)
+            defaults.set(Array(sanitizedIDs), forKey: IslandDefaults.enabledModuleIDsKey)
+        }
+        defaults.set(true, forKey: IslandDefaults.systemModuleMigrationKey)
         return sanitizedIDs.isEmpty ? (sanitizedDefaults.isEmpty ? availableIDs : sanitizedDefaults) : sanitizedIDs
+    }
+
+    private static func migrateSystemCollapsedSummary(defaults: UserDefaults) {
+        guard defaults.object(forKey: IslandDefaults.systemCollapsedSummaryMigrationKey) == nil else {
+            return
+        }
+
+        defer {
+            defaults.set(true, forKey: IslandDefaults.systemCollapsedSummaryMigrationKey)
+        }
+
+        let legacyBatteryID = "\(HorizonModuleModel.moduleID).summary.battery"
+        let systemBatteryID = "\(SystemModuleModel.moduleID).summary.battery"
+        guard var storedIDs = defaults.stringArray(forKey: IslandDefaults.collapsedSummaryVisibleIDsKey),
+              storedIDs.contains(legacyBatteryID),
+              !storedIDs.contains(systemBatteryID) else {
+            return
+        }
+
+        storedIDs.append(systemBatteryID)
+        defaults.set(storedIDs, forKey: IslandDefaults.collapsedSummaryVisibleIDsKey)
     }
 
     private func prepareModuleForUserIntent(_ moduleID: String) {
         if moduleID == HorizonModuleModel.moduleID {
             horizonModule.activateForUserIntent()
+        } else if moduleID == SystemModuleModel.moduleID {
+            systemModule.refresh()
         }
     }
 

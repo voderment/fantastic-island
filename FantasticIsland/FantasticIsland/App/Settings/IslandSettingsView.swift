@@ -271,6 +271,13 @@ struct IslandSettingsView: View {
                             detail: "Drop files onto the island and keep compact open, reveal, share, and remove actions close by."
                         )
                     }
+                case SystemModuleModel.moduleID:
+                    SettingsCard(title: "System") {
+                        PlaceholderRow(
+                            title: "Battery, volume, and brightness",
+                            detail: "A compact static module for the hardware status that should be glanceable without turning Horizon into a dashboard."
+                        )
+                    }
                 case XPostModuleModel.moduleID:
                     postModulePage
                 default:

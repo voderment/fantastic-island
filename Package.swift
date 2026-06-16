@@ -32,6 +32,7 @@ let package = Package(
                 "Modules/Horizon",
                 "Modules/Placeholder",
                 "Modules/Player",
+                "Modules/System",
                 "Modules/XPost/Models/XPostModuleModel.swift",
                 "Modules/XPost/Models/XPostModuleSettings.swift",
                 "Modules/XPost/Networking",

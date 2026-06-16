@@ -9,6 +9,8 @@ enum IslandDefaults {
     static let hideInFullscreenKey = "island.settings.hideInFullscreen"
     static let detachedModeKey = "island.settings.detachedMode"
     static let horizonUtilityModulesMigrationKey = "island.migrations.horizonUtilityModules.20260616"
+    static let systemModuleMigrationKey = "island.migrations.systemModule.20260616"
+    static let systemCollapsedSummaryMigrationKey = "island.migrations.systemCollapsedSummary.20260616"
 
     private static let legacyAudioMutedKey = "audioMuted"
     private static let silentAgentIslandMigrationKey = "island.migrations.silentAgentIsland.20260615"

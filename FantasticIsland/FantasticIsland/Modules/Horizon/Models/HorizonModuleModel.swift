@@ -152,13 +152,6 @@ final class HorizonModuleModel: ObservableObject, IslandModule {
                 isEnabledByDefault: false
             ),
             CollapsedSummaryItem(
-                id: "\(id).summary.battery",
-                moduleID: id,
-                title: "Battery",
-                text: batterySnapshot.title,
-                isEnabledByDefault: false
-            ),
-            CollapsedSummaryItem(
                 id: "\(id).summary.weather",
                 moduleID: id,
                 title: "Weather",
@@ -180,9 +173,7 @@ final class HorizonModuleModel: ObservableObject, IslandModule {
         TaskActivityContribution()
     }
 
-    var preferredOpenedContentHeight: CGFloat {
-        158
-    }
+    var preferredOpenedContentHeight: CGFloat { 146 }
 
     var allowsInternalScrolling: Bool { false }
 
@@ -592,10 +583,7 @@ private struct HorizonModuleContentView: View {
 
             Spacer(minLength: 0)
 
-            HStack(spacing: 12) {
-                HorizonWeatherPill(snapshot: model.weatherService.snapshot)
-                HorizonBatteryPill(snapshot: model.batterySnapshot)
-            }
+            HorizonWeatherPill(snapshot: model.weatherService.snapshot)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
