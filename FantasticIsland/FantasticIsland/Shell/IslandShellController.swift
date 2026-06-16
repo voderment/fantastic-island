@@ -614,6 +614,40 @@ final class IslandShellController {
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.closedHoverOpenDelay, execute: workItem)
     }
 
+    fileprivate func handleClosedActivationFileDragHover(_ hovering: Bool) {
+        pendingHoverOpen?.cancel()
+        pendingHoverOpen = nil
+        model?.setIslandClosedHovering(hovering)
+
+        guard hovering, let model else {
+            return
+        }
+
+        let workItem = DispatchWorkItem { [weak self, weak model] in
+            guard let self,
+                  let model,
+                  model.islandClosedHovering else {
+                return
+            }
+
+            model.prepareShelfForFileDrop()
+            self.pendingHoverOpen = nil
+        }
+        pendingHoverOpen = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.closedHoverOpenDelay, execute: workItem)
+    }
+
+    fileprivate func handleClosedActivationFileDrop(_ urls: [URL]) -> Bool {
+        guard let model, !urls.isEmpty else {
+            return false
+        }
+
+        pendingHoverOpen?.cancel()
+        pendingHoverOpen = nil
+        model.addFilesToShelf(urls)
+        return true
+    }
+
     private func screenPoint(for event: NSEvent) -> NSPoint {
         if let window = event.window {
             return window.convertPoint(toScreen: event.locationInWindow)
@@ -760,9 +794,49 @@ private final class IslandClosedActivationView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        registerForDraggedTypes([.fileURL])
         if window == nil {
             notchController?.handleClosedActivationHover(false)
         }
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard !draggedFileURLs(from: sender).isEmpty else {
+            return []
+        }
+
+        notchController?.handleClosedActivationFileDragHover(true)
+        return .copy
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        draggedFileURLs(from: sender).isEmpty ? [] : .copy
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        notchController?.handleClosedActivationFileDragHover(false)
+    }
+
+    override func draggingEnded(_ sender: NSDraggingInfo) {
+        notchController?.handleClosedActivationFileDragHover(false)
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let urls = draggedFileURLs(from: sender)
+        notchController?.handleClosedActivationFileDragHover(false)
+        return notchController?.handleClosedActivationFileDrop(urls) ?? false
+    }
+
+    private func draggedFileURLs(from sender: NSDraggingInfo) -> [URL] {
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        return sender.draggingPasteboard
+            .readObjects(forClasses: [NSURL.self], options: options)?
+            .compactMap { object in
+                if let url = object as? URL {
+                    return url
+                }
+                return (object as? NSURL) as URL?
+            } ?? []
     }
 }
 

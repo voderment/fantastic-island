@@ -682,6 +682,27 @@ final class IslandAppModel: ObservableObject {
         }
     }
 
+    func prepareShelfForFileDrop() {
+        if !enabledModuleIDs.contains(ShelfModuleModel.moduleID) {
+            enabledModuleIDs.insert(ShelfModuleModel.moduleID)
+            persistEnabledModuleIDs()
+        }
+
+        selectModule(id: ShelfModuleModel.moduleID)
+        if !islandExpanded {
+            expandIsland(reason: .hover)
+        }
+    }
+
+    func addFilesToShelf(_ urls: [URL]) {
+        guard !urls.isEmpty else {
+            return
+        }
+
+        prepareShelfForFileDrop()
+        shelfModule.horizonModule.addShelfURLs(urls)
+    }
+
     func updateMeasuredModuleContentHeight(
         _ height: CGFloat,
         for moduleID: String,

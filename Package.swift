@@ -29,7 +29,8 @@ let package = Package(
                 "Modules/Codex/Monitoring/CodexTerminalTextSender.swift",
                 "Modules/Codex/Monitoring/CodexTokenUsageHistoryScanner.swift",
                 "Modules/Codex/Views",
-                "Modules/Horizon",
+                "Modules/Horizon/Models/HorizonModuleModel.swift",
+                "Modules/Horizon/Services",
                 "Modules/Placeholder",
                 "Modules/Player",
                 "Modules/System",
@@ -65,6 +66,7 @@ let package = Package(
                 "Modules/Codex/Monitoring/AgentTranscriptParser.swift",
                 "Modules/Codex/Monitoring/CodexTerminalDiscovery.swift",
                 "Modules/Codex/Monitoring/CodexSessionDiscovery.swift",
+                "Modules/Horizon/Models/HorizonTimerState.swift",
                 "Modules/XPost/Models/XPostTextValidation.swift",
                 "Shared/Security/KeychainSecretStore.swift",
             ]

@@ -496,15 +496,40 @@ final class TimerModuleModel: ObservableObject, IslandModule {
         ]
     }
 
+    var islandActivities: [IslandActivity] {
+        guard timerController.snapshot.mode == .completed else {
+            return []
+        }
+
+        let completedAt = timerController.completionDate ?? .now
+        return [
+            IslandActivity(
+                id: "\(id).timer.completed",
+                moduleID: id,
+                sourceID: "timer.completed",
+                kind: .actionRequired,
+                priority: 45,
+                createdAt: completedAt,
+                updatedAt: completedAt,
+                presentationPolicy: IslandActivityPresentationPolicy(
+                    autoPresentationScope: .global,
+                    autoDismissDelay: nil
+                )
+            ),
+        ]
+    }
+
     var taskActivityContribution: TaskActivityContribution {
-        TaskActivityContribution(
-            activeTaskCount: timerController.snapshot.mode == .idle ? 0 : 1,
-            inProgressTaskCount: timerController.snapshot.mode == .running ? 1 : 0,
-            lastEventAt: timerController.snapshot.mode == .idle ? nil : .now
+        let snapshot = timerController.snapshot
+        let lastEventAt = snapshot.mode == .idle ? nil : (timerController.completionDate ?? .now)
+        return TaskActivityContribution(
+            activeTaskCount: snapshot.mode == .idle ? 0 : 1,
+            inProgressTaskCount: snapshot.mode == .running ? 1 : 0,
+            lastEventAt: lastEventAt
         )
     }
 
-    var preferredOpenedContentHeight: CGFloat { 150 }
+    var preferredOpenedContentHeight: CGFloat { 144 }
     var allowsInternalScrolling: Bool { false }
 
     func makeLiveContentView(presentation _: IslandModulePresentationContext) -> AnyView {
@@ -622,20 +647,60 @@ private struct TimerModuleContentView: View {
     @ObservedObject var controller: HorizonTimerController
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 8) {
-                Image(systemName: "timer")
-                    .foregroundStyle(.white.opacity(0.68))
-                Text("Timer")
-                    .font(IslandVisualLanguage.islandLabel(12))
-                    .foregroundStyle(.white.opacity(0.62))
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .center, spacing: 10) {
+                ZStack {
+                    Circle()
+                        .stroke(Color.white.opacity(0.08), lineWidth: 3)
+                    Circle()
+                        .trim(from: 0, to: controller.snapshot.mode == .idle ? 0 : controller.snapshot.progressFraction)
+                        .stroke(timerTint, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                    Image(systemName: controller.snapshot.mode == .completed ? "checkmark" : "timer")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(timerTint)
+                }
+                .frame(width: 36, height: 36)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(controller.snapshot.displayText)
+                        .font(.system(size: 22, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.94))
+                        .lineLimit(1)
+
+                    Text(timerStatusText)
+                        .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.42))
+                        .lineLimit(1)
+                }
+
                 Spacer(minLength: 0)
-                Text(controller.snapshot.displayText)
-                    .font(IslandVisualLanguage.islandLabel(12))
-                    .foregroundStyle(.white.opacity(0.88))
+
+                HStack(spacing: 4) {
+                    if controller.snapshot.mode == .running {
+                        timerIconButton("pause.fill", label: "Pause") { controller.pause() }
+                    } else if controller.snapshot.mode == .paused {
+                        timerIconButton("play.fill", label: "Resume") { controller.resume() }
+                    }
+
+                    if controller.snapshot.mode != .idle {
+                        timerIconButton("arrow.counterclockwise", label: "Reset") { controller.reset() }
+                    }
+                }
             }
 
-            HStack(spacing: 8) {
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.055))
+                    Capsule()
+                        .fill(timerTint.opacity(0.72))
+                        .frame(width: max(4, proxy.size.width * controller.snapshot.progressFraction))
+                }
+            }
+            .frame(height: 4)
+
+            HStack(spacing: 6) {
                 ForEach([5, 10, 25], id: \.self) { minutes in
                     Button("\(minutes)m") {
                         controller.start(minutes: minutes)
@@ -643,35 +708,57 @@ private struct TimerModuleContentView: View {
                     .buttonStyle(HorizonTimerButtonStyle())
                 }
 
-                if controller.snapshot.mode == .running {
-                    Button("Pause") { controller.pause() }
-                        .buttonStyle(HorizonTimerButtonStyle())
-                } else if controller.snapshot.mode == .paused {
-                    Button("Resume") { controller.resume() }
-                        .buttonStyle(HorizonTimerButtonStyle())
-                }
+                Spacer(minLength: 0)
 
-                if controller.snapshot.mode != .idle {
-                    Button("Reset") { controller.reset() }
-                        .buttonStyle(HorizonTimerButtonStyle())
-                }
+                Button("1m") { controller.start(minutes: 1) }
+                    .buttonStyle(HorizonTimerButtonStyle(isQuiet: true))
+                Button("45m") { controller.start(minutes: 45) }
+                    .buttonStyle(HorizonTimerButtonStyle(isQuiet: true))
             }
-
-            HStack(spacing: 8) {
-                ForEach([1, 15, 45], id: \.self) { minutes in
-                    Button("\(minutes)m") {
-                        controller.start(minutes: minutes)
-                    }
-                    .buttonStyle(HorizonTimerButtonStyle())
-                }
-            }
-            .padding(.top, 2)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private var timerTint: Color {
+        switch controller.snapshot.mode {
+        case .idle:
+            return .white.opacity(0.42)
+        case .running:
+            return IslandVisualLanguage.accent.opacity(0.92)
+        case .paused:
+            return Color.yellow.opacity(0.86)
+        case .completed:
+            return Color.green.opacity(0.9)
+        }
+    }
+
+    private var timerStatusText: String {
+        switch controller.snapshot.mode {
+        case .idle:
+            return "READY"
+        case .running:
+            return "\(controller.snapshot.presetMinutes) MIN RUNNING"
+        case .paused:
+            return "PAUSED"
+        case .completed:
+            return "COMPLETE"
+        }
+    }
+
+    private func timerIconButton(_ symbolName: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbolName)
+                .font(.system(size: 10.5, weight: .bold))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white.opacity(0.72))
+        .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .help(label)
+    }
 }
 
 private struct ShelfModuleContentView: View {
@@ -679,12 +766,12 @@ private struct ShelfModuleContentView: View {
     @State private var isShelfDropTargeted = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "tray.and.arrow.down")
                     .foregroundStyle(.white.opacity(0.68))
                 Text("Shelf")
-                    .font(IslandVisualLanguage.islandLabel(12))
+                    .font(IslandVisualLanguage.islandLabel(11.5))
                     .foregroundStyle(.white.opacity(0.62))
                 Spacer(minLength: 0)
                 Text("\(model.shelfItems.count)/5")
@@ -695,19 +782,28 @@ private struct ShelfModuleContentView: View {
             if model.shelfItems.isEmpty {
                 HStack(spacing: 10) {
                     Image(systemName: "plus.square.dashed")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.38))
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(isShelfDropTargeted ? IslandVisualLanguage.accent.opacity(0.9) : .white.opacity(0.38))
 
                     Text("Drop files here")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.48))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(isShelfDropTargeted ? .white.opacity(0.78) : .white.opacity(0.48))
 
                     Spacer(minLength: 0)
                 }
-                .frame(height: 32)
+                .padding(.horizontal, 10)
+                .frame(height: 38)
+                .background(Color.white.opacity(isShelfDropTargeted ? 0.07 : 0.035), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .stroke(
+                            isShelfDropTargeted ? IslandVisualLanguage.accent.opacity(0.28) : Color.white.opacity(0.07),
+                            style: StrokeStyle(lineWidth: 1, dash: [4, 4])
+                        )
+                }
             } else {
                 HStack(spacing: 7) {
-                    ForEach(Array(model.shelfItems.prefix(3))) { item in
+                    ForEach(Array(model.shelfItems.prefix(4))) { item in
                         HorizonShelfChip(item: item) {
                             model.openShelfItem(item)
                         } quickLook: {
@@ -721,8 +817,8 @@ private struct ShelfModuleContentView: View {
                         }
                     }
 
-                    if model.shelfItems.count > 3 {
-                        Text("+\(model.shelfItems.count - 3)")
+                    if model.shelfItems.count > 4 {
+                        Text("+\(model.shelfItems.count - 4)")
                             .font(.system(size: 11, weight: .bold, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.58))
                             .frame(width: 30, height: 30)
@@ -732,8 +828,8 @@ private struct ShelfModuleContentView: View {
                 .frame(height: 32)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -883,14 +979,7 @@ private struct HorizonShelfChip: View {
     let remove: () -> Void
 
     var body: some View {
-        Menu {
-            Button("Open", action: open)
-            Button("Quick Look", action: quickLook)
-            Button("Reveal in Finder", action: reveal)
-            Button("Share", action: share)
-            Divider()
-            Button("Remove", role: .destructive, action: remove)
-        } label: {
+        Button(action: open) {
             HStack(spacing: 7) {
                 Image(nsImage: item.previewImage)
                     .resizable()
@@ -905,20 +994,34 @@ private struct HorizonShelfChip: View {
             }
             .padding(.horizontal, 8)
             .frame(height: 30)
-            .frame(maxWidth: 128, alignment: .leading)
+            .frame(maxWidth: 76, alignment: .leading)
             .background(Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            Button("Quick Look", action: quickLook)
+            Button("Reveal in Finder", action: reveal)
+            Button("Share", action: share)
+            Divider()
+            Button("Remove", role: .destructive, action: remove)
+        }
         .help(item.subtitle)
     }
 }
 
 private struct HorizonTimerButtonStyle: ButtonStyle {
+    var isQuiet = false
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-            .foregroundStyle(.white.opacity(configuration.isPressed ? 0.9 : 0.55))
-            .underline(configuration.isPressed)
+            .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+            .foregroundStyle(.white.opacity(configuration.isPressed ? 0.94 : (isQuiet ? 0.46 : 0.68)))
+            .frame(minWidth: 36, minHeight: 22)
+            .padding(.horizontal, 3)
+            .background(
+                Color.white.opacity(configuration.isPressed ? 0.095 : (isQuiet ? 0.035 : 0.055)),
+                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+            )
     }
 }
 

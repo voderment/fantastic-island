@@ -6,6 +6,7 @@ enum HorizonTimerMode: Equatable {
     case idle
     case running
     case paused
+    case completed
 }
 
 struct HorizonTimerSnapshot: Equatable {
@@ -16,26 +17,52 @@ struct HorizonTimerSnapshot: Equatable {
     static let idle = HorizonTimerSnapshot(mode: .idle, remainingSeconds: 0, presetMinutes: 5)
 
     var displayText: String {
+        if mode == .completed {
+            return "Done"
+        }
+
         let minutes = remainingSeconds / 60
         let seconds = remainingSeconds % 60
         return String(format: "%02d:%02d", minutes, seconds)
+    }
+
+    var progressFraction: Double {
+        guard presetMinutes > 0 else {
+            return 0
+        }
+
+        let total = max(1, presetMinutes * 60)
+        let elapsed = total - max(0, remainingSeconds)
+        return min(1, max(0, Double(elapsed) / Double(total)))
     }
 }
 
 @MainActor
 final class HorizonTimerController: ObservableObject {
     @Published private(set) var snapshot = HorizonTimerSnapshot.idle
+    private(set) var completionDate: Date?
+    var playsCompletionSound = true
 
     private var tickTimer: Timer?
     private var endDate: Date?
 
     func start(minutes: Int) {
-        let clamped = max(1, min(minutes, 180))
-        endDate = Date().addingTimeInterval(TimeInterval(clamped * 60))
+        start(seconds: minutes * 60, presetMinutes: minutes)
+    }
+
+    func start(seconds: Int) {
+        start(seconds: seconds, presetMinutes: max(1, Int(ceil(Double(seconds) / 60.0))))
+    }
+
+    private func start(seconds: Int, presetMinutes: Int) {
+        let clampedSeconds = max(1, min(seconds, 10_800))
+        let clampedPreset = max(1, min(presetMinutes, 180))
+        completionDate = nil
+        endDate = Date().addingTimeInterval(TimeInterval(clampedSeconds))
         snapshot = HorizonTimerSnapshot(
             mode: .running,
-            remainingSeconds: clamped * 60,
-            presetMinutes: clamped
+            remainingSeconds: clampedSeconds,
+            presetMinutes: clampedPreset
         )
         startTicking()
     }
@@ -47,7 +74,7 @@ final class HorizonTimerController: ObservableObject {
 
         snapshot = HorizonTimerSnapshot(
             mode: .paused,
-            remainingSeconds: max(0, Int(endDate.timeIntervalSinceNow)),
+            remainingSeconds: max(0, Int(ceil(endDate.timeIntervalSinceNow))),
             presetMinutes: snapshot.presetMinutes
         )
         self.endDate = nil
@@ -70,6 +97,7 @@ final class HorizonTimerController: ObservableObject {
 
     func reset() {
         endDate = nil
+        completionDate = nil
         snapshot = HorizonTimerSnapshot.idle
         stopTicking()
     }
@@ -96,10 +124,19 @@ final class HorizonTimerController: ObservableObject {
             return
         }
 
-        let remaining = max(0, Int(endDate.timeIntervalSinceNow))
+        let remaining = max(0, Int(ceil(endDate.timeIntervalSinceNow)))
         if remaining == 0 {
-            reset()
-            NSSound.beep()
+            completionDate = .now
+            snapshot = HorizonTimerSnapshot(
+                mode: .completed,
+                remainingSeconds: 0,
+                presetMinutes: snapshot.presetMinutes
+            )
+            self.endDate = nil
+            stopTicking()
+            if playsCompletionSound {
+                NSSound.beep()
+            }
             return
         }
 

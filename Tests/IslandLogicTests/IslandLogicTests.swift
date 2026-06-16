@@ -325,6 +325,35 @@ final class IslandLogicTests: XCTestCase {
         XCTAssertEqual(try manager.status(), .notInstalled)
     }
 
+    @MainActor
+    func testHorizonTimerControllerRunsPausesResumesAndCompletes() async throws {
+        let controller = HorizonTimerController()
+        controller.playsCompletionSound = false
+
+        controller.start(seconds: 3)
+        XCTAssertEqual(controller.snapshot.mode, .running)
+        XCTAssertEqual(controller.snapshot.presetMinutes, 1)
+        XCTAssertGreaterThan(controller.snapshot.remainingSeconds, 0)
+
+        controller.pause()
+        XCTAssertEqual(controller.snapshot.mode, .paused)
+        let pausedRemaining = controller.snapshot.remainingSeconds
+
+        controller.resume()
+        XCTAssertEqual(controller.snapshot.mode, .running)
+        XCTAssertEqual(controller.snapshot.remainingSeconds, pausedRemaining)
+
+        controller.start(seconds: 1)
+        try await Task.sleep(nanoseconds: 1_250_000_000)
+        XCTAssertEqual(controller.snapshot.mode, .completed)
+        XCTAssertEqual(controller.snapshot.displayText, "Done")
+        XCTAssertNotNil(controller.completionDate)
+
+        controller.reset()
+        XCTAssertEqual(controller.snapshot, .idle)
+        XCTAssertNil(controller.completionDate)
+    }
+
     func testHookDiagnosticsReportsProviderReadinessAndUsageBridgeState() throws {
         let root = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
