@@ -6,6 +6,7 @@ import Foundation
 
 enum IslandHUDOverlayKind: Equatable {
     case volume(level: Float, isMuted: Bool)
+    case brightness(level: Float)
 }
 
 struct IslandHUDOverlayState: Equatable {
@@ -18,14 +19,20 @@ struct IslandHUDOverlayState: Equatable {
 }
 
 @MainActor
-final class IslandVolumeHUDMonitor: ObservableObject {
+final class IslandVolumeHUDMonitor: NSObject, ObservableObject {
     @Published private(set) var overlay: IslandHUDOverlayState?
 
     private var didInitialFetch = false
 
-    init() {
+    override init() {
+        super.init()
         setupAudioListener()
+        setupBrightnessListener()
         fetchCurrentVolume(touchDate: false)
+    }
+
+    deinit {
+        DistributedNotificationCenter.default().removeObserver(self)
     }
 
     func refreshOverlayVisibility() {
@@ -44,6 +51,13 @@ final class IslandVolumeHUDMonitor: ObservableObject {
             )
         }
         didInitialFetch = true
+    }
+
+    private func publish(brightness: Float) {
+        overlay = IslandHUDOverlayState(
+            kind: .brightness(level: brightness),
+            updatedAt: .now
+        )
     }
 
     private func setupAudioListener() {
@@ -77,6 +91,23 @@ final class IslandVolumeHUDMonitor: ObservableObject {
                 Task { @MainActor [weak self] in
                     self?.fetchCurrentVolume(touchDate: true)
                 }
+            }
+        }
+    }
+
+    private func setupBrightnessListener() {
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(brightnessChanged(_:)),
+            name: Notification.Name("com.apple.BrightnessChanged"),
+            object: nil
+        )
+    }
+
+    @objc private func brightnessChanged(_ notification: Notification) {
+        Task { @MainActor [weak self] in
+            if let brightness = Self.brightnessLevel(from: notification.userInfo) {
+                self?.publish(brightness: brightness)
             }
         }
     }
@@ -149,5 +180,25 @@ final class IslandVolumeHUDMonitor: ObservableObject {
         }
 
         return muted != 0
+    }
+
+    private static func brightnessLevel(from userInfo: [AnyHashable: Any]?) -> Float? {
+        guard let userInfo else {
+            return nil
+        }
+
+        let value = userInfo["Brightness"]
+            ?? userInfo["brightness"]
+            ?? userInfo["level"]
+        switch value {
+        case let value as Float:
+            return max(0, min(1, value))
+        case let value as Double:
+            return max(0, min(1, Float(value)))
+        case let value as NSNumber:
+            return max(0, min(1, value.floatValue))
+        default:
+            return nil
+        }
     }
 }

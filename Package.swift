@@ -19,7 +19,6 @@ let package = Package(
                 "App",
                 "Assets.xcassets",
                 "Modules/Codex/Models/CodexModuleModel.swift",
-                "Modules/Codex/Models/CodexSessionSummary.swift",
                 "Modules/Codex/Monitoring/AgentActivityModel.swift",
                 "Modules/Codex/Monitoring/CodexAppServerCoordinator.swift",
                 "Modules/Codex/Monitoring/CodexCLIReplySender.swift",
@@ -52,7 +51,9 @@ let package = Package(
             ],
             sources: [
                 "Modules/Codex/Models/AgentProvider.swift",
+                "Modules/Codex/Models/AgentProviderUsageCacheLoader.swift",
                 "Modules/Codex/Models/AgentSessionLauncher.swift",
+                "Modules/Codex/Models/CodexSessionSummary.swift",
                 "Modules/Codex/Hooks/CodexHookManager.swift",
                 "Modules/Codex/Hooks/CodexHookModels.swift",
                 "Modules/Codex/Hooks/HookBridgeServer.swift",

@@ -7,6 +7,7 @@ enum IslandDefaults {
     static let interfaceLanguageKey = "island.settings.interfaceLanguage"
     static let enabledModuleIDsKey = "island.settings.enabledModuleIDs"
     static let hideInFullscreenKey = "island.settings.hideInFullscreen"
+    static let detachedModeKey = "island.settings.detachedMode"
 
     private static let legacyAudioMutedKey = "audioMuted"
     private static let silentAgentIslandMigrationKey = "island.migrations.silentAgentIsland.20260615"

@@ -649,13 +649,8 @@ struct SessionSnapshot: Identifiable, Codable {
 
     var canSendText: Bool {
         guard !phase.requiresAttention else { return false }
-        if jumpTarget?.canReply == true { return true }
-        switch provider {
-        case .codex, .claudeCode:
-            return true
-        case .cursor, .antigravity, .conductor:
-            return jumpTarget?.canReply == true
-        }
+        return provider.supportsDirectIslandReply
+            && jumpTarget?.canReply == true
     }
 
     var canResolvePermission: Bool {

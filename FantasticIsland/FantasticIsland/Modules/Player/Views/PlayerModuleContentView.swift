@@ -71,7 +71,7 @@ struct PlayerModuleContentView: View {
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
 
-            if !showsAutomationIssue {
+            if !showsAutomationIssue, state.nowPlayingState.track != nil {
                 progressSection
             }
         }

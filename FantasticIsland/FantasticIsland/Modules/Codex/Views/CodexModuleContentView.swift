@@ -339,23 +339,27 @@ struct CodexModuleContentView: View {
 
     private var globalInfoCard: some View {
         sectionCard {
-            HStack(alignment: .center, spacing: 8) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.7))
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(alignment: .center, spacing: 8) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.7))
 
-                Text("Agents")
-                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                    .tracking(0.6)
-                    .foregroundStyle(.white.opacity(0.9))
-                    .lineLimit(1)
+                    Text("Agents")
+                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                        .tracking(0.6)
+                        .foregroundStyle(.white.opacity(0.9))
+                        .lineLimit(1)
 
-                Spacer(minLength: 0)
+                    Spacer(minLength: 0)
 
-                HStack(spacing: 7) {
-                    liveCountBadge
+                    HStack(spacing: 7) {
+                        liveCountBadge
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                 }
-                .frame(maxWidth: .infinity, alignment: .trailing)
+
+                providerQuotaStrip
             }
         }
         .background {
@@ -385,6 +389,40 @@ struct CodexModuleContentView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
         .background(Color.white.opacity(0.06), in: Capsule())
+    }
+
+    private var providerQuotaStrip: some View {
+        HStack(spacing: 5) {
+            Text("5H/W")
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.36))
+                .lineLimit(1)
+                .frame(width: 30, alignment: .leading)
+
+            ForEach(state.providerQuotaItems) { item in
+                providerQuotaPill(item)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Provider five hour and weekly limits")
+    }
+
+    private func providerQuotaPill(_ item: AgentProviderQuotaDisplayItem) -> some View {
+        HStack(spacing: 3) {
+            Text(item.title)
+                .foregroundStyle(.white.opacity(0.74))
+
+            Text("\(item.fiveHourText)/\(item.weekText)")
+                .foregroundStyle(.white.opacity(item.fiveHourText == "--" && item.weekText == "--" ? 0.35 : 0.62))
+                .minimumScaleFactor(0.72)
+        }
+        .font(.system(size: 9, weight: .bold, design: .monospaced))
+        .lineLimit(1)
+        .padding(.horizontal, 5)
+        .padding(.vertical, 3.5)
+        .frame(maxWidth: .infinity, minHeight: 20)
+        .background(Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
     }
 
     private var tokenHeatmapCard: some View {

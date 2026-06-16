@@ -178,18 +178,34 @@ struct IslandSettingsView: View {
                         detail: "Move right through enabled modules.",
                         shortcut: model.nextModuleShortcutDisplayText
                     )
+                    ShortcutRow(
+                        title: "Detached Island",
+                        detail: "Turn the movable expanded surface on or off.",
+                        shortcut: model.detachedModeShortcutDisplayText
+                    )
                 }
             }
 
             SettingsCard(title: "Display") {
-                ToggleRow(
-                    title: "Hide in Fullscreen",
-                    detail: "Hide the island while another app is fullscreen, like Alcove and Boring Notch.",
-                    isOn: Binding(
-                        get: { model.hideInFullscreen },
-                        set: { model.setHideInFullscreen($0) }
+                VStack(alignment: .leading, spacing: 12) {
+                    ToggleRow(
+                        title: "Hide in Fullscreen",
+                        detail: "Hide the island while another app is fullscreen, like Alcove and Boring Notch.",
+                        isOn: Binding(
+                            get: { model.hideInFullscreen },
+                            set: { model.setHideInFullscreen($0) }
+                        )
                     )
-                )
+
+                    ToggleRow(
+                        title: "Detached Island",
+                        detail: "Let the expanded island move like a small buddy window while collapsed state stays anchored to the notch.",
+                        isOn: Binding(
+                            get: { model.detachedModeEnabled },
+                            set: { model.setDetachedModeEnabled($0) }
+                        )
+                    )
+                }
             }
 
             SettingsCard(title: "Audio") {
@@ -280,6 +296,14 @@ struct IslandSettingsView: View {
 
                         SecondaryActionButton(title: "Open ~/.codex") {
                             model.agentsModule.openCodexDirectory()
+                        }
+
+                        SecondaryActionButton(title: "Repair Quota Bridge") {
+                            model.agentsModule.installUsageBridges()
+                        }
+
+                        SecondaryActionButton(title: "SSH Setup") {
+                            model.agentsModule.revealRemoteSSHSetupScript()
                         }
 
                         if model.agentsModule.hooksStatus.isInstalled {

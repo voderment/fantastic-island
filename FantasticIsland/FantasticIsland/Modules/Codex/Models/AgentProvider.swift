@@ -61,6 +61,21 @@ enum AgentProvider: String, Codable, CaseIterable, Identifiable {
         }
     }
 
+    var quotaShortName: String {
+        switch self {
+        case .codex:
+            return "Cx"
+        case .claudeCode:
+            return "Cl"
+        case .cursor:
+            return "Cu"
+        case .antigravity:
+            return "AG"
+        case .conductor:
+            return "Co"
+        }
+    }
+
     var symbolName: String {
         switch self {
         case .codex:

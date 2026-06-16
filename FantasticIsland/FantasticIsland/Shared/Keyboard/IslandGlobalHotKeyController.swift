@@ -25,11 +25,18 @@ enum IslandNextModuleShortcut {
     static let displayText = "Option + Right"
 }
 
+enum IslandDetachedModeShortcut {
+    static let keyCode: UInt32 = UInt32(kVK_ANSI_D)
+    static let carbonModifiers: UInt32 = UInt32(optionKey)
+    static let displayText = "Option + D"
+}
+
 enum IslandHotKeyAction {
     case toggleExpansion
     case openAgents
     case previousModule
     case nextModule
+    case toggleDetachedMode
 }
 
 final class IslandGlobalHotKeyController {
@@ -102,6 +109,11 @@ final class IslandGlobalHotKeyController {
             keyCode: IslandNextModuleShortcut.keyCode,
             modifiers: IslandNextModuleShortcut.carbonModifiers
         )
+        registerHotKey(
+            id: 5,
+            keyCode: IslandDetachedModeShortcut.keyCode,
+            modifiers: IslandDetachedModeShortcut.carbonModifiers
+        )
     }
 
     private func registerHotKey(id: UInt32, keyCode: UInt32, modifiers: UInt32) {
@@ -154,6 +166,9 @@ final class IslandGlobalHotKeyController {
             return noErr
         case 4:
             action(.nextModule)
+            return noErr
+        case 5:
+            action(.toggleDetachedMode)
             return noErr
         default:
             return OSStatus(eventNotHandledErr)

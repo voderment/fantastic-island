@@ -24,15 +24,16 @@ struct AgentTranscriptTurn: Identifiable, Equatable, Codable {
 struct AgentTranscriptParser {
     static let maxTurns = 48
     static let maxTurnCharacters = 4_000
+    private static let maxTranscriptReadBytes = 2 * 1024 * 1024
 
     static func parseTurns(at path: String, provider: AgentProvider) -> [AgentTranscriptTurn] {
         guard FileManager.default.fileExists(atPath: path),
-              let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
-              let content = String(data: data, encoding: .utf8),
-              !content.isEmpty else {
+              let data = readTranscriptData(at: path),
+              !data.isEmpty else {
             return []
         }
 
+        let content = String(decoding: data, as: UTF8.self)
         let lines = content.split(whereSeparator: \.isNewline).map(String.init)
         if let storedTurns = parseStoredHookLines(lines), !storedTurns.isEmpty {
             return Array(storedTurns.suffix(maxTurns))
@@ -385,5 +386,21 @@ struct AgentTranscriptParser {
         guard text.count > maxTurnCharacters else { return text }
         let end = text.index(text.startIndex, offsetBy: maxTurnCharacters)
         return String(text[..<end]) + "…"
+    }
+
+    private static func readTranscriptData(at path: String) -> Data? {
+        guard let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else {
+            return nil
+        }
+        defer { try? handle.close() }
+
+        let fileSize = (try? handle.seekToEnd()) ?? 0
+        if fileSize > maxTranscriptReadBytes {
+            try? handle.seek(toOffset: fileSize - UInt64(maxTranscriptReadBytes))
+        } else {
+            try? handle.seek(toOffset: 0)
+        }
+
+        return try? handle.read(upToCount: maxTranscriptReadBytes)
     }
 }

@@ -9,9 +9,9 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
     private static let transientNotificationAutoDismissDelay: TimeInterval = 1.5
     private static let trackSwitchActivityPriority = 240
     private static let minimumRefreshInterval: TimeInterval = 0.18
-    private static let estimatedArtworkBlockHeight: CGFloat = 66
-    private static let estimatedProgressSectionHeight: CGFloat = 24
-    private static let estimatedOuterSpacing: CGFloat = 9
+    private static let estimatedArtworkBlockHeight: CGFloat = 62
+    private static let estimatedProgressSectionHeight: CGFloat = 22
+    private static let estimatedOuterSpacing: CGFloat = 7
 
     private struct TrackIdentity: Equatable {
         let source: PlayerSourceKind
@@ -154,8 +154,9 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
     var preferredOpenedContentHeight: CGFloat {
         let estimatedBodyHeight =
             Self.estimatedArtworkBlockHeight
-            + Self.estimatedOuterSpacing
-            + Self.estimatedProgressSectionHeight
+            + (nowPlayingState.track == nil || nowPlayingState.automationIssue != nil
+                ? 0
+                : Self.estimatedOuterSpacing + Self.estimatedProgressSectionHeight)
         return CodexIslandChromeMetrics.moduleChromeHeight + estimatedBodyHeight
     }
     var allowsInternalScrolling: Bool { false }

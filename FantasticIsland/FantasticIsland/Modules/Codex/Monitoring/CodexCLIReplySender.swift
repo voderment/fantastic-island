@@ -54,7 +54,7 @@ final class CodexCLIReplySender {
             return false
         }
 
-        guard session.provider.supportsDirectIslandReply else {
+        guard session.canSendText else {
             return false
         }
 
@@ -72,7 +72,7 @@ final class CodexCLIReplySender {
             throw CodexCLIReplySenderError.emptyText
         }
 
-        guard session.provider.supportsDirectIslandReply else {
+        guard session.canSendText else {
             throw CodexCLIReplySenderError.failed("Open \(session.provider.displayName) to reply.")
         }
 

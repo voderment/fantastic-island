@@ -103,6 +103,7 @@ final class IslandAppModel: ObservableObject {
     @Published private(set) var activityState = AgentActivityState()
     @Published private(set) var isAudioMuted = true
     @Published private(set) var hideInFullscreen = true
+    @Published private(set) var detachedModeEnabled = false
     @Published private(set) var hudOverlay: IslandHUDOverlayState?
     @Published private(set) var collapsedSummaryConfiguration = CollapsedSummaryConfiguration.load()
     @Published private(set) var launchAtLoginEnabled = false
@@ -158,6 +159,8 @@ final class IslandAppModel: ObservableObject {
                 self?.selectAdjacentModuleFromShortcut(offset: -1)
             case .nextModule:
                 self?.selectAdjacentModuleFromShortcut(offset: 1)
+            case .toggleDetachedMode:
+                self?.toggleDetachedModeFromShortcut()
             }
         }
     }
@@ -200,6 +203,7 @@ final class IslandAppModel: ObservableObject {
         self.moduleRegistry = IslandModuleRegistry(modules: allModules)
         self.isAudioMuted = defaults.object(forKey: IslandDefaults.audioMutedKey) as? Bool ?? true
         self.hideInFullscreen = defaults.object(forKey: IslandDefaults.hideInFullscreenKey) as? Bool ?? true
+        self.detachedModeEnabled = defaults.bool(forKey: IslandDefaults.detachedModeKey)
         self.launchAtLoginEnabled = defaults.bool(forKey: IslandDefaults.launchAtLoginKey)
         self.interfaceLanguage = IslandInterfaceLanguage(
             rawValue: defaults.string(forKey: IslandDefaults.interfaceLanguageKey) ?? ""
@@ -231,6 +235,10 @@ final class IslandAppModel: ObservableObject {
 
     var nextModuleShortcutDisplayText: String {
         IslandNextModuleShortcut.displayText
+    }
+
+    var detachedModeShortcutDisplayText: String {
+        IslandDetachedModeShortcut.displayText
     }
 
     var modules: [any IslandModule] {
@@ -723,6 +731,23 @@ final class IslandAppModel: ObservableObject {
         hideInFullscreen = enabled
         UserDefaults.standard.set(enabled, forKey: IslandDefaults.hideInFullscreenKey)
         refreshShellVisibility()
+    }
+
+    func setDetachedModeEnabled(_ enabled: Bool) {
+        guard detachedModeEnabled != enabled else {
+            return
+        }
+
+        detachedModeEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: IslandDefaults.detachedModeKey)
+        shellController.reposition(refreshRootView: true)
+    }
+
+    func toggleDetachedModeFromShortcut() {
+        setDetachedModeEnabled(!detachedModeEnabled)
+        if detachedModeEnabled, !islandExpanded {
+            expandIsland(reason: .shortcut)
+        }
     }
 
     func openAgentsFromShortcut() {
@@ -1626,23 +1651,12 @@ final class IslandAppModel: ObservableObject {
             return maximumHeight
         }
 
-        if !module.allowsInternalScrolling {
-            switch resolvedPresentation {
-            case .standard, .activity:
-                return max(
-                    preferredHeightWithStandardBottomPadding,
-                    measuredContentHeight
-                    + CodexIslandChromeMetrics.moduleChromeHeight
-                    + CodexIslandChromeMetrics.expandedContentBottomPadding,
-                    minimumHeight
-                )
-            case .peek:
-                break
-            }
-        }
-
         switch resolvedPresentation {
         case .standard, .activity:
+            guard module.allowsInternalScrolling else {
+                return maximumHeight
+            }
+
             return min(
                 max(
                     measuredContentHeight

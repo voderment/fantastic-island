@@ -54,7 +54,7 @@ enum CodexIslandChromeMetrics {
     static let defaultModuleToolbarButtonGroupSpacing: CGFloat = 8
 
     static let defaultPreferredTallModuleOpenedContentHeight: CGFloat = 460
-    static let defaultMinimumExpandedContentWidth: CGFloat = 380
+    static let defaultMinimumExpandedContentWidth: CGFloat = 360
 
     static var openedShadowHorizontalInset: CGFloat { CGFloat(IslandDesignTokenRuntime.current.shell.openedShadowHorizontalInset) }
     static var openedShadowBottomInset: CGFloat { CGFloat(IslandDesignTokenRuntime.current.shell.openedShadowBottomInset) }

@@ -241,7 +241,47 @@ struct CodexSessionDiscovery {
             normalized = "/" + String(normalized.dropFirst())
         }
         let path = normalized.replacingOccurrences(of: "-", with: "/")
-        return FileManager.default.fileExists(atPath: path) ? path : nil
+        if FileManager.default.fileExists(atPath: path) {
+            return path
+        }
+
+        return resolveHyphenEncodedProjectPath(encoded)
+    }
+
+    private func resolveHyphenEncodedProjectPath(_ encoded: String) -> String? {
+        guard encoded.hasPrefix("-") else {
+            return nil
+        }
+
+        let parts = String(encoded.dropFirst()).split(separator: "-", omittingEmptySubsequences: false).map(String.init)
+        guard !parts.isEmpty else {
+            return nil
+        }
+
+        var index = 0
+        var current = URL(fileURLWithPath: "/", isDirectory: true)
+        while index < parts.count {
+            var resolved: (url: URL, nextIndex: Int)?
+
+            for nextIndex in stride(from: parts.count, through: index + 1, by: -1) {
+                let component = parts[index..<nextIndex].joined(separator: "-")
+                guard !component.isEmpty else { continue }
+                let candidate = current.appendingPathComponent(component, isDirectory: true)
+                if FileManager.default.fileExists(atPath: candidate.path) {
+                    resolved = (candidate, nextIndex)
+                    break
+                }
+            }
+
+            guard let resolved else {
+                return nil
+            }
+
+            current = resolved.url
+            index = resolved.nextIndex
+        }
+
+        return current.path
     }
 
     private func preferSession(_ lhs: DiscoveredSession, _ rhs: DiscoveredSession) -> DiscoveredSession {

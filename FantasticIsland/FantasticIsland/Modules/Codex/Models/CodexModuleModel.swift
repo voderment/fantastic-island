@@ -44,157 +44,6 @@ private func firstNonEmpty(_ values: [String?]) -> String? {
         .first { !$0.isEmpty }
 }
 
-private enum AgentUsageCacheLoader {
-    private static let appOwnedUsageDirectory = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Application Support/Fantastic Island/Agent Usage", isDirectory: true)
-
-    static func loadClaudeUsage() -> CodexQuotaSnapshot? {
-        loadUsage(
-            from: [
-                appOwnedUsageURL(for: .claudeCode),
-                URL(fileURLWithPath: "/tmp/open-island-rl.json"),
-                URL(fileURLWithPath: "/tmp/vibe-island-rl.json"),
-            ]
-        )
-    }
-
-    static func loadAntigravityUsage() -> CodexQuotaSnapshot? {
-        loadUsage(
-            from: [
-                appOwnedUsageURL(for: .antigravity),
-                URL(fileURLWithPath: "/tmp/fantastic-island-antigravity-rl.json"),
-                URL(fileURLWithPath: "/tmp/open-island-antigravity-rl.json"),
-                URL(fileURLWithPath: "/tmp/antigravity-rl.json"),
-            ]
-        )
-    }
-
-    static func loadCursorUsage() -> CodexQuotaSnapshot? {
-        loadUsage(
-            from: [
-                appOwnedUsageURL(for: .cursor),
-                URL(fileURLWithPath: "/tmp/fantastic-island-cursor-rl.json"),
-                URL(fileURLWithPath: "/tmp/cursor-rl.json"),
-            ]
-        )
-    }
-
-    private static func appOwnedUsageURL(for provider: AgentProvider) -> URL {
-        appOwnedUsageDirectory.appendingPathComponent(provider.rawValue).appendingPathExtension("json")
-    }
-
-    private static func loadUsage(from urls: [URL]) -> CodexQuotaSnapshot? {
-        let candidates = urls
-            .compactMap { url -> (URL, Date)? in
-                guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-                let modifiedAt = (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date) ?? .distantPast
-                return (url, modifiedAt)
-            }
-            .sorted { $0.1 > $1.1 }
-
-        for (url, modifiedAt) in candidates {
-            guard let data = try? Data(contentsOf: url),
-                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                continue
-            }
-
-            let fiveHour = usageWindow(for: "five_hour", in: object)
-                ?? usageWindow(for: "primary", in: object)
-                ?? usageWindow(for: "fiveHour", in: object)
-                ?? (nil, nil)
-            let week = usageWindow(for: "seven_day", in: object)
-                ?? usageWindow(for: "weekly", in: object)
-                ?? usageWindow(for: "secondary", in: object)
-                ?? usageWindow(for: "week", in: object)
-                ?? usageWindow(for: "sevenDay", in: object)
-                ?? (nil, nil)
-
-            guard fiveHour.remainingPercent != nil || week.remainingPercent != nil else {
-                continue
-            }
-
-            return CodexQuotaSnapshot(
-                fiveHourRemainingPercent: fiveHour.remainingPercent,
-                weekRemainingPercent: week.remainingPercent,
-                fiveHourResetAt: fiveHour.resetAt,
-                weekResetAt: week.resetAt,
-                capturedAt: modifiedAt,
-                sourceKind: .preferred
-            )
-        }
-
-        return nil
-    }
-
-    private static func usageWindow(for key: String, in object: [String: Any]) -> (remainingPercent: Int?, resetAt: Date?)? {
-        guard let window = object[key] as? [String: Any] else {
-            return nil
-        }
-
-        let used = number(from: window["used_percentage"])
-            ?? number(from: window["used_percent"])
-            ?? number(from: window["utilization"])
-        let remaining = number(from: window["remaining_percentage"])
-            ?? number(from: window["remaining_percent"])
-            ?? used.map { 100 - $0 }
-        let boundedRemaining = remaining.map { max(0, min(100, Int($0.rounded()))) }
-        let resetAt = date(from: window["resets_at"] ?? window["reset_at"])
-
-        guard boundedRemaining != nil || resetAt != nil else {
-            return nil
-        }
-
-        return (boundedRemaining, resetAt)
-    }
-
-    private static func number(from value: Any?) -> Double? {
-        switch value {
-        case let value as NSNumber:
-            return value.doubleValue
-        case let value as String:
-            return Double(value)
-        default:
-            return nil
-        }
-    }
-
-    private static func date(from value: Any?) -> Date? {
-        switch value {
-        case let value as NSNumber:
-            return Date(timeIntervalSince1970: value.doubleValue)
-        case let value as String:
-            if let seconds = Double(value) {
-                return Date(timeIntervalSince1970: seconds)
-            }
-            let fractional = ISO8601DateFormatter()
-            fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let date = fractional.date(from: value) {
-                return date
-            }
-            return ISO8601DateFormatter().date(from: value)
-        default:
-            return nil
-        }
-    }
-}
-
-private extension AgentProvider {
-    var quotaShortName: String {
-        switch self {
-        case .codex:
-            return "Cx"
-        case .claudeCode:
-            return "Cl"
-        case .antigravity:
-            return "AG"
-        case .cursor:
-            return "Cu"
-        case .conductor:
-            return "Co"
-        }
-    }
-}
-
 @MainActor
 final class CodexModuleModel: ObservableObject, IslandModule {
     static let moduleID = "codex"
@@ -215,7 +64,6 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     private static let estimatedTransientSessionHeight: CGFloat = 136
     private static let estimatedPeekNotificationHeight: CGFloat = 120
     private static let estimatedFooterButtonHeight: CGFloat = 28
-    private static let compactOverviewSessionLimit = 3
     private static let transientNotificationAutoDismissDelay: TimeInterval = 3
 
     @Published private(set) var activityState = AgentActivityState()
@@ -295,16 +143,12 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     }
 
     var islandListSessions: [SessionSnapshot] {
-        let primary = sessionBuckets.primary
-        if isNotificationMode, let activeNotificationSession {
-            return [activeNotificationSession]
-        }
-
-        if isShowingAllSessions {
-            return primary
-        }
-
-        return Array(primary.prefix(Self.compactOverviewSessionLimit))
+        CodexIslandSessionPresentation.overviewSessions(
+            from: sessionBuckets.primary,
+            activeNotificationSession: activeNotificationSession,
+            isNotificationMode: isNotificationMode,
+            isShowingAllSessions: isShowingAllSessions
+        )
     }
 
     var sessionListTotalCount: Int {
@@ -378,12 +222,13 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     var globalInfoFiveHourResetCompactText: String { quotaResetTimeCompactText(quotaSnapshot?.fiveHourResetAt) }
     var globalInfoWeekResetCompactText: String { quotaResetCompactText(quotaSnapshot?.weekResetAt) }
     var providerQuotaItems: [AgentProviderQuotaDisplayItem] {
-        [
-            providerQuotaItem(for: .codex, snapshot: quotaSnapshot),
-            providerQuotaItem(for: .claudeCode, snapshot: AgentUsageCacheLoader.loadClaudeUsage()),
-            providerQuotaItem(for: .cursor, snapshot: AgentUsageCacheLoader.loadCursorUsage()),
-            providerQuotaItem(for: .antigravity, snapshot: AgentUsageCacheLoader.loadAntigravityUsage()),
-        ]
+        let usageByProvider = AgentProviderUsageCacheLoader().loadUsageByProvider()
+        return AgentProvider.allCases.map { provider in
+            providerQuotaItem(
+                for: provider,
+                snapshot: provider == .codex ? quotaSnapshot ?? usageByProvider[provider] : usageByProvider[provider]
+            )
+        }
     }
     var tokenUsageHeatmapDays: [CodexTokenUsageDay] { tokenUsageHistory.days(dayCount: Self.tokenUsageHeatmapDayCount) }
     var tokenUsageHeatmapPeriodText: String { "\(Self.tokenUsageHeatmapDayCount)D \(formatTokenCount(tokenUsageHeatmapDays.map(\.totalTokens).reduce(0, +)))" }
@@ -752,6 +597,38 @@ final class CodexModuleModel: ObservableObject, IslandModule {
         NSWorkspace.shared.open(url)
     }
 
+    func installUsageBridges() {
+        do {
+            try hookManager.installUsageBridges()
+            lastActionMessage = NSLocalizedString(
+                "Usage bridges repaired where safe. Existing custom status lines were preserved.",
+                comment: ""
+            )
+        } catch {
+            hooksStatus = .error(error.localizedDescription)
+            presentErrorAlert(
+                title: NSLocalizedString("Failed to repair usage bridges", comment: ""),
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    func revealRemoteSSHSetupScript() {
+        do {
+            let url = try hookManager.writeRemoteSetupScript()
+            lastActionMessage = NSLocalizedString(
+                "Remote SSH setup script created in Fantastic Island Application Support.",
+                comment: ""
+            )
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        } catch {
+            presentErrorAlert(
+                title: NSLocalizedString("Failed to create SSH setup script", comment: ""),
+                message: error.localizedDescription
+            )
+        }
+    }
+
     func refreshModuleStatus() {
         refreshHooksStatus()
         let codexRunning = CodexProcessMonitor.isCodexRunning()
@@ -907,11 +784,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
             return false
         }
 
-        guard isDirectReplySupported(for: session) else {
-            return false
-        }
-
-        guard cliReplySender.canSend(to: session) else {
+        guard canReply(to: session) else {
             return false
         }
 
@@ -976,15 +849,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     }
 
     private func canReply(to session: SessionSnapshot) -> Bool {
-        guard !session.phase.requiresAttention else {
-            return false
-        }
-
-        guard isDirectReplySupported(for: session) else {
-            return false
-        }
-
-        return cliReplySender.canSend(to: session)
+        session.canSendText && cliReplySender.canSend(to: session)
     }
 
     private func isDirectReplySupported(for session: SessionSnapshot) -> Bool {

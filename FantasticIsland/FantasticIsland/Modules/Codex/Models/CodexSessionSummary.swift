@@ -12,6 +12,8 @@ struct CodexIslandSessionBuckets {
 }
 
 enum CodexIslandSessionPresentation {
+    static let compactOverviewSessionLimit = 3
+
     private static let inactivityThreshold: TimeInterval = 20 * 60
 
     static func computeBuckets(
@@ -82,6 +84,24 @@ enum CodexIslandSessionPresentation {
             return "\(max(1, age / 3_600))h"
         }
         return "\(max(1, age / 86_400))d"
+    }
+
+    static func overviewSessions(
+        from primarySessions: [SessionSnapshot],
+        activeNotificationSession: SessionSnapshot?,
+        isNotificationMode: Bool,
+        isShowingAllSessions: Bool,
+        limit: Int = compactOverviewSessionLimit
+    ) -> [SessionSnapshot] {
+        if isNotificationMode, let activeNotificationSession {
+            return [activeNotificationSession]
+        }
+
+        if isShowingAllSessions {
+            return primarySessions
+        }
+
+        return Array(primarySessions.prefix(max(0, limit)))
     }
 
     private static func displayPriority(for session: SessionSnapshot, now: Date) -> Int {

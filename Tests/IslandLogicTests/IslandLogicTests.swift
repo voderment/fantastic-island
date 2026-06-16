@@ -169,6 +169,11 @@ final class IslandLogicTests: XCTestCase {
         XCTAssertEqual(AgentProvider.antigravity.launchProfile.urlScheme, "antigravity-ide")
         XCTAssertEqual(AgentProvider.conductor.launchProfile.bundleIdentifier, "com.conductor.app")
         XCTAssertEqual(AgentProvider.conductor.launchProfile.urlScheme, "conductor")
+        XCTAssertEqual(AgentProvider.codex.quotaShortName, "Cx")
+        XCTAssertEqual(AgentProvider.claudeCode.quotaShortName, "Cl")
+        XCTAssertEqual(AgentProvider.cursor.quotaShortName, "Cu")
+        XCTAssertEqual(AgentProvider.antigravity.quotaShortName, "AG")
+        XCTAssertEqual(AgentProvider.conductor.quotaShortName, "Co")
         XCTAssertEqual(AgentProvider.cursor.hookFormat, .cursorFlat)
         XCTAssertFalse(AgentProvider.hookInstallationProviders.contains(.conductor))
         XCTAssertTrue(AgentProvider.codex.supportsDirectIslandReply)
@@ -186,6 +191,166 @@ final class IslandLogicTests: XCTestCase {
         XCTAssertEqual(AgentProvider.resolve(source: nil, bundleIdentifier: "com.openai.codex"), .codex)
         XCTAssertEqual(AgentProvider.resolve(source: nil, bundleIdentifier: "com.conductor.app"), .conductor)
         XCTAssertEqual(AgentProvider.resolve(source: "codex", terminalApp: "Conductor", bundleIdentifier: "com.conductor.app"), .conductor)
+    }
+
+    func testAgentProviderUsageCacheLoaderReadsFiveHourAndWeeklyWindows() throws {
+        let usageDirectory = temporaryDirectory()
+        try FileManager.default.createDirectory(at: usageDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: usageDirectory) }
+
+        try writeJSONObject(
+            [
+                "rate_limits": [
+                    "primary": [
+                        "remaining_percent": 83,
+                        "reset_at": "2026-06-16T18:00:00Z",
+                    ],
+                    "secondary": [
+                        "used_percent": 21,
+                        "resets_at": 1_781_650_000,
+                    ],
+                ],
+            ],
+            to: AgentProviderUsageCacheLoader.appOwnedUsageURL(for: .claudeCode, in: usageDirectory)
+        )
+        try writeJSONObject(
+            [
+                "payload": [
+                    "usage": [
+                        "fiveHour": [
+                            "used_percentage": "35",
+                        ],
+                        "weekly": [
+                            "remaining_percentage": "44",
+                        ],
+                    ],
+                ],
+            ],
+            to: AgentProviderUsageCacheLoader.appOwnedUsageURL(for: .antigravity, in: usageDirectory)
+        )
+
+        let loader = AgentProviderUsageCacheLoader(usageDirectory: usageDirectory, fallbackURLsByProvider: [:])
+        let claude = try XCTUnwrap(loader.loadUsage(for: .claudeCode))
+        XCTAssertEqual(claude.fiveHourRemainingPercent, 83)
+        XCTAssertEqual(claude.weekRemainingPercent, 79)
+        XCTAssertNotNil(claude.fiveHourResetAt)
+        XCTAssertNotNil(claude.weekResetAt)
+
+        let antigravity = try XCTUnwrap(loader.loadUsage(for: .antigravity))
+        XCTAssertEqual(antigravity.fiveHourRemainingPercent, 65)
+        XCTAssertEqual(antigravity.weekRemainingPercent, 44)
+        XCTAssertNil(loader.loadUsage(for: .cursor))
+    }
+
+    func testAgentProviderUsageCacheLoaderCollectsAllProviderFiles() throws {
+        let usageDirectory = temporaryDirectory()
+        try FileManager.default.createDirectory(at: usageDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: usageDirectory) }
+
+        for (provider, remaining) in [
+            (AgentProvider.codex, 91),
+            (.claudeCode, 82),
+            (.cursor, 73),
+            (.antigravity, 64),
+            (.conductor, 55),
+        ] {
+            try writeJSONObject(
+                [
+                    "five_hour": ["remaining_percent": remaining],
+                    "week": ["remaining_percent": remaining - 5],
+                ],
+                to: AgentProviderUsageCacheLoader.appOwnedUsageURL(for: provider, in: usageDirectory)
+            )
+        }
+
+        let usageByProvider = AgentProviderUsageCacheLoader(
+            usageDirectory: usageDirectory,
+            fallbackURLsByProvider: [:]
+        ).loadUsageByProvider()
+
+        XCTAssertEqual(usageByProvider[.codex]?.fiveHourRemainingPercent, 91)
+        XCTAssertEqual(usageByProvider[.claudeCode]?.weekRemainingPercent, 77)
+        XCTAssertEqual(usageByProvider[.cursor]?.fiveHourRemainingPercent, 73)
+        XCTAssertEqual(usageByProvider[.antigravity]?.weekRemainingPercent, 59)
+        XCTAssertEqual(usageByProvider[.conductor]?.fiveHourRemainingPercent, 55)
+    }
+
+    func testStatusLineUsageBridgeInstallsAndUninstallsManagedCommandOnly() throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manager = CodexHookManager(
+            codexDirectory: root.appendingPathComponent(".codex", isDirectory: true),
+            homeDirectory: root
+        )
+
+        let installedData = try manager.installStatusLineUsageBridgeJSON(existingData: nil, provider: .antigravity)
+        let installed = try XCTUnwrap(try JSONSerialization.jsonObject(with: installedData) as? [String: Any])
+        let statusLine = try XCTUnwrap(installed["statusLine"] as? [String: Any])
+        XCTAssertEqual(statusLine["type"] as? String, "command")
+        XCTAssertTrue((statusLine["command"] as? String)?.contains("--usage-provider 'antigravity'") == true)
+
+        let uninstalledData = try manager.uninstallStatusLineUsageBridgeJSON(existingData: installedData)
+        let uninstalled = try XCTUnwrap(try JSONSerialization.jsonObject(with: uninstalledData) as? [String: Any])
+        XCTAssertNil(uninstalled["statusLine"])
+
+        let customData = try JSONSerialization.data(withJSONObject: [
+            "statusLine": [
+                "type": "command",
+                "command": "custom-status-line",
+            ],
+        ])
+        XCTAssertThrowsError(try manager.installStatusLineUsageBridgeJSON(existingData: customData, provider: .claudeCode)) { error in
+            guard case CodexHookManagerError.statusLineBridgeSkipped = error else {
+                XCTFail("Expected statusLineBridgeSkipped, got \(error)")
+                return
+            }
+        }
+    }
+
+    func testAgentsOverviewCapsDefaultListAndFocusesNotificationSession() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let sessions = [
+            makeSession(id: "approval", title: "Approval", phase: .waitingForApproval, at: now.addingTimeInterval(-300)),
+            makeSession(id: "running-tool", title: "Running Tool", phase: .running, at: now.addingTimeInterval(-30), currentTool: "shell"),
+            makeSession(id: "busy", title: "Busy", phase: .busy, at: now.addingTimeInterval(-40)),
+            makeSession(id: "recent-a", title: "Recent A", phase: .completed, at: now.addingTimeInterval(-50)),
+            makeSession(id: "recent-b", title: "Recent B", phase: .completed, at: now.addingTimeInterval(-60)),
+        ]
+        let buckets = CodexIslandSessionPresentation.computeBuckets(from: sessions, now: now)
+
+        let compact = CodexIslandSessionPresentation.overviewSessions(
+            from: buckets.primary,
+            activeNotificationSession: nil,
+            isNotificationMode: false,
+            isShowingAllSessions: false
+        )
+        XCTAssertEqual(compact.count, CodexIslandSessionPresentation.compactOverviewSessionLimit)
+        XCTAssertEqual(compact.map(\.id), Array(buckets.primary.prefix(3)).map(\.id))
+
+        let focused = CodexIslandSessionPresentation.overviewSessions(
+            from: buckets.primary,
+            activeNotificationSession: sessions[0],
+            isNotificationMode: true,
+            isShowingAllSessions: false
+        )
+        XCTAssertEqual(focused.map(\.id), ["approval"])
+
+        let expanded = CodexIslandSessionPresentation.overviewSessions(
+            from: buckets.primary,
+            activeNotificationSession: nil,
+            isNotificationMode: false,
+            isShowingAllSessions: true
+        )
+        XCTAssertEqual(expanded.count, buckets.primary.count)
+    }
+
+    func testSessionSnapshotCanSendTextFollowsDirectReplyCapability() {
+        XCTAssertTrue(makeSession(id: "codex", provider: .codex, jumpTarget: replyCapableJumpTarget(sessionID: "codex")).canSendText)
+        XCTAssertFalse(makeSession(id: "codex-no-target", provider: .codex).canSendText)
+        XCTAssertFalse(makeSession(id: "claude", provider: .claudeCode, jumpTarget: replyCapableJumpTarget(sessionID: "claude")).canSendText)
+        XCTAssertFalse(makeSession(id: "cursor", provider: .cursor, jumpTarget: replyCapableJumpTarget(sessionID: "cursor")).canSendText)
+        XCTAssertFalse(makeSession(id: "antigravity", provider: .antigravity, jumpTarget: replyCapableJumpTarget(sessionID: "antigravity")).canSendText)
+        XCTAssertFalse(makeSession(id: "conductor", provider: .conductor, jumpTarget: replyCapableJumpTarget(sessionID: "conductor")).canSendText)
     }
 
     func testAntigravityHookPayloadNormalizesClaudeStyleEventShape() throws {
@@ -258,6 +423,50 @@ final class IslandLogicTests: XCTestCase {
         let turns = AgentTranscriptParser.parseTurns(at: url.path, provider: .claudeCode)
         XCTAssertEqual(turns.map(\.role), [.user, .assistant])
         XCTAssertEqual(turns.first?.text, "ship it")
+    }
+
+    func testAgentTranscriptParserReadsTailOfLargeTranscript() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("large-transcript-\(UUID().uuidString).jsonl")
+        let filler = String(repeating: #"{"type":"attachment","content":"padding"}"# + "\n", count: 70_000)
+        let tail = #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"tail summary"}]}}"#
+        try (filler + tail + "\n").write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let turns = AgentTranscriptParser.parseTurns(at: url.path, provider: .claudeCode)
+
+        XCTAssertEqual(turns.last?.role, .assistant)
+        XCTAssertEqual(turns.last?.text, "tail summary")
+    }
+
+    func testAgentTranscriptParserReadsTailWhenChunkStartsInsideMultibyteScalar() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("large-unicode-transcript-\(UUID().uuidString).jsonl")
+        let maxReadBytes = 2 * 1024 * 1024
+        let prefixByteCount = maxReadBytes + 2_000
+        var prefix = Data()
+        for _ in 0..<(prefixByteCount / 2) {
+            prefix.append(contentsOf: [0xC3, 0xA9])
+        }
+        prefix.append(UInt8(ascii: "\n"))
+
+        var expectedText = "tail summary"
+        var tail = Data()
+        repeat {
+            let line = #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"\#(expectedText)"}]}}"# + "\n"
+            tail = Data(line.utf8)
+            if tail.count % 2 != 0 {
+                expectedText += "x"
+            }
+        } while tail.count % 2 != 0
+
+        var data = prefix
+        data.append(tail)
+        try data.write(to: url, options: .atomic)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let turns = AgentTranscriptParser.parseTurns(at: url.path, provider: .claudeCode)
+
+        XCTAssertEqual(turns.last?.role, .assistant)
+        XCTAssertEqual(turns.last?.text, expectedText)
     }
 
     func testAgentSessionStoreWritesHookTranscriptTurns() throws {
@@ -396,6 +605,254 @@ final class IslandLogicTests: XCTestCase {
         XCTAssertEqual(sessions.first?.provider, .codex)
         XCTAssertEqual(sessions.first?.cwd, "/tmp/native")
         XCTAssertEqual(URL(fileURLWithPath: sessions.first?.transcriptPath ?? "").standardizedFileURL.path, codexURL.standardizedFileURL.path)
+    }
+
+    func testDiscoveryFindsCodexRolloutTranscript() throws {
+        let temp = temporaryDirectory()
+        let workspace = temp.appendingPathComponent("codex-workspace", isDirectory: true)
+        let codexRoot = temp.appendingPathComponent("codex/sessions", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: codexRoot, withIntermediateDirectories: true)
+
+        let transcript = codexRoot.appendingPathComponent("rollout-codex-session-1.jsonl")
+        try writeJSONLines([
+            [
+                "type": "session_meta",
+                "payload": [
+                    "id": "codex-session-1",
+                    "cwd": workspace.path,
+                    "source": "cli",
+                ],
+            ],
+            [
+                "type": "response_item",
+                "payload": [
+                    "role": "assistant",
+                    "content": [
+                        ["type": "output_text", "text": "Codex surfaced from rollout."],
+                    ],
+                ],
+            ],
+        ], to: transcript)
+
+        let discovery = CodexSessionDiscovery(
+            rootURL: codexRoot,
+            claudeRootURL: temp.appendingPathComponent("claude", isDirectory: true),
+            cursorRootURL: temp.appendingPathComponent("cursor", isDirectory: true),
+            sessionStore: AgentSessionStore(rootURL: temp.appendingPathComponent("store", isDirectory: true))
+        )
+        let sessions = discovery.discoverRecentSessions(now: Date().addingTimeInterval(5))
+
+        XCTAssertEqual(sessions.count, 1)
+        XCTAssertEqual(sessions.first?.id, "codex-session-1")
+        XCTAssertEqual(sessions.first?.provider, .codex)
+        XCTAssertEqual(sessions.first?.cwd, workspace.path)
+        XCTAssertEqual(sessions.first?.assistantSummary, "Codex surfaced from rollout.")
+        XCTAssertEqual(sessions.first?.sessionSurface, .terminal)
+    }
+
+    func testDiscoveryFindsClaudeProjectTranscript() throws {
+        let temp = temporaryDirectory()
+        let workspace = temp.appendingPathComponent("claude-workspace", isDirectory: true)
+        let claudeRoot = temp.appendingPathComponent("claude/projects", isDirectory: true)
+        let projectDir = claudeRoot.appendingPathComponent(encodedProjectDirectoryName(for: workspace), isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: projectDir, withIntermediateDirectories: true)
+
+        let transcript = projectDir.appendingPathComponent("claude-session-1.jsonl")
+        try writeJSONLines([
+            [
+                "type": "user",
+                "sessionId": "claude-session-1",
+                "cwd": workspace.path,
+                "message": [
+                    "role": "user",
+                    "content": [
+                        ["type": "text", "text": "Review the island."],
+                    ],
+                ],
+            ],
+            [
+                "type": "assistant",
+                "sessionId": "claude-session-1",
+                "cwd": workspace.path,
+                "message": [
+                    "role": "assistant",
+                    "content": [
+                        ["type": "text", "text": "Claude project transcript surfaced."],
+                    ],
+                ],
+            ],
+        ], to: transcript)
+
+        let discovery = CodexSessionDiscovery(
+            rootURL: temp.appendingPathComponent("codex", isDirectory: true),
+            claudeRootURL: claudeRoot,
+            cursorRootURL: temp.appendingPathComponent("cursor", isDirectory: true),
+            sessionStore: AgentSessionStore(rootURL: temp.appendingPathComponent("store", isDirectory: true))
+        )
+        let sessions = discovery.discoverRecentSessions(now: Date().addingTimeInterval(5))
+
+        XCTAssertEqual(sessions.count, 1)
+        XCTAssertEqual(sessions.first?.id, "claude-session-1")
+        XCTAssertEqual(sessions.first?.provider, .claudeCode)
+        XCTAssertEqual(sessions.first?.cwd, workspace.path)
+        XCTAssertEqual(sessions.first?.assistantSummary, "Claude project transcript surfaced.")
+    }
+
+    func testDiscoveryInfersHyphenatedClaudeWorkspaceFromProjectDirectory() throws {
+        let temp = temporaryDirectory()
+        let workspace = temp.appendingPathComponent("fantastic-island", isDirectory: true)
+        let claudeRoot = temp.appendingPathComponent("claude/projects", isDirectory: true)
+        let projectDir = claudeRoot.appendingPathComponent(encodedProjectDirectoryName(for: workspace), isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: projectDir, withIntermediateDirectories: true)
+
+        let transcript = projectDir.appendingPathComponent("claude-fallback.jsonl")
+        try writeJSONLines([
+            [
+                "type": "assistant",
+                "message": [
+                    "role": "assistant",
+                    "content": [
+                        ["type": "text", "text": "Inferred Claude workspace."],
+                    ],
+                ],
+            ],
+        ], to: transcript)
+
+        let discovery = CodexSessionDiscovery(
+            rootURL: temp.appendingPathComponent("codex", isDirectory: true),
+            claudeRootURL: claudeRoot,
+            cursorRootURL: temp.appendingPathComponent("cursor", isDirectory: true),
+            sessionStore: AgentSessionStore(rootURL: temp.appendingPathComponent("store", isDirectory: true))
+        )
+        let sessions = discovery.discoverRecentSessions(now: Date().addingTimeInterval(5))
+
+        XCTAssertEqual(sessions.count, 1)
+        XCTAssertEqual(sessions.first?.id, "claude-fallback")
+        XCTAssertEqual(sessions.first?.cwd, workspace.path)
+        XCTAssertEqual(sessions.first?.assistantSummary, "Inferred Claude workspace.")
+    }
+
+    func testDiscoveryFindsCursorAgentTranscript() throws {
+        let temp = temporaryDirectory()
+        let workspace = temp.appendingPathComponent("cursor-workspace", isDirectory: true)
+        let cursorRoot = temp.appendingPathComponent("cursor/projects", isDirectory: true)
+        let transcriptDir = cursorRoot
+            .appendingPathComponent(encodedProjectDirectoryName(for: workspace), isDirectory: true)
+            .appendingPathComponent("agent-transcripts/cursor-session-1", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: transcriptDir, withIntermediateDirectories: true)
+
+        let transcript = transcriptDir.appendingPathComponent("cursor-session-1.jsonl")
+        try writeJSONLines([
+            [
+                "role": "user",
+                "sessionId": "cursor-session-1",
+                "workspacePath": workspace.path,
+                "message": [
+                    "content": [
+                        ["type": "text", "text": "<user_query>Polish the player.</user_query>"],
+                    ],
+                ],
+            ],
+            [
+                "role": "assistant",
+                "sessionId": "cursor-session-1",
+                "workspacePath": workspace.path,
+                "message": [
+                    "content": [
+                        ["type": "text", "text": "Cursor agent transcript surfaced."],
+                    ],
+                ],
+            ],
+        ], to: transcript)
+
+        let discovery = CodexSessionDiscovery(
+            rootURL: temp.appendingPathComponent("codex", isDirectory: true),
+            claudeRootURL: temp.appendingPathComponent("claude", isDirectory: true),
+            cursorRootURL: cursorRoot,
+            sessionStore: AgentSessionStore(rootURL: temp.appendingPathComponent("store", isDirectory: true))
+        )
+        let sessions = discovery.discoverRecentSessions(now: Date().addingTimeInterval(5))
+
+        XCTAssertEqual(sessions.count, 1)
+        XCTAssertEqual(sessions.first?.id, "cursor-session-1")
+        XCTAssertEqual(sessions.first?.provider, .cursor)
+        XCTAssertEqual(sessions.first?.cwd, workspace.path)
+        XCTAssertEqual(sessions.first?.assistantSummary, "Cursor agent transcript surfaced.")
+    }
+
+    func testDiscoveryInfersHyphenatedCursorWorkspaceFromProjectDirectory() throws {
+        let temp = temporaryDirectory()
+        let workspace = temp.appendingPathComponent("cursor-fantastic-island", isDirectory: true)
+        let cursorRoot = temp.appendingPathComponent("cursor/projects", isDirectory: true)
+        let transcriptDir = cursorRoot
+            .appendingPathComponent(encodedProjectDirectoryName(for: workspace), isDirectory: true)
+            .appendingPathComponent("agent-transcripts/cursor-fallback", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: transcriptDir, withIntermediateDirectories: true)
+
+        let transcript = transcriptDir.appendingPathComponent("cursor-fallback.jsonl")
+        try writeJSONLines([
+            [
+                "role": "assistant",
+                "message": [
+                    "content": [
+                        ["type": "text", "text": "Inferred Cursor workspace."],
+                    ],
+                ],
+            ],
+        ], to: transcript)
+
+        let discovery = CodexSessionDiscovery(
+            rootURL: temp.appendingPathComponent("codex", isDirectory: true),
+            claudeRootURL: temp.appendingPathComponent("claude", isDirectory: true),
+            cursorRootURL: cursorRoot,
+            sessionStore: AgentSessionStore(rootURL: temp.appendingPathComponent("store", isDirectory: true))
+        )
+        let sessions = discovery.discoverRecentSessions(now: Date().addingTimeInterval(5))
+
+        XCTAssertEqual(sessions.count, 1)
+        XCTAssertEqual(sessions.first?.id, "cursor-fallback")
+        XCTAssertEqual(sessions.first?.cwd, workspace.path)
+        XCTAssertEqual(sessions.first?.assistantSummary, "Inferred Cursor workspace.")
+    }
+
+    func testDiscoveryFindsConductorSessionStoreWithRoutingURL() throws {
+        let temp = temporaryDirectory()
+        let store = AgentSessionStore(rootURL: temp.appendingPathComponent("store", isDirectory: true))
+        let payload = CodexHookPayload(
+            cwd: "/tmp/conductor-workspace",
+            hookEventName: .stop,
+            sessionID: "conductor-session-2",
+            terminalApp: "Conductor",
+            terminalBundleIdentifier: "com.conductor.app",
+            workspaceName: "belgrade",
+            workspaceIdentifier: "ws_456",
+            conductorPort: 3888,
+            conductorURL: "http://127.0.0.1:3888",
+            source: "codex",
+            lastAssistantMessage: "Conductor session surfaced."
+        )
+        _ = try store.append(payload)
+
+        let discovery = CodexSessionDiscovery(
+            rootURL: temp.appendingPathComponent("codex", isDirectory: true),
+            claudeRootURL: temp.appendingPathComponent("claude", isDirectory: true),
+            cursorRootURL: temp.appendingPathComponent("cursor", isDirectory: true),
+            sessionStore: store
+        )
+        let sessions = discovery.discoverRecentSessions(now: Date().addingTimeInterval(5))
+        let jumpTarget = try XCTUnwrap(sessions.first?.jumpTarget)
+
+        XCTAssertEqual(sessions.count, 1)
+        XCTAssertEqual(sessions.first?.id, "conductor-session-2")
+        XCTAssertEqual(sessions.first?.provider, .conductor)
+        XCTAssertEqual(sessions.first?.assistantSummary, "Conductor session surfaced.")
+        XCTAssertEqual(jumpTarget.workspaceName, "belgrade")
+        XCTAssertEqual(jumpTarget.conductorRoutingURL?.absoluteString, "http://127.0.0.1:3888")
     }
 
     func testCodexClientHandlesSynchronousResponseDuringWrite() async throws {
@@ -558,6 +1015,55 @@ final class IslandLogicTests: XCTestCase {
         "source": "appServer",
         "turns": NSNull(),
     ]
+
+    private func makeSession(
+        id: String,
+        provider: AgentProvider = .codex,
+        title: String? = nil,
+        phase: SessionPhase = .completed,
+        at date: Date = Date(timeIntervalSince1970: 1_800_000_000),
+        currentTool: String? = nil,
+        jumpTarget: CodexTerminalJumpTarget? = nil
+    ) -> SessionSnapshot {
+        SessionSnapshot(
+            id: id,
+            provider: provider,
+            cwd: "/tmp/\(id)",
+            title: title ?? id,
+            phase: phase,
+            lastEventAt: date,
+            currentTool: currentTool,
+            jumpTarget: jumpTarget
+        )
+    }
+
+    private func replyCapableJumpTarget(sessionID: String) -> CodexTerminalJumpTarget {
+        CodexTerminalJumpTarget(
+            sessionID: sessionID,
+            terminalApp: "Ghostty",
+            workspaceName: "workspace",
+            paneTitle: "pane",
+            terminalSessionID: "terminal-\(sessionID)"
+        )
+    }
+
+    private func encodedProjectDirectoryName(for url: URL) -> String {
+        url.path.replacingOccurrences(of: "/", with: "-")
+    }
+
+    private func writeJSONLines(_ objects: [[String: Any]], to url: URL) throws {
+        let data = try objects.reduce(into: Data()) { partial, object in
+            partial.append(try JSONSerialization.data(withJSONObject: object))
+            partial.append(UInt8(ascii: "\n"))
+        }
+        try data.write(to: url, options: .atomic)
+    }
+
+    private func writeJSONObject(_ object: [String: Any], to url: URL) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let data = try JSONSerialization.data(withJSONObject: object)
+        try data.write(to: url, options: .atomic)
+    }
 
     private static func sendPayload(_ payload: Data, to socketURL: URL) throws -> Data {
         let fd = socket(AF_UNIX, Int32(SOCK_STREAM), 0)

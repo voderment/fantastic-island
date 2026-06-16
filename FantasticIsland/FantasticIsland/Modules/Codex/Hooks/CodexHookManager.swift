@@ -5,6 +5,7 @@ enum CodexHookManagerError: LocalizedError {
     case invalidHooksJSON
     case invalidConfigEncoding
     case helperBuildFailed(String)
+    case statusLineBridgeSkipped(String)
 
     var errorDescription: String? {
         switch self {
@@ -14,6 +15,8 @@ enum CodexHookManagerError: LocalizedError {
             return "The existing Codex config.toml is not valid UTF-8."
         case let .helperBuildFailed(message):
             return "The Swift hook helper could not be built: \(message)"
+        case let .statusLineBridgeSkipped(provider):
+            return "\(provider) already has a custom status line. Fantastic Island left it unchanged."
         }
     }
 }
@@ -60,6 +63,8 @@ struct CodexHookManager {
         for provider in AgentProvider.hookInstallationProviders {
             try installHooks(for: provider)
         }
+
+        try installUsageBridges()
     }
 
     func uninstall() throws {
@@ -72,11 +77,65 @@ struct CodexHookManager {
         for provider in AgentProvider.hookInstallationProviders {
             try uninstallHooks(for: provider)
         }
+
+        try uninstallUsageBridges()
     }
 
     var hookCommand: String {
         hookCommand(provider: .codex, eventName: nil)
     }
+
+    func installUsageBridges() throws {
+        try writeHelper()
+        for provider in Self.statusLineUsageBridgeProviders {
+            do {
+                try installStatusLineUsageBridge(for: provider)
+            } catch CodexHookManagerError.statusLineBridgeSkipped {
+                continue
+            }
+        }
+    }
+
+    func uninstallUsageBridges() throws {
+        for provider in Self.statusLineUsageBridgeProviders {
+            try uninstallStatusLineUsageBridge(for: provider)
+        }
+    }
+
+    func writeRemoteSetupScript() throws -> URL {
+        try writeHelper()
+        let url = Self.appSupportURL.appendingPathComponent("remote-ssh-setup.sh")
+        let script = """
+        #!/bin/sh
+        set -eu
+
+        REMOTE="${1:-}"
+        if [ -z "$REMOTE" ]; then
+          echo "usage: remote-ssh-setup.sh user@host" >&2
+          exit 64
+        fi
+
+        ssh "$REMOTE" 'mkdir -p "$HOME/.local/bin"'
+        scp "\(Self.helperURL.path)" "$REMOTE:$HOME/.local/bin/fantastic-island-hook"
+        ssh "$REMOTE" 'chmod 755 "$HOME/.local/bin/fantastic-island-hook"'
+
+        cat <<'EOF'
+        Remote helper copied.
+
+        Add the remote command below to Codex, Claude Code, Cursor, or Antigravity hooks on that host:
+          ~/.local/bin/fantastic-island-hook --source codex --event Stop
+
+        For SSH sessions back to this Mac, forward the local bridge socket directory or run Fantastic Island on the remote Mac.
+        EOF
+        """
+
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try script.write(to: url, atomically: true, encoding: .utf8)
+        _ = url.path.withCString { chmod($0, 0o755) }
+        return url
+    }
+
+    static let statusLineUsageBridgeProviders: [AgentProvider] = [.claudeCode, .antigravity]
 
     private func hasManagedHooks(provider: AgentProvider) throws -> Bool {
         let url = configURL(for: provider)
@@ -187,7 +246,132 @@ struct CodexHookManager {
             object[key] = value
         }
 
+        func usageContainer(in object: [String: Any]) -> [String: Any] {
+            if let rateLimits = object["rate_limits"] as? [String: Any] {
+                return rateLimits
+            }
+            if let limits = object["limits"] as? [String: Any] {
+                return limits
+            }
+            if let usage = object["usage"] as? [String: Any] {
+                return usage
+            }
+            if let payload = object["payload"] as? [String: Any] {
+                if let rateLimits = payload["rate_limits"] as? [String: Any] {
+                    return rateLimits
+                }
+                if let usage = payload["usage"] as? [String: Any] {
+                    return usage
+                }
+            }
+            return object
+        }
+
+        func doubleValue(_ value: Any?) -> Double? {
+            switch value {
+            case let value as Double:
+                return value
+            case let value as Float:
+                return Double(value)
+            case let value as Int:
+                return Double(value)
+            case let value as NSNumber:
+                return value.doubleValue
+            case let value as String:
+                return Double(value.trimmingCharacters(in: .whitespacesAndNewlines))
+            default:
+                return nil
+            }
+        }
+
+        func remainingPercent(in window: [String: Any]?) -> Int? {
+            guard let window else {
+                return nil
+            }
+            let used = doubleValue(window["used_percentage"])
+                ?? doubleValue(window["used_percent"])
+                ?? doubleValue(window["utilization"])
+            let remaining = doubleValue(window["remaining_percentage"])
+                ?? doubleValue(window["remaining_percent"])
+                ?? doubleValue(window["pct_left"])
+                ?? doubleValue(window["pct_remaining"])
+                ?? used.map { 100 - $0 }
+            return remaining.map { max(0, min(100, Int($0.rounded()))) }
+        }
+
+        func usageWindow(for keys: [String], in object: [String: Any]) -> [String: Any]? {
+            for key in keys {
+                if let window = object[key] as? [String: Any] {
+                    return window
+                }
+            }
+            return nil
+        }
+
+        func providerLabel(_ source: String) -> String {
+            switch source {
+            case "claude", "claudeCode":
+                return "Claude"
+            case "antigravity":
+                return "AG"
+            case "cursor":
+                return "Cursor"
+            case "codex":
+                return "Codex"
+            default:
+                return "Agents"
+            }
+        }
+
+        func compactValue(_ value: Int?) -> String {
+            guard let value else {
+                return "--"
+            }
+            return String(value) + "%"
+        }
+
+        func statusLineText(provider: String, object: [String: Any]) -> String {
+            let container = usageContainer(in: object)
+            let fiveHour = remainingPercent(in: usageWindow(
+                for: ["five_hour", "fiveHour", "primary", "primary_limit", "five_hour_limit", "fiveHourLimit"],
+                in: container
+            ))
+            let week = remainingPercent(in: usageWindow(
+                for: ["seven_day", "sevenDay", "weekly", "week", "secondary", "secondary_limit", "weekly_limit", "weekLimit"],
+                in: container
+            ))
+            return providerLabel(provider) + " 5H " + compactValue(fiveHour) + " W " + compactValue(week)
+        }
+
+        func writeUsageCache(provider: String, data: Data) {
+            let directory = URL(fileURLWithPath: NSHomeDirectory())
+                .appendingPathComponent("Library/Application Support/Fantastic Island/Agent Usage", isDirectory: true)
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let url = directory.appendingPathComponent(provider).appendingPathExtension("json")
+            try? data.write(to: url, options: .atomic)
+        }
+
         var input = FileHandle.standardInput.readDataToEndOfFile()
+
+        if let usageProvider = argumentValue(after: "--usage-provider") {
+            guard !input.isEmpty else {
+                exit(0)
+            }
+
+            if var object = (try? JSONSerialization.jsonObject(with: input)) as? [String: Any] {
+                object["source"] = object["source"] ?? usageProvider
+                if let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) {
+                    writeUsageCache(provider: usageProvider, data: data)
+                } else {
+                    writeUsageCache(provider: usageProvider, data: input)
+                }
+                print(statusLineText(provider: usageProvider, object: object))
+            } else {
+                writeUsageCache(provider: usageProvider, data: input)
+            }
+            exit(0)
+        }
+
         guard !input.isEmpty else {
             exit(0)
         }
@@ -311,6 +495,25 @@ struct CodexHookManager {
         }
     }
 
+    private func installStatusLineUsageBridge(for provider: AgentProvider) throws {
+        let url = configURL(for: provider)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+        let data = FileManager.default.fileExists(atPath: url.path) ? try Data(contentsOf: url) : nil
+        let updatedData = try installStatusLineUsageBridgeJSON(existingData: data, provider: provider)
+        try updatedData.write(to: url, options: .atomic)
+    }
+
+    private func uninstallStatusLineUsageBridge(for provider: AgentProvider) throws {
+        let url = configURL(for: provider)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return
+        }
+
+        let data = try Data(contentsOf: url)
+        let updatedData = try uninstallStatusLineUsageBridgeJSON(existingData: data)
+        try updatedData.write(to: url, options: .atomic)
+    }
+
     private func installHooksJSON(existingData: Data?, provider: AgentProvider) throws -> Data {
         var root = try loadRootObject(from: existingData)
         let existingHooks = root["hooks"] as? [String: Any] ?? [:]
@@ -332,6 +535,29 @@ struct CodexHookManager {
         }
 
         root["hooks"] = hooksObject
+        return try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
+    }
+
+    func installStatusLineUsageBridgeJSON(existingData: Data?, provider: AgentProvider) throws -> Data {
+        var root = try loadRootObject(from: existingData)
+
+        if let existingStatusLine = root["statusLine"],
+           !statusLineUsageBridgeIsManaged(existingStatusLine) {
+            throw CodexHookManagerError.statusLineBridgeSkipped(provider.displayName)
+        }
+
+        root["statusLine"] = managedStatusLine(provider: provider)
+        return try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
+    }
+
+    func uninstallStatusLineUsageBridgeJSON(existingData: Data?) throws -> Data {
+        var root = try loadRootObject(from: existingData)
+
+        if let existingStatusLine = root["statusLine"],
+           statusLineUsageBridgeIsManaged(existingStatusLine) {
+            root.removeValue(forKey: "statusLine")
+        }
+
         return try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
     }
 
@@ -429,6 +655,14 @@ struct CodexHookManager {
         }
     }
 
+    private func managedStatusLine(provider: AgentProvider) -> [String: Any] {
+        [
+            "type": "command",
+            "command": usageBridgeCommand(provider: provider),
+            "padding": 0,
+        ]
+    }
+
     private func containsManagedCommand(groups: [Any], provider: AgentProvider) -> Bool {
         groups.contains { item in
             guard let group = item as? [String: Any] else {
@@ -465,6 +699,26 @@ struct CodexHookManager {
             || command.contains("fantastic-island-hook")
     }
 
+    private func statusLineUsageBridgeIsManaged(_ value: Any) -> Bool {
+        if let command = value as? String {
+            return isManagedUsageBridgeCommand(command)
+        }
+
+        if let object = value as? [String: Any] {
+            return isManagedUsageBridgeCommand(object["command"] as? String)
+        }
+
+        return false
+    }
+
+    private func isManagedUsageBridgeCommand(_ command: String?) -> Bool {
+        guard isManagedCommand(command) else {
+            return false
+        }
+
+        return command?.contains("--usage-provider") == true
+    }
+
     private func hookCommand(provider: AgentProvider, eventName: String?) -> String {
         var parts = [
             shellQuote(Self.helperURL.path),
@@ -476,6 +730,14 @@ struct CodexHookManager {
             parts.append(shellQuote(eventName))
         }
         return parts.joined(separator: " ")
+    }
+
+    private func usageBridgeCommand(provider: AgentProvider) -> String {
+        [
+            shellQuote(Self.helperURL.path),
+            "--usage-provider",
+            shellQuote(provider.hookSource),
+        ].joined(separator: " ")
     }
 
     private func configURL(for provider: AgentProvider) -> URL {
