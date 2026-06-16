@@ -55,29 +55,30 @@ struct PlayerModuleContentView: View {
     }
 
     private var standardContent: some View {
-        HStack(alignment: .center, spacing: 9) {
+        HStack(alignment: .center, spacing: PlayerExpandedMetrics.primaryColumnSpacing) {
             artworkView
 
             if showsAutomationIssue {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 5) {
                     titleBlock
                     automationIssueActionRow
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 5) {
                     playerTitleRow
                     playerControlStrip
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .contentShape(Rectangle())
     }
 
     private var playerTitleRow: some View {
-        HStack(alignment: .center, spacing: 8) {
+        HStack(alignment: .center, spacing: 9) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     PlayerAnimatedTitleText(
@@ -106,9 +107,9 @@ struct PlayerModuleContentView: View {
     }
 
     private var playerControlStrip: some View {
-        HStack(alignment: .center, spacing: 8) {
+        HStack(alignment: .center, spacing: 7) {
             controlsRow
-                .layoutPriority(1)
+                .fixedSize(horizontal: true, vertical: false)
 
             VStack(alignment: .leading, spacing: 2) {
                 PlayerProgressBar(
@@ -133,8 +134,10 @@ struct PlayerModuleContentView: View {
                 .foregroundStyle(.white.opacity(0.46))
             }
             .frame(maxWidth: .infinity)
+            .layoutPriority(1)
 
             playbackModeControls
+                .fixedSize(horizontal: true, vertical: false)
         }
     }
 
@@ -268,21 +271,37 @@ struct PlayerModuleContentView: View {
             }
         } label: {
             HStack(spacing: 5) {
+                if let sourceIconImage {
+                    Image(nsImage: sourceIconImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 11, height: 11)
+                        .clipShape(.rect(cornerRadius: 2.5))
+                } else {
+                    Image(systemName: "speaker.wave.2.fill")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.48))
+                }
+
                 Text(sourceBadgeText)
-                    .font(.system(size: 9.5, weight: .bold))
+                    .font(.system(size: 9, weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .minimumScaleFactor(0.78)
+                    .minimumScaleFactor(0.72)
 
                 Image(systemName: "chevron.down")
                     .font(.system(size: 6.5, weight: .bold))
                     .foregroundStyle(.white.opacity(0.42))
             }
-            .foregroundStyle(.white.opacity(0.60))
-            .padding(.horizontal, 6)
+            .foregroundStyle(.white.opacity(0.64))
+            .padding(.horizontal, 7)
             .frame(height: 18)
-            .frame(maxWidth: 82, alignment: .trailing)
-            .background(Color.white.opacity(0.032), in: Capsule())
+            .frame(width: 96, alignment: .trailing)
+            .background(Color.white.opacity(0.045), in: Capsule())
+            .overlay {
+                Capsule()
+                    .strokeBorder(Color.white.opacity(0.07), lineWidth: 0.7)
+            }
         }
         .menuStyle(.borderlessButton)
         .fixedSize(horizontal: true, vertical: false)
@@ -474,6 +493,16 @@ struct PlayerModuleContentView: View {
         return label
     }
 
+    private var sourceIconImage: NSImage? {
+        if let bundleIdentifier = state.nowPlayingState.sourceBundleIdentifier,
+           !bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           let icon = PlayerSourceRegistry.appIcon(bundleIdentifier: bundleIdentifier) {
+            return icon
+        }
+
+        return PlayerSourceRegistry.appIcon(for: state.selectedSource)
+    }
+
     private var displayedElapsedText: String {
         timeText(for: displayedElapsed)
     }
@@ -549,16 +578,11 @@ private struct PlayerArtworkThumbnailView: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.08),
-                            Color.white.opacity(0.03),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .fill(Color.white.opacity(0.055))
+                .overlay {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.8)
+                }
 
             if let displayedArtworkImage {
                 Image(nsImage: displayedArtworkImage)
@@ -568,7 +592,7 @@ private struct PlayerArtworkThumbnailView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.985)))
             } else {
                 Image(systemName: "music.note")
-                    .font(.system(size: 28, weight: .medium))
+                    .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(.white.opacity(0.28))
                     .transition(.opacity)
             }

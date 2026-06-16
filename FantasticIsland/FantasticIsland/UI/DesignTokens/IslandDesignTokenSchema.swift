@@ -260,7 +260,7 @@ enum IslandDesignTokenSchema {
         descriptor(.playerExpandedTitleBlockSpacing, .playerExpanded, "Player Title Block Spacing", "Gap in title block.", .slider(range: 0 ... 16, step: 1), \.playerExpanded.titleBlockSpacing),
         descriptor(.playerExpandedControlsSpacing, .playerExpanded, "Player Controls Spacing", "Gap between transport controls.", .slider(range: 0 ... 30, step: 1), \.playerExpanded.controlsSpacing),
         descriptor(.playerExpandedArtworkCornerRadius, .playerExpanded, "Player Artwork Radius", "Artwork radius in expanded mode.", .slider(range: 0 ... 30, step: 1), \.playerExpanded.artworkCornerRadius),
-        descriptor(.playerExpandedArtworkSize, .playerExpanded, "Player Artwork Size", "Artwork size in expanded mode.", .slider(range: 44 ... 120, step: 1), \.playerExpanded.artworkSize),
+        descriptor(.playerExpandedArtworkSize, .playerExpanded, "Player Artwork Size", "Artwork size in expanded mode.", .slider(range: 40 ... 120, step: 1), \.playerExpanded.artworkSize),
         descriptor(.playerExpandedProgressSectionSpacing, .playerExpanded, "Player Progress Spacing", "Gap inside progress section.", .slider(range: 0 ... 16, step: 1), \.playerExpanded.progressSectionSpacing),
         descriptor(.playerExpandedControlButtonOpacityDisabled, .playerExpanded, "Player Disabled Controls Opacity", "Opacity for disabled transport controls.", .slider(range: 0 ... 1, step: 0.01), \.playerExpanded.controlButtonOpacityDisabled),
     ]
