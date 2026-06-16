@@ -551,37 +551,48 @@ struct CodexModuleContentView: View {
                 .foregroundStyle(.white.opacity(0.70))
                 .help("Back to conversations")
 
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
+                HStack(spacing: 6) {
+                    compactConversationProviderBadge(for: session)
+
+                    VStack(alignment: .leading, spacing: 1) {
                         Text(conversationTitle(for: session))
-                            .font(.system(size: 12.5, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.95))
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.94))
                             .lineLimit(1)
 
-                        compactNeutralBadge(session.provider.compactName)
+                        Text(conversationWorkspace(for: session))
+                            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.40))
+                            .lineLimit(1)
                     }
-
-                    Text(conversationWorkspace(for: session))
-                        .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.42))
-                        .lineLimit(1)
+                    .layoutPriority(1)
                 }
 
-                Spacer(minLength: 8)
+                Spacer(minLength: 6)
+
+                Text(conversationStatusText(for: session))
+                    .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(conversationAccent(for: conversationStatusRole(for: session)).opacity(0.78))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .frame(maxWidth: 64)
+                    .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
 
                 Button {
                     state.openSessionApp(session.id)
                 } label: {
                     Label("Open App", systemImage: "arrow.up.forward.app")
                         .labelStyle(.iconOnly)
-                        .frame(width: 24, height: 24)
+                        .frame(width: 22, height: 22)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.white.opacity(0.70))
                 .help("Open \(session.provider.displayName)")
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
 
             Rectangle()
                 .fill(.white.opacity(0.04))
@@ -589,25 +600,8 @@ struct CodexModuleContentView: View {
 
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        let turns = state.transcriptTurnsForSession(session)
-                        if turns.isEmpty {
-                            if let prompt = session.latestUserPrompt?.trimmingCharacters(in: .whitespacesAndNewlines), !prompt.isEmpty {
-                                conversationBubble(label: "You", text: prompt, isUser: true, role: .user)
-                            }
-                            if let body = conversationBody(for: session) {
-                                conversationBubble(label: session.provider.compactName, text: body, isUser: false, role: .assistant)
-                            }
-                        } else {
-                            ForEach(turns) { turn in
-                                conversationBubble(
-                                    label: conversationLabel(for: turn),
-                                    text: turn.text,
-                                    isUser: turn.role == .user,
-                                    role: turn.role
-                                )
-                            }
-                        }
+                    VStack(alignment: .leading, spacing: 4) {
+                        conversationTranscriptRows(for: session)
 
                         if session.phase == .waitingForApproval, let request = session.permissionRequest {
                             approvalPanel(session: session, request: request)
@@ -620,12 +614,12 @@ struct CodexModuleContentView: View {
                             .frame(height: 1)
                             .id("conversation-bottom")
                     }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 7)
                     .frame(maxWidth: .infinity, alignment: .bottomLeading)
-                    .frame(minHeight: 154, alignment: .bottom)
+                    .frame(minHeight: 168, alignment: .bottom)
                 }
-                .frame(minHeight: 154, maxHeight: 210)
+                .frame(minHeight: 168, maxHeight: 230)
                 .onAppear {
                     proxy.scrollTo("conversation-bottom", anchor: .bottom)
                 }
@@ -643,6 +637,65 @@ struct CodexModuleContentView: View {
             } else {
                 unsupportedReplyFooter(for: session)
             }
+        }
+        .background(Color.white.opacity(0.006))
+    }
+
+    @ViewBuilder
+    private func conversationTranscriptRows(for session: SessionSnapshot) -> some View {
+        let turns = state.transcriptTurnsForSession(session)
+        if turns.isEmpty {
+            if let prompt = session.latestUserPrompt?.trimmingCharacters(in: .whitespacesAndNewlines), !prompt.isEmpty {
+                conversationBubble(label: "You", text: prompt, isUser: true, role: .user)
+            }
+            if let body = conversationBody(for: session) {
+                conversationBubble(label: session.provider.compactName, text: body, isUser: false, role: .assistant)
+            }
+        } else {
+            ForEach(turns) { turn in
+                conversationBubble(
+                    label: conversationLabel(for: turn),
+                    text: turn.text,
+                    isUser: turn.role == .user,
+                    role: turn.role
+                )
+            }
+        }
+    }
+
+    private func compactConversationProviderBadge(for session: SessionSnapshot) -> some View {
+        Text(session.provider.quotaShortName)
+            .font(.system(size: 9, weight: .bold, design: .monospaced))
+            .foregroundStyle(.white.opacity(0.78))
+            .frame(width: 24, height: 22)
+            .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(conversationAccent(for: conversationStatusRole(for: session)).opacity(0.22), lineWidth: 0.8)
+            }
+    }
+
+    private func conversationStatusRole(for session: SessionSnapshot) -> AgentTranscriptTurn.Role {
+        switch session.phase {
+        case .busy, .waitingForApproval, .waitingForAnswer:
+            return .tool
+        case .running, .completed:
+            return .assistant
+        }
+    }
+
+    private func conversationStatusText(for session: SessionSnapshot) -> String {
+        switch session.phase {
+        case .running:
+            return "RUNNING"
+        case .busy:
+            return "WORKING"
+        case .waitingForApproval:
+            return "APPROVAL"
+        case .waitingForAnswer:
+            return "QUESTION"
+        case .completed:
+            return "DONE"
         }
     }
 
@@ -721,17 +774,18 @@ struct CodexModuleContentView: View {
     }
 
     private func approvalPanel(session: SessionSnapshot, request: CodexPermissionRequest) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 7) {
             Text(request.title)
-                .font(.system(size: 12.5, weight: .bold))
+                .font(.system(size: 11.5, weight: .bold))
                 .foregroundStyle(.orange.opacity(0.96))
+                .lineLimit(1)
 
             Text(request.summary)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 11.2, weight: .medium))
                 .foregroundStyle(.white.opacity(0.82))
                 .fixedSize(horizontal: false, vertical: true)
 
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Button(request.secondaryActionTitle) {
                     state.approvePermission(session.id, .deny)
                 }
@@ -743,19 +797,20 @@ struct CodexModuleContentView: View {
                 .buttonStyle(AgentInlineButtonStyle(isProminent: true))
             }
         }
-        .padding(12)
-        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(.horizontal, 9)
+        .padding(.vertical, 8)
+        .background(Color.orange.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 
     private func questionPanel(session: SessionSnapshot, prompt: CodexQuestionPrompt) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 7) {
             Text(prompt.title)
-                .font(.system(size: 12.5, weight: .bold))
+                .font(.system(size: 11.5, weight: .bold))
                 .foregroundStyle(.yellow.opacity(0.96))
                 .fixedSize(horizontal: false, vertical: true)
 
             if !prompt.options.isEmpty {
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     ForEach(prompt.options.prefix(3), id: \.self) { option in
                         Button(option) {
                             state.answerQuestion(session.id, CodexQuestionResponse(answer: option))
@@ -765,14 +820,14 @@ struct CodexModuleContentView: View {
                 }
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 TextField("Type an answer", text: $conversationAnswerText)
                     .textFieldStyle(.plain)
-                    .font(IslandVisualLanguage.islandBody(12.5, weight: .medium))
+                    .font(IslandVisualLanguage.islandBody(11.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.9))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .islandGlassPanel(cornerRadius: 8)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
 
                 Button {
                     let answer = conversationAnswerText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -781,14 +836,15 @@ struct CodexModuleContentView: View {
                     state.answerQuestion(session.id, CodexQuestionResponse(answer: answer))
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 22))
+                        .font(.system(size: 20))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.white.opacity(0.9))
             }
         }
-        .padding(12)
-        .background(Color.yellow.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(.horizontal, 9)
+        .padding(.vertical, 8)
+        .background(Color.yellow.opacity(0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 
     private func replyComposer(for session: SessionSnapshot) -> some View {
@@ -797,8 +853,11 @@ struct CodexModuleContentView: View {
         return HStack(spacing: 7) {
             TextField(placeholder, text: $conversationReplyText)
                 .textFieldStyle(.plain)
-                .font(IslandVisualLanguage.islandBody(12, weight: .medium))
+                .font(IslandVisualLanguage.islandBody(11.5, weight: .medium))
                 .foregroundStyle(.white.opacity(0.9))
+                .padding(.horizontal, 9)
+                .padding(.vertical, 6)
+                .background(Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
 
             Button {
                 let reply = conversationReplyText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -807,25 +866,25 @@ struct CodexModuleContentView: View {
                 state.replyToSession(session.id, reply)
             } label: {
                 Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 22))
+                    .font(.system(size: 21))
             }
             .buttonStyle(.plain)
             .foregroundStyle(.white.opacity(0.9))
             .disabled(conversationReplyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Color.white.opacity(0.018))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(Color.black.opacity(0.36))
     }
 
     private func unsupportedReplyFooter(for session: SessionSnapshot) -> some View {
-        HStack(spacing: 9) {
+        HStack(spacing: 7) {
             Image(systemName: "arrow.up.forward.app")
-                .font(.system(size: 12, weight: .bold))
+                .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(.white.opacity(0.54))
 
             Text(state.replyPlaceholder(session))
-                .font(IslandVisualLanguage.islandBody(11.5, weight: .medium))
+                .font(IslandVisualLanguage.islandBody(11, weight: .medium))
                 .foregroundStyle(.white.opacity(0.58))
                 .lineLimit(1)
 
@@ -835,40 +894,124 @@ struct CodexModuleContentView: View {
                 state.openSessionApp(session.id)
             } label: {
                 Text("Open App")
-                    .font(IslandVisualLanguage.islandLabel(10.5, weight: .bold))
+                    .font(IslandVisualLanguage.islandLabel(10, weight: .bold))
             }
             .buttonStyle(.plain)
             .foregroundStyle(.white.opacity(0.82))
-            .islandGlassCapsule()
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Color.white.opacity(0.018))
-    }
-
-    private func conversationBubble(label: String, text: String, isUser: Bool, role: AgentTranscriptTurn.Role) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Capsule()
-                    .fill(conversationAccent(for: role).opacity(0.58))
-                    .frame(width: 4, height: 4)
-
-                Text(label)
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.46))
-                    .lineLimit(1)
-            }
-
-            Text(text)
-                .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(.white.opacity(isUser ? 0.86 : 0.78))
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(isUser ? 0.036 : 0.018), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .background(Color.black.opacity(0.30))
+    }
+
+    private func conversationBubble(label: String, text: String, isUser: Bool, role: AgentTranscriptTurn.Role) -> some View {
+        HStack(alignment: .bottom, spacing: 0) {
+            if isUser {
+                Spacer(minLength: 44)
+            }
+
+            VStack(alignment: .leading, spacing: role == .tool || role == .system ? 2 : 3) {
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(conversationAccent(for: role).opacity(0.72))
+                        .frame(width: 4, height: 4)
+
+                    Text(label)
+                        .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.42))
+                        .lineLimit(1)
+                }
+
+                Text(text)
+                    .font(.system(size: conversationMessageFontSize(for: role), weight: .medium, design: role == .tool ? .monospaced : .default))
+                    .foregroundStyle(conversationTextColor(isUser: isUser, role: role))
+                    .lineLimit(role == .tool ? 3 : nil)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, conversationBubbleHorizontalPadding(for: role))
+            .padding(.vertical, conversationBubbleVerticalPadding(for: role))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(conversationBubbleFill(isUser: isUser, role: role), in: RoundedRectangle(cornerRadius: conversationBubbleRadius(for: role), style: .continuous))
+            .overlay(alignment: .leading) {
+                if role == .tool || role == .system {
+                    RoundedRectangle(cornerRadius: 999, style: .continuous)
+                        .fill(conversationAccent(for: role).opacity(0.52))
+                        .frame(width: 2)
+                        .padding(.vertical, 5)
+                }
+            }
+
+            if !isUser {
+                Spacer(minLength: role == .tool || role == .system ? 0 : 30)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
+    }
+
+    private func conversationMessageFontSize(for role: AgentTranscriptTurn.Role) -> CGFloat {
+        switch role {
+        case .tool:
+            return 10.5
+        case .system:
+            return 10.8
+        case .user, .assistant:
+            return 11.2
+        }
+    }
+
+    private func conversationBubbleHorizontalPadding(for role: AgentTranscriptTurn.Role) -> CGFloat {
+        switch role {
+        case .tool, .system:
+            return 7
+        case .user, .assistant:
+            return 8
+        }
+    }
+
+    private func conversationBubbleVerticalPadding(for role: AgentTranscriptTurn.Role) -> CGFloat {
+        switch role {
+        case .tool, .system:
+            return 5
+        case .user, .assistant:
+            return 6
+        }
+    }
+
+    private func conversationBubbleRadius(for role: AgentTranscriptTurn.Role) -> CGFloat {
+        switch role {
+        case .tool, .system:
+            return 6
+        case .user, .assistant:
+            return 7
+        }
+    }
+
+    private func conversationTextColor(isUser: Bool, role: AgentTranscriptTurn.Role) -> Color {
+        switch role {
+        case .tool:
+            return .white.opacity(0.62)
+        case .system:
+            return .white.opacity(0.54)
+        case .user:
+            return .white.opacity(0.88)
+        case .assistant:
+            return .white.opacity(0.78)
+        }
+    }
+
+    private func conversationBubbleFill(isUser: Bool, role: AgentTranscriptTurn.Role) -> Color {
+        switch role {
+        case .tool, .system:
+            return Color.white.opacity(0.018)
+        case .user:
+            return Color.white.opacity(0.055)
+        case .assistant:
+            return Color.white.opacity(0.026)
+        }
     }
 
     private func conversationAccent(for role: AgentTranscriptTurn.Role) -> Color {
@@ -899,7 +1042,24 @@ struct CodexModuleContentView: View {
 
     private func conversationTitle(for session: SessionSnapshot) -> String {
         let title = session.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return title.isEmpty ? session.provider.displayName : title
+        guard !title.isEmpty else {
+            return session.provider.displayName
+        }
+
+        let workspace = conversationWorkspace(for: session)
+        let fallbackTitle = "\(session.provider.displayName) · \(workspace)"
+        if title == workspace || title == fallbackTitle {
+            return session.provider.displayName
+        }
+
+        let workspacePrefix = "\(workspace) · "
+        if title.hasPrefix(workspacePrefix) {
+            let cleaned = String(title.dropFirst(workspacePrefix.count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return cleaned.isEmpty ? session.provider.displayName : cleaned
+        }
+
+        return title
     }
 
     private func conversationWorkspace(for session: SessionSnapshot) -> String {

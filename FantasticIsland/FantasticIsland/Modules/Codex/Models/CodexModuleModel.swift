@@ -63,7 +63,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     private static let estimatedQuestionSessionHeight: CGFloat = 206
     private static let estimatedTransientSessionHeight: CGFloat = 136
     private static let estimatedPeekNotificationHeight: CGFloat = 120
-    private static let estimatedConversationDetailHeight: CGFloat = 252
+    private static let estimatedConversationDetailHeight: CGFloat = 318
     private static let estimatedFooterButtonHeight: CGFloat = 28
     private static let transientNotificationAutoDismissDelay: TimeInterval = 3
 
