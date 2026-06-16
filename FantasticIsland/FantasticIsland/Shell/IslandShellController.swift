@@ -37,8 +37,8 @@ final class IslandShellController {
 
     static let defaultNotchSize = islandDefaultNotchSize
     private static let minimumExpandedContentWidth: CGFloat = 388
-    private static let maximumExpandedContentWidth: CGFloat = 456
-    private static let expandedContentWidthFactor: CGFloat = 0.20
+    private static let maximumExpandedContentWidth: CGFloat = 408
+    private static let expandedContentWidthFactor: CGFloat = 0.18
     private static let openedContentBottomPadding: CGFloat = CodexIslandChromeMetrics.openedSurfaceBottomInset
 
     fileprivate weak var model: IslandAppModel?

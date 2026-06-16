@@ -72,8 +72,7 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
         func install() {
             guard monitor == nil else { return }
             monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-                self?.handle(event)
-                return event
+                self?.handle(event) == true ? nil : event
             }
         }
 
@@ -84,36 +83,44 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
             monitor = nil
         }
 
-        private func handle(_ event: NSEvent) {
+        private func handle(_ event: NSEvent) -> Bool {
+            if shouldResetAccumulation(for: event) {
+                resetAccumulation()
+                return false
+            }
+
             guard let model,
                   model.islandExpanded,
                   !model.islandLayoutTransitionInFlight,
                   isEventInsideShellWindow(event) else {
-                resetAccumulationIfNeeded(event)
-                return
+                return false
             }
 
             let horizontal = event.scrollingDeltaX
             let vertical = event.scrollingDeltaY
-            guard abs(horizontal) > 0 else {
-                resetAccumulationIfNeeded(event)
-                return
+            guard abs(horizontal) >= 1.5 else {
+                return false
             }
 
             accumulatedHorizontal += horizontal
             accumulatedVertical += vertical
 
-            guard abs(accumulatedHorizontal) > 42,
-                  abs(accumulatedHorizontal) > abs(accumulatedVertical) * 1.15,
-                  Date().timeIntervalSince(lastSwitchAt) > 0.32 else {
-                resetAccumulationIfNeeded(event)
-                return
+            let hasHorizontalIntent =
+                abs(accumulatedHorizontal) > 8
+                && abs(accumulatedHorizontal) > abs(accumulatedVertical) * 0.72
+
+            guard hasHorizontalIntent else {
+                return false
             }
 
-            model.selectAdjacentModule(offset: accumulatedHorizontal > 0 ? 1 : -1)
-            lastSwitchAt = Date()
-            accumulatedHorizontal = 0
-            accumulatedVertical = 0
+            if abs(accumulatedHorizontal) > 24,
+               Date().timeIntervalSince(lastSwitchAt) > 0.24 {
+                model.selectAdjacentModule(offset: accumulatedHorizontal > 0 ? 1 : -1)
+                lastSwitchAt = Date()
+                resetAccumulation()
+            }
+
+            return true
         }
 
         private func isEventInsideShellWindow(_ event: NSEvent) -> Bool {
@@ -128,11 +135,16 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
             return window.frame.contains(NSEvent.mouseLocation)
         }
 
-        private func resetAccumulationIfNeeded(_ event: NSEvent) {
-            if event.phase == .ended || event.phase == .cancelled || event.momentumPhase == .ended || event.momentumPhase == .cancelled {
-                accumulatedHorizontal = 0
-                accumulatedVertical = 0
-            }
+        private func shouldResetAccumulation(for event: NSEvent) -> Bool {
+            event.phase == .ended
+                || event.phase == .cancelled
+                || event.momentumPhase == .ended
+                || event.momentumPhase == .cancelled
+        }
+
+        private func resetAccumulation() {
+            accumulatedHorizontal = 0
+            accumulatedVertical = 0
         }
     }
 }

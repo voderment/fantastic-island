@@ -30,7 +30,7 @@ struct IslandDesignTokens: Codable, Equatable {
         var openedShadowHorizontalInset: Double = 18
         var openedShadowBottomInset: Double = 0
         var openedSurfaceBottomInset: Double = 0
-        var openedSurfaceContentHorizontalInset: Double = 22
+        var openedSurfaceContentHorizontalInset: Double = 14
         var closedHoverScale: Double = 1.014
         var closedHorizontalPadding: Double = 14
         var closedModuleSpacing: Double = 26
@@ -58,7 +58,7 @@ struct IslandDesignTokens: Codable, Equatable {
         var contentTopPadding: Double = 12
         var contentBottomPadding: Double = 12
         var minimumContentWidth: Double = 420
-        var maximumContentWidth: Double = 560
+        var maximumContentWidth: Double = 430
         var contentWidthFactor: Double = 0.32
         var openAnimationDuration: Double = 0.34
         var closeAnimationDuration: Double = 0.28

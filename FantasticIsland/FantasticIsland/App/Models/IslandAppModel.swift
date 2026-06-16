@@ -633,13 +633,18 @@ final class IslandAppModel: ObservableObject {
 
     func selectAdjacentModule(offset: Int) {
         guard offset != 0,
-              !islandLayoutTransitionInFlight,
-              let selectedIndex = enabledModules.firstIndex(where: { $0.id == selectedModuleID }) else {
+              !islandLayoutTransitionInFlight else {
             return
         }
 
-        let count = enabledModules.count
+        let modules = enabledModules
+        let count = modules.count
         guard count > 1 else {
+            return
+        }
+
+        guard let selectedIndex = modules.firstIndex(where: { $0.id == selectedModuleID }) else {
+            selectModule(id: modules[0].id)
             return
         }
 
@@ -648,7 +653,7 @@ final class IslandAppModel: ObservableObject {
             return
         }
 
-        selectModule(id: enabledModules[nextIndex].id)
+        selectModule(id: modules[nextIndex].id)
     }
 
     func selectAdjacentModuleFromShortcut(offset: Int) {
