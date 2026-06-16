@@ -188,6 +188,7 @@ final class IslandAppModel: ObservableObject {
     private var shellHiddenForFullscreen = false
     private var hudVisibilityTimer: Timer?
     private var workspaceActivationObserver: NSObjectProtocol?
+    private var lastPointerModuleSwitchAt = Date.distantPast
 
     init() {
         let agentsModule = CodexModuleModel()
@@ -676,6 +677,22 @@ final class IslandAppModel: ObservableObject {
         selectModule(id: modules[nextIndex].id)
     }
 
+    @discardableResult
+    func selectAdjacentModuleFromPointer(offset: Int, now: Date = .now) -> Bool {
+        guard islandExpanded,
+              now.timeIntervalSince(lastPointerModuleSwitchAt) >= 0.42 else {
+            return false
+        }
+
+        let previousModuleID = selectedModuleID
+        selectAdjacentModule(offset: offset)
+        let didSwitch = selectedModuleID != previousModuleID
+        if didSwitch {
+            lastPointerModuleSwitchAt = now
+        }
+        return didSwitch
+    }
+
     func selectAdjacentModuleFromShortcut(offset: Int) {
         selectAdjacentModule(offset: offset)
         if !islandExpanded {
@@ -722,13 +739,6 @@ final class IslandAppModel: ObservableObject {
         guard height > 0 else {
             return
         }
-        let measuredModule =
-            enabledModules.first(where: { $0.id == moduleID })
-            ?? moduleRegistry.module(id: moduleID)
-        guard measuredModule?.allowsInternalScrolling == true else {
-            return
-        }
-
         let measurementKey = moduleContentMeasurementKey(for: moduleID, presentation: presentation)
         let previousHeight = measuredModuleContentHeights[measurementKey] ?? 0
         guard abs(previousHeight - height) >= 2 else {
@@ -1714,7 +1724,12 @@ final class IslandAppModel: ObservableObject {
         switch resolvedPresentation {
         case .standard, .activity:
             guard module.allowsInternalScrolling else {
-                return maximumHeight
+                return max(
+                    measuredContentHeight
+                    + CodexIslandChromeMetrics.moduleChromeHeight
+                    + CodexIslandChromeMetrics.expandedContentBottomPadding,
+                    maximumHeight
+                )
             }
 
             return min(

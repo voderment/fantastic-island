@@ -96,10 +96,12 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
             }
 
             guard now >= suppressWheelEventsUntil else {
+                lastScrollEventAt = now
                 return true
             }
 
-            if now.timeIntervalSince(lastScrollEventAt) > 0.42 {
+            let idleResetDelay: TimeInterval = hasSwitchedDuringGesture ? 0.95 : 0.42
+            if now.timeIntervalSince(lastScrollEventAt) > idleResetDelay {
                 resetGestureState()
             }
             lastScrollEventAt = now
@@ -132,9 +134,9 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
 
             if abs(accumulatedHorizontal) > 24,
                now.timeIntervalSince(lastSwitchAt) > 0.24 {
-                model.selectAdjacentModule(offset: accumulatedHorizontal > 0 ? 1 : -1)
+                _ = model.selectAdjacentModuleFromPointer(offset: accumulatedHorizontal > 0 ? 1 : -1, now: now)
                 lastSwitchAt = now
-                suppressWheelEventsUntil = now.addingTimeInterval(0.32)
+                suppressWheelEventsUntil = now.addingTimeInterval(0.42)
                 hasSwitchedDuringGesture = true
                 resetAccumulation()
             }
@@ -172,8 +174,8 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
         }
 
         func suppressWheelMomentum(after date: Date = .now) {
-            suppressWheelEventsUntil = date.addingTimeInterval(0.32)
-            resetGestureState()
+            suppressWheelEventsUntil = date.addingTimeInterval(0.42)
+            resetAccumulation()
         }
     }
 }
@@ -569,9 +571,9 @@ struct IslandShellView: View {
         }
         .scaleEffect(usesOpenedVisualState ? 1 : (isClosedHovering ? CodexIslandChromeMetrics.closedHoverScale : 1), anchor: .top)
         .shadow(
-            color: .black.opacity(usesOpenedVisualState ? 0.32 : 0),
-            radius: usesOpenedVisualState ? 14 : 0,
-            y: usesOpenedVisualState ? 8 : 0
+            color: .black.opacity(usesOpenedVisualState ? 0.2 : 0),
+            radius: usesOpenedVisualState ? 7 : 0,
+            y: usesOpenedVisualState ? 3 : 0
         )
         .padding(.horizontal, panelShadowHorizontalInset)
         .padding(.bottom, panelShadowBottomInset)
@@ -634,14 +636,14 @@ struct IslandShellView: View {
                     return
                 }
 
-                let horizontalTravel = value.predictedEndTranslation.width
-                let verticalTravel = value.predictedEndTranslation.height
+                let horizontalTravel = value.translation.width
+                let verticalTravel = value.translation.height
                 guard abs(horizontalTravel) > 44,
                       abs(horizontalTravel) > abs(verticalTravel) * 1.15 else {
                     return
                 }
 
-                model.selectAdjacentModule(offset: horizontalTravel < 0 ? 1 : -1)
+                model.selectAdjacentModuleFromPointer(offset: horizontalTravel < 0 ? 1 : -1)
             }
     }
 
