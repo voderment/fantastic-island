@@ -501,6 +501,33 @@ final class IslandLogicTests: XCTestCase {
         XCTAssertEqual(expanded.count, buckets.primary.count)
     }
 
+    func testInProgressSessionsRemainIslandVisibleUntilEnded() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var endedRunningSession = makeSession(
+            id: "ended-running",
+            title: "Ended Running",
+            phase: .running,
+            at: now.addingTimeInterval(-20)
+        )
+        endedRunningSession.isSessionEnded = true
+
+        let sessions = [
+            makeSession(id: "older-running", title: "Older Running", phase: .running, at: now.addingTimeInterval(-2 * 60 * 60)),
+            makeSession(id: "older-busy", title: "Older Busy", phase: .busy, at: now.addingTimeInterval(-3 * 60 * 60)),
+            makeSession(id: "stale-complete", title: "Stale Complete", phase: .completed, at: now.addingTimeInterval(-21 * 60)),
+            endedRunningSession,
+        ]
+
+        let buckets = CodexIslandSessionPresentation.computeBuckets(from: sessions, now: now)
+
+        XCTAssertEqual(CodexIslandSessionPresentation.presence(for: sessions[0], at: now), .active)
+        XCTAssertTrue(sessions[0].isVisibleInIsland(at: now))
+        XCTAssertTrue(sessions[1].isVisibleInIsland(at: now))
+        XCTAssertFalse(sessions[2].isVisibleInIsland(at: now))
+        XCTAssertFalse(endedRunningSession.isVisibleInIsland(at: now))
+        XCTAssertEqual(buckets.primary.map(\.id), ["older-running", "older-busy"])
+    }
+
     func testAgentActivityCountsIslandVisibleSessionsWithoutEndedSessions() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         var endedRecentSession = makeSession(
@@ -513,7 +540,8 @@ final class IslandLogicTests: XCTestCase {
 
         let state = AgentActivityModel.recompute(
             from: [
-                makeSession(id: "older-running", title: "Older Running", phase: .running, at: now.addingTimeInterval(-14 * 60)),
+                makeSession(id: "older-running", title: "Older Running", phase: .running, at: now.addingTimeInterval(-2 * 60 * 60)),
+                makeSession(id: "older-busy", title: "Older Busy", phase: .busy, at: now.addingTimeInterval(-3 * 60 * 60)),
                 makeSession(id: "recent-complete", title: "Recent Complete", phase: .completed, at: now.addingTimeInterval(-19 * 60)),
                 makeSession(id: "stale-complete", title: "Stale Complete", phase: .completed, at: now.addingTimeInterval(-21 * 60)),
                 endedRecentSession,
@@ -521,9 +549,9 @@ final class IslandLogicTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(state.activeSessionCount, 2)
-        XCTAssertEqual(state.inProgressSessionCount, 1)
-        XCTAssertEqual(state.busySessionCount, 0)
+        XCTAssertEqual(state.activeSessionCount, 3)
+        XCTAssertEqual(state.inProgressSessionCount, 2)
+        XCTAssertEqual(state.busySessionCount, 1)
     }
 
     func testSessionSnapshotCanSendTextFollowsDirectReplyCapability() {

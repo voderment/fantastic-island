@@ -668,6 +668,10 @@ struct SessionSnapshot: Identifiable, Codable {
         lastEventAt ?? .distantPast
     }
 
+    var isInProgressSession: Bool {
+        !isSessionEnded && (phase == .running || phase == .busy)
+    }
+
     var isInternalSupportSession: Bool {
         let candidates = [
             latestUserPrompt,
@@ -690,7 +694,7 @@ struct SessionSnapshot: Identifiable, Codable {
             return true
         }
 
-        guard phase == .running || phase == .busy else {
+        guard isInProgressSession else {
             return false
         }
 
@@ -702,8 +706,12 @@ struct SessionSnapshot: Identifiable, Codable {
             return true
         }
 
+        if isInProgressSession {
+            return true
+        }
+
         if phase == .running || phase == .busy {
-            return isLikelyLive(at: now)
+            return false
         }
 
         let age = now.timeIntervalSince(islandActivityDate)

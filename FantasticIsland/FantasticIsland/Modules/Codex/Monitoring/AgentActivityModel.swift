@@ -3,7 +3,7 @@ import Foundation
 enum AgentActivityModel {
     static func recompute(from sessions: [SessionSnapshot], now: Date = .now) -> AgentActivityState {
         let inProgressSessions = sessions.filter {
-            $0.isLikelyLive(at: now)
+            $0.isInProgressSession && $0.isVisibleInIsland(at: now)
         }
         let activeSessions = sessions.filter {
             !$0.isSessionEnded && $0.isVisibleInIsland(at: now)

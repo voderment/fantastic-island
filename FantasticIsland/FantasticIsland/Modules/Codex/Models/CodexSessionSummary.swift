@@ -58,6 +58,10 @@ enum CodexIslandSessionPresentation {
             return .running
         }
 
+        if session.isInProgressSession {
+            return .active
+        }
+
         if session.phase.requiresAttention {
             return .active
         }

@@ -301,7 +301,7 @@ struct CodexModuleContentView: View {
                     CodexIslandSessionRow(
                         session: session,
                         referenceDate: .now,
-                        isActionable: session.phase.requiresAttention || session.id == state.sessionSurface.sessionID,
+                        isActionable: false,
                         canReply: state.canReplyToSession(session),
                         replyPlaceholder: state.replyPlaceholder(session),
                         onApprove: { state.approvePermission(session.id, $0) },
@@ -311,17 +311,6 @@ struct CodexModuleContentView: View {
                         onOpenApp: { state.openSessionApp(session.id) }
                     )
                 }
-            }
-
-            if state.canCollapseSessionList {
-                Button("Collapse") {
-                    state.collapseSessionList()
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.white.opacity(0.45))
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.vertical, 8)
             }
         }
     }
@@ -340,6 +329,7 @@ struct CodexModuleContentView: View {
                     .lineLimit(1)
 
                 liveCountBadge
+                sessionScopeButton
 
                 Spacer(minLength: 0)
 
@@ -383,16 +373,54 @@ struct CodexModuleContentView: View {
     private var liveCountBadge: some View {
         HStack(spacing: 6) {
             Circle()
-                .fill(state.activityState.inProgressSessionCount > 0 ? Color.green.opacity(0.95) : Color.white.opacity(0.22))
+                .fill(state.activityState.activeSessionCount > 0 ? Color.green.opacity(0.95) : Color.white.opacity(0.22))
                 .frame(width: 7, height: 7)
 
-            Text("AGENTS \(state.globalInfoLiveCountText)")
+            Text("\(state.globalInfoLiveCountText) active")
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .foregroundStyle(state.activityState.inProgressSessionCount > 0 ? Color.green.opacity(0.95) : Color.white.opacity(0.52))
+                .foregroundStyle(state.activityState.activeSessionCount > 0 ? Color.green.opacity(0.95) : Color.white.opacity(0.52))
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
         .background(Color.white.opacity(0.06), in: Capsule())
+    }
+
+    @ViewBuilder
+    private var sessionScopeButton: some View {
+        if state.shouldShowShowAllButton {
+            Button {
+                state.showAllSessions()
+            } label: {
+                Text("All \(state.sessionListTotalCount)")
+                    .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.68))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.white.opacity(0.055), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .help("Show all active agent sessions")
+        } else if shouldOfferTopSessionsButton {
+            Button {
+                state.collapseSessionList()
+            } label: {
+                Text("Top")
+                    .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.54))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.white.opacity(0.04), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .help("Show top active agent sessions")
+        }
+    }
+
+    private var shouldOfferTopSessionsButton: Bool {
+        state.canCollapseSessionList
+            && !state.isNotificationMode
+            && state.sessionListTotalCount > CodexIslandSessionPresentation.compactOverviewSessionLimit
+            && state.islandListSessions.count == state.sessionListTotalCount
     }
 
     @ViewBuilder
