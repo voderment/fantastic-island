@@ -67,7 +67,8 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
         private var lastScrollEventAt = Date.distantPast
         private var suppressWheelEventsUntil = Date.distantPast
         private var hasSwitchedDuringGesture = false
-        private let postSwitchSuppressionDuration: TimeInterval = 1.45
+        private let postSwitchSuppressionDuration: TimeInterval = 1.8
+        private let postSwitchIdleResetDelay: TimeInterval = 1.95
 
         init(model: IslandAppModel) {
             self.model = model
@@ -96,6 +97,11 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
                 return false
             }
 
+            if event.phase.contains(.began) {
+                resetGestureState()
+                suppressWheelEventsUntil = .distantPast
+            }
+
             guard now >= suppressWheelEventsUntil else {
                 lastScrollEventAt = now
                 return true
@@ -105,7 +111,7 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
                 return hasSwitchedDuringGesture
             }
 
-            let idleResetDelay: TimeInterval = hasSwitchedDuringGesture ? 1.35 : 0.42
+            let idleResetDelay: TimeInterval = hasSwitchedDuringGesture ? postSwitchIdleResetDelay : 0.42
             if now.timeIntervalSince(lastScrollEventAt) > idleResetDelay {
                 resetGestureState()
             }
@@ -138,12 +144,17 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
             }
 
             if abs(accumulatedHorizontal) > 30,
-               now.timeIntervalSince(lastSwitchAt) > 0.58 {
-                _ = model.selectAdjacentModuleFromPointer(offset: accumulatedHorizontal > 0 ? 1 : -1, now: now)
-                lastSwitchAt = now
-                suppressWheelEventsUntil = now.addingTimeInterval(postSwitchSuppressionDuration)
-                hasSwitchedDuringGesture = true
-                resetAccumulation()
+               now.timeIntervalSince(lastSwitchAt) > postSwitchSuppressionDuration {
+                let didSwitch = model.selectAdjacentModuleFromPointer(
+                    offset: accumulatedHorizontal > 0 ? 1 : -1,
+                    now: now
+                )
+                if didSwitch {
+                    lastSwitchAt = now
+                    suppressWheelEventsUntil = now.addingTimeInterval(postSwitchSuppressionDuration)
+                    hasSwitchedDuringGesture = true
+                    resetAccumulation()
+                }
             }
 
             return true
@@ -217,7 +228,6 @@ struct IslandShellView: View {
 
     @State private var isHovering = false
     @State private var moduleScrollOffsets: [String: CGFloat] = [:]
-    @State private var horizontalDragStartModuleID: String?
 
     private var usesOpenedVisualState: Bool {
         visualMode != .closed
@@ -603,7 +613,6 @@ struct IslandShellView: View {
                 model.expandIsland(reason: .manualTap)
             }
         }
-        .highPriorityGesture(moduleSwipeGesture)
     }
 
     private var shellFill: some ShapeStyle {
@@ -616,40 +625,6 @@ struct IslandShellView: View {
         usesOpenedVisualState
             ? IslandVisualLanguage.shellStrokeGradient
             : IslandVisualLanguage.closedShellStrokeGradient
-    }
-
-    private var moduleSwipeGesture: some Gesture {
-        DragGesture(minimumDistance: 16, coordinateSpace: .local)
-            .onChanged { value in
-                guard model.islandExpanded else {
-                    horizontalDragStartModuleID = nil
-                    return
-                }
-
-                if horizontalDragStartModuleID == nil {
-                    horizontalDragStartModuleID = model.selectedModuleID
-                }
-
-                _ = value
-            }
-            .onEnded { value in
-                defer {
-                    horizontalDragStartModuleID = nil
-                }
-
-                guard model.islandExpanded else {
-                    return
-                }
-
-                let horizontalTravel = value.translation.width
-                let verticalTravel = value.translation.height
-                guard abs(horizontalTravel) > 32,
-                      abs(horizontalTravel) > abs(verticalTravel) * 1.05 else {
-                    return
-                }
-
-                model.selectAdjacentModuleFromPointer(offset: horizontalTravel < 0 ? 1 : -1)
-            }
     }
 
     @ViewBuilder
