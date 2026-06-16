@@ -191,6 +191,7 @@ final class IslandAppModel: ObservableObject {
     private var hudVisibilityTimer: Timer?
     private var workspaceActivationObserver: NSObjectProtocol?
     private var lastPointerModuleSwitchAt = Date.distantPast
+    private let pointerModuleSwitchThrottle: TimeInterval = 0.28
 
     init() {
         let agentsModule = CodexModuleModel()
@@ -683,7 +684,7 @@ final class IslandAppModel: ObservableObject {
     @discardableResult
     func selectAdjacentModuleFromPointer(offset: Int, now: Date = .now) -> Bool {
         guard islandExpanded,
-              now.timeIntervalSince(lastPointerModuleSwitchAt) >= 0.68 else {
+              now.timeIntervalSince(lastPointerModuleSwitchAt) >= pointerModuleSwitchThrottle else {
             return false
         }
 

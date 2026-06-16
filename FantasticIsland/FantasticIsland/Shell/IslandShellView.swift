@@ -67,8 +67,8 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
         private var lastScrollEventAt = Date.distantPast
         private var suppressWheelEventsUntil = Date.distantPast
         private var hasSwitchedDuringGesture = false
-        private let postSwitchSuppressionDuration: TimeInterval = 1.8
-        private let postSwitchIdleResetDelay: TimeInterval = 1.95
+        private let postSwitchSuppressionDuration: TimeInterval = 0.28
+        private let postSwitchIdleResetDelay: TimeInterval = 0.48
 
         init(model: IslandAppModel) {
             self.model = model
@@ -104,11 +104,11 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
 
             guard now >= suppressWheelEventsUntil else {
                 lastScrollEventAt = now
-                return true
+                return !isVerticalIntent(event)
             }
 
             if event.momentumPhase != [] {
-                return hasSwitchedDuringGesture
+                return hasSwitchedDuringGesture && !isVerticalIntent(event)
             }
 
             let idleResetDelay: TimeInterval = hasSwitchedDuringGesture ? postSwitchIdleResetDelay : 0.42
@@ -118,8 +118,8 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
             lastScrollEventAt = now
 
             if shouldResetAccumulation(for: event) {
-                resetGestureState()
-                return false
+                resetAccumulation()
+                return hasSwitchedDuringGesture
             }
 
             let horizontal = event.scrollingDeltaX
@@ -132,8 +132,8 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
             accumulatedVertical += vertical
 
             let hasHorizontalIntent =
-                abs(accumulatedHorizontal) > 8
-                && abs(accumulatedHorizontal) > abs(accumulatedVertical) * 0.72
+                abs(accumulatedHorizontal) > 12
+                && abs(accumulatedHorizontal) > abs(accumulatedVertical) * 1.2
 
             guard hasHorizontalIntent else {
                 return false
@@ -143,7 +143,7 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
                 return true
             }
 
-            if abs(accumulatedHorizontal) > 30,
+            if abs(accumulatedHorizontal) > 42,
                now.timeIntervalSince(lastSwitchAt) > postSwitchSuppressionDuration {
                 let didSwitch = model.selectAdjacentModuleFromPointer(
                     offset: accumulatedHorizontal > 0 ? 1 : -1,
@@ -177,6 +177,12 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
                 || event.phase == .cancelled
                 || event.momentumPhase == .ended
                 || event.momentumPhase == .cancelled
+        }
+
+        private func isVerticalIntent(_ event: NSEvent) -> Bool {
+            let horizontal = abs(event.scrollingDeltaX)
+            let vertical = abs(event.scrollingDeltaY)
+            return vertical > 1.5 && vertical > horizontal * 1.2
         }
 
         private func resetAccumulation() {
@@ -586,9 +592,9 @@ struct IslandShellView: View {
         }
         .scaleEffect(usesOpenedVisualState ? 1 : (isClosedHovering ? CodexIslandChromeMetrics.closedHoverScale : 1), anchor: .top)
         .shadow(
-            color: .black.opacity(usesOpenedVisualState ? 0.2 : 0),
-            radius: usesOpenedVisualState ? 7 : 0,
-            y: usesOpenedVisualState ? 3 : 0
+            color: .clear,
+            radius: 0,
+            y: 0
         )
         .padding(.horizontal, panelShadowHorizontalInset)
         .padding(.bottom, panelShadowBottomInset)
@@ -616,9 +622,7 @@ struct IslandShellView: View {
     }
 
     private var shellFill: some ShapeStyle {
-        usesOpenedVisualState
-            ? AnyShapeStyle(IslandVisualLanguage.shellGradient)
-            : AnyShapeStyle(IslandVisualLanguage.closedShell)
+        AnyShapeStyle(IslandVisualLanguage.closedShell)
     }
 
     private var shellStroke: LinearGradient {
