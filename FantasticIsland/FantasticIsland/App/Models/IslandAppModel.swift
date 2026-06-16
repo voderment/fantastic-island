@@ -1801,6 +1801,7 @@ final class IslandAppModel: ObservableObject {
             TimerModuleModel.moduleID,
             ShelfModuleModel.moduleID,
             SystemModuleModel.moduleID,
+            XPostModuleModel.moduleID,
         ]
         let sanitizedDefaults = availableIDs.intersection(defaultIDs)
 
@@ -1822,6 +1823,11 @@ final class IslandAppModel: ObservableObject {
             defaults.set(Array(sanitizedIDs), forKey: IslandDefaults.enabledModuleIDsKey)
         }
         defaults.set(true, forKey: IslandDefaults.systemModuleMigrationKey)
+        if defaults.object(forKey: IslandDefaults.xPostModuleMigrationKey) == nil {
+            sanitizedIDs.insert(XPostModuleModel.moduleID)
+            defaults.set(Array(sanitizedIDs), forKey: IslandDefaults.enabledModuleIDsKey)
+        }
+        defaults.set(true, forKey: IslandDefaults.xPostModuleMigrationKey)
         return sanitizedIDs.isEmpty ? (sanitizedDefaults.isEmpty ? availableIDs : sanitizedDefaults) : sanitizedIDs
     }
 

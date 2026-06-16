@@ -9,15 +9,17 @@ Fantastic Island is built on top of the open-source project `open-vibe-island`, 
 
 It supports plugging different capabilities in as modules, and the code is open too. In theory, you can use this container and its extensibility to build an island that is actually yours.
 
-The fan component is mostly here because it is fun. You can hide it if you want, or just keep it around as a tiny reminder thing.
+The repository currently ships with seven built-in modules:
 
-The repository currently ships with three built-in modules:
-
-- `Codex`
-- `Clash`
+- `Agents`
 - `Player`
+- `Horizon`
+- `Timer`
+- `Shelf`
+- `System`
+- `X Post`
 
-The `Codex` and `Clash` modules continue to evolve from open-source foundations.
+The app keeps the open-vibe-island notch interaction as a foundation, while the product surface is now a native, provider-aware island rather than a collection of detached demos.
 
 ## Core Idea
 
@@ -31,39 +33,44 @@ Fantastic Island started from the open-source project `open-vibe-island`, but th
   <img src="./docs/images/settings-general.png" alt="Fantastic Island general settings" />
 </p>
 <p align="center">
-  <img src="./docs/images/settings-wind-drive.png" alt="Fantastic Island wind drive and module configuration" />
+  <img src="./docs/images/settings-wind-drive.png" alt="Fantastic Island module configuration" />
 </p>
 
-The settings page keeps app-level behavior, `Wind Drive`, module toggles, and the design token debugging entry in one place. The shell stays stable, while the module layer stays easy to extend.
+The settings page keeps app-level behavior, module toggles, provider setup, and the design token debugging entry in one place. The shell stays stable, while the module layer stays easy to extend.
 
 ## Built-In Pieces
 
 | Module / Component | Description |
 | --- | --- |
-| `Codex` | Pulls local Codex workflow state into the island, including sessions, quota, approvals, tool activity, and notifications. |
-| `Clash` | Wraps Mihomo / Clash runtime integration and managed controls, with room for traffic, proxy groups, rules, connections, and logs. |
-| `Player` | Reads current media playback state and exposes artwork, progress, and basic transport controls. |
-| `Wind Drive` | A playful fan component in the center of the island, with configurable logo, sound, and presentation behavior. |
+| `Agents` | Pulls local agent workflow state into the island, including Codex, Claude Code, Cursor, Antigravity, and Conductor sessions where supported. |
+| `Player` | Follows the current Now Playing source and exposes artwork, progress, visualizer, and transport controls. |
+| `Horizon` | Keeps the next event, reminders, weather, and glance context compact. |
+| `Timer` | Provides focused timer controls as its own module instead of crowding Horizon. |
+| `Shelf` | Holds dropped files with compact open, reveal, share, and remove actions. |
+| `System` | Shows battery and hardware status without turning the island into a dashboard. |
+| `X Post` | Drafts and publishes compact text posts with user-provided X OAuth credentials. |
 
 ## Module Examples
 
-### Codex
+### Agents
 
-The `Codex` module is more like a local workspace living inside the notch. Session state, quota, and recent activity stay visible without making you jump back to the terminal every few seconds.
+The `Agents` module is more like a local workspace living inside the notch. Session state, quota, recent activity, approvals, questions, transcripts, and safe app handoff stay visible without making you jump back to the terminal every few seconds.
 
-`Claude` is not wired into the agent monitoring path right now because it banned my account. To be fair, I also prefer `Codex`, so...
-
-![Fantastic Island Codex module](./docs/images/island-codex.png)
+![Fantastic Island Agents module](./docs/images/island-codex.png)
 
 ### Player
 
-The `Player` module is here to show and control current playback, so media controls can live together with `Codex` and `Clash` without needing another separate UI layer.
+The `Player` module is here to show and control current playback, so media controls can live together with agents and utilities without needing another separate UI layer.
 
 ![Fantastic Island Player module](./docs/images/island-player.png)
 
-### Clash
+### Horizon, Timer, Shelf, And System
 
-The `Clash` module brings network runtime state into the same interaction model: you can treat proxy status, traffic, groups, rules, connections, and logs as first-class island content instead of another detached panel.
+Horizon keeps the contextual glance layer small. Timer, Shelf, and System are separate modules so the island can stay compact while still covering quick utility tasks.
+
+### X Post
+
+The `X Post` module is a compact composer for text posts. It uses your own X OAuth 2.0 Client ID and stores tokens locally.
 
 ## Repository Scope
 
@@ -82,9 +89,6 @@ Not included:
 - Code signing or notarization setup
 - Personal team identifiers
 - Private local metadata
-- Prebundled Clash runtime, dashboard, or geodata artifacts
-
-The managed Clash workflow is open on the source side, but this public repository does not redistribute packaged runtime assets. If you want the full workflow, you need to supply compliant runtime assets yourself.
 
 ## Build
 
@@ -108,4 +112,4 @@ swift test
 
 ## Upstream And License
 
-The notch shell interaction layer inherits and adapts parts of [open-vibe-island](https://github.com/Octane0411/open-vibe-island). The `Clash` module's source-side integration targets the `mihomo` / `metacubexd` ecosystem, but this repository does not redistribute their packaged runtime releases. See [LICENSE](./LICENSE) and [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) for details.
+The notch shell interaction layer inherits and adapts parts of [open-vibe-island](https://github.com/Octane0411/open-vibe-island). See [LICENSE](./LICENSE) and [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) for details.
