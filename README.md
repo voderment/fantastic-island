@@ -9,7 +9,7 @@ Fantastic Island is built on top of the open-source project `open-vibe-island`, 
 
 It supports plugging different capabilities in as modules, and the code is open too. In theory, you can use this container and its extensibility to build an island that is actually yours.
 
-The repository currently ships with seven built-in modules:
+The repository currently ships with eight built-in modules:
 
 - `Agents`
 - `Player`
@@ -17,6 +17,7 @@ The repository currently ships with seven built-in modules:
 - `Timer`
 - `Shelf`
 - `System`
+- `Diagnostics`
 - `X Post`
 
 The app keeps the open-vibe-island notch interaction as a foundation, while the product surface is now a native, provider-aware island rather than a collection of detached demos.
@@ -48,6 +49,7 @@ The settings page keeps app-level behavior, module toggles, provider setup, and 
 | `Timer` | Provides focused timer controls as its own module instead of crowding Horizon. |
 | `Shelf` | Holds dropped files with compact open, reveal, share, and remove actions. |
 | `System` | Shows battery and hardware status without turning the island into a dashboard. |
+| `Diagnostics` | Surfaces provider hook readiness, quota bridge state, app-server status, and repair actions. |
 | `X Post` | Drafts and publishes compact text posts with user-provided X OAuth credentials. |
 
 ## Module Examples
@@ -64,9 +66,9 @@ The `Player` module is here to show and control current playback, so media contr
 
 ![Fantastic Island Player module](./docs/images/island-player.png)
 
-### Horizon, Timer, Shelf, And System
+### Horizon, Timer, Shelf, System, And Diagnostics
 
-Horizon keeps the contextual glance layer small. Timer, Shelf, and System are separate modules so the island can stay compact while still covering quick utility tasks.
+Horizon keeps the contextual glance layer small. Timer, Shelf, System, and Diagnostics are separate modules so the island can stay compact while still covering quick utility tasks and agent runtime health.
 
 ### X Post
 

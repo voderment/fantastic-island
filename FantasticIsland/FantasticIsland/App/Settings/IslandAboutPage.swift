@@ -93,7 +93,7 @@ struct IslandAboutPage: View {
 
                 AboutAuditRow(
                     title: "Product modules",
-                    value: "Agents, Player, Horizon, Timer, Shelf, System, X Post"
+                    value: "Agents, Player, Horizon, Timer, Shelf, System, Diagnostics, X Post"
                 )
 
                 AboutAuditRow(

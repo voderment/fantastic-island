@@ -278,6 +278,13 @@ struct IslandSettingsView: View {
                             detail: "A compact static module for the hardware status that should be glanceable without turning Horizon into a dashboard."
                         )
                     }
+                case DiagnosticsModuleModel.moduleID:
+                    SettingsCard(title: "Diagnostics") {
+                        PlaceholderRow(
+                            title: "Agent runtime health",
+                            detail: "Shows provider hook readiness, quota bridge status, app-server status, and compact repair actions directly in the island."
+                        )
+                    }
                 case XPostModuleModel.moduleID:
                     postModulePage
                 default:
@@ -698,6 +705,8 @@ struct IslandSettingsView: View {
             return "Run short timers without turning Horizon into a crowded dashboard."
         case ShelfModuleModel.moduleID:
             return "Drop files into a compact island shelf with quick open, reveal, share, and remove actions."
+        case DiagnosticsModuleModel.moduleID:
+            return "Keep hooks, quota bridges, and agent routing trustworthy without digging through Settings."
         case XPostModuleModel.moduleID:
             return "Draft and publish a compact text post without leaving the island."
         default:

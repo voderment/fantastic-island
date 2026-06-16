@@ -10,6 +10,7 @@ enum IslandDefaults {
     static let detachedModeKey = "island.settings.detachedMode"
     static let horizonUtilityModulesMigrationKey = "island.migrations.horizonUtilityModules.20260616"
     static let systemModuleMigrationKey = "island.migrations.systemModule.20260616"
+    static let diagnosticsModuleMigrationKey = "island.migrations.diagnosticsModule.20260616"
     static let xPostModuleMigrationKey = "island.migrations.xPostModule.20260616"
     static let systemCollapsedSummaryMigrationKey = "island.migrations.systemCollapsedSummary.20260616"
 

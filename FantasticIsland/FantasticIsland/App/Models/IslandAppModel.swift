@@ -81,7 +81,8 @@ enum CompactAgentGridMetrics {
         case 5: [3, 2]
         case 6: [3, 3]
         case 7: [4, 3]
-        default: [4, 4]
+        case 8: [4, 4]
+        default: [4, 4, count - 8]
         }
     }
 
@@ -133,6 +134,7 @@ final class IslandAppModel: ObservableObject {
     let timerModule: TimerModuleModel
     let shelfModule: ShelfModuleModel
     let systemModule: SystemModuleModel
+    let diagnosticsModule: DiagnosticsModuleModel
     let postModule: XPostModuleModel
     let moduleRegistry: IslandModuleRegistry
     let designTokenStore = IslandDebugTokenStore()
@@ -197,6 +199,7 @@ final class IslandAppModel: ObservableObject {
         let timerModule = TimerModuleModel(timerController: horizonModule.timerController)
         let shelfModule = ShelfModuleModel(horizonModule: horizonModule)
         let systemModule = SystemModuleModel(horizonModule: horizonModule)
+        let diagnosticsModule = DiagnosticsModuleModel(agentsModule: agentsModule)
         let postModule = XPostModuleModel()
         IslandDefaults.migrateLegacyValues()
         let allModules: [any IslandModule] = [
@@ -206,6 +209,7 @@ final class IslandAppModel: ObservableObject {
             timerModule,
             shelfModule,
             systemModule,
+            diagnosticsModule,
             postModule,
         ]
         let defaults = UserDefaults.standard
@@ -217,6 +221,7 @@ final class IslandAppModel: ObservableObject {
         self.timerModule = timerModule
         self.shelfModule = shelfModule
         self.systemModule = systemModule
+        self.diagnosticsModule = diagnosticsModule
         self.postModule = postModule
         self.moduleRegistry = IslandModuleRegistry(modules: allModules)
         self.isAudioMuted = defaults.object(forKey: IslandDefaults.audioMutedKey) as? Bool ?? true
@@ -1816,6 +1821,7 @@ final class IslandAppModel: ObservableObject {
             TimerModuleModel.moduleID,
             ShelfModuleModel.moduleID,
             SystemModuleModel.moduleID,
+            DiagnosticsModuleModel.moduleID,
             XPostModuleModel.moduleID,
         ]
         let sanitizedDefaults = availableIDs.intersection(defaultIDs)
@@ -1843,6 +1849,12 @@ final class IslandAppModel: ObservableObject {
             defaults.set(Array(sanitizedIDs), forKey: IslandDefaults.enabledModuleIDsKey)
         }
         defaults.set(true, forKey: IslandDefaults.xPostModuleMigrationKey)
+        if defaults.object(forKey: IslandDefaults.diagnosticsModuleMigrationKey) == nil,
+           sanitizedIDs.contains(CodexModuleModel.moduleID) {
+            sanitizedIDs.insert(DiagnosticsModuleModel.moduleID)
+            defaults.set(Array(sanitizedIDs), forKey: IslandDefaults.enabledModuleIDsKey)
+        }
+        defaults.set(true, forKey: IslandDefaults.diagnosticsModuleMigrationKey)
         return sanitizedIDs.isEmpty ? (sanitizedDefaults.isEmpty ? availableIDs : sanitizedDefaults) : sanitizedIDs
     }
 

@@ -28,6 +28,7 @@ let package = Package(
                 "Modules/Codex/Monitoring/CodexTerminalTextSender.swift",
                 "Modules/Codex/Monitoring/CodexTokenUsageHistoryScanner.swift",
                 "Modules/Codex/Views",
+                "Modules/Diagnostics",
                 "Modules/Horizon/Models/HorizonModuleModel.swift",
                 "Modules/Horizon/Services",
                 "Modules/Placeholder",
