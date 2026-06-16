@@ -125,6 +125,8 @@
 			);
 			inputPaths = (
 				"$(SRCROOT)/Helpers/fantastic-island-hook.swift",
+				"$(SRCROOT)/FantasticIsland/Assets.xcassets",
+				"$(SRCROOT)/FantasticIsland/source",
 			);
 			name = "Build Hook Helper";
 			outputFileListPaths = (
@@ -134,7 +136,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -eu\n\nsource=\"$SRCROOT/Helpers/fantastic-island-hook.swift\"\noutput=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/Helpers/fantastic-island-hook\"\nmkdir -p \"$(dirname \"$output\")\"\n/usr/bin/xcrun --sdk macosx swiftc \"$source\" -O -o \"$output\"\nchmod 755 \"$output\"\n";
+			shellScript = "set -eu\n\nfor path in \"$SRCROOT/Helpers\" \"$SRCROOT/FantasticIsland/Assets.xcassets\" \"$SRCROOT/FantasticIsland/source\"; do\n    if [ -e \"$path\" ]; then\n        /usr/bin/xattr -cr \"$path\" >/dev/null 2>&1 || true\n    fi\ndone\n\nsource=\"$SRCROOT/Helpers/fantastic-island-hook.swift\"\noutput=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/Helpers/fantastic-island-hook\"\nmkdir -p \"$(dirname \"$output\")\"\n/usr/bin/xcrun --sdk macosx swiftc \"$source\" -O -o \"$output\"\nchmod 755 \"$output\"\n/usr/bin/xattr -c \"$output\" >/dev/null 2>&1 || true\n";
 		};
 		40F9A0012F99B000009E4658 /* Clear Bundle Extended Attributes */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -144,6 +146,9 @@
 			inputFileListPaths = (
 			);
 			inputPaths = (
+				"$(SRCROOT)/Helpers",
+				"$(SRCROOT)/FantasticIsland/Assets.xcassets",
+				"$(SRCROOT)/FantasticIsland/source",
 				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/Info.plist",
 				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/MacOS/$(EXECUTABLE_NAME)",
 				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/Resources/Assets.car",
@@ -156,7 +161,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -eu\n\nmkdir -p \"$TARGET_TEMP_DIR\"\nstamp=\"$TARGET_TEMP_DIR/clear-bundle-xattrs.stamp\"\nbundle=\"$TARGET_BUILD_DIR/$WRAPPER_NAME\"\n\nif [ -e \"$bundle\" ]; then\n    /usr/bin/xattr -cr \"$bundle\" >/dev/null 2>&1 || true\nfi\n\nindex=0\nwhile [ \"$index\" -lt \"${SCRIPT_INPUT_FILE_COUNT:-0}\" ]; do\n    eval file=\\\"\\${SCRIPT_INPUT_FILE_$index:-}\\\"\n    if [ -n \"$file\" ] && [ -e \"$file\" ]; then\n        /usr/bin/xattr -c \"$file\" >/dev/null 2>&1 || true\n    fi\n    index=$((index + 1))\ndone\n\ntouch \"$stamp\"\n";
+			shellScript = "set -eu\n\nmkdir -p \"$TARGET_TEMP_DIR\"\nstamp=\"$TARGET_TEMP_DIR/clear-bundle-xattrs.stamp\"\nbundle=\"$TARGET_BUILD_DIR/$WRAPPER_NAME\"\n\nfor path in \"$SRCROOT/Helpers\" \"$SRCROOT/FantasticIsland/Assets.xcassets\" \"$SRCROOT/FantasticIsland/source\"; do\n    if [ -e \"$path\" ]; then\n        /usr/bin/xattr -cr \"$path\" >/dev/null 2>&1 || true\n    fi\ndone\n\nif [ -e \"$bundle\" ]; then\n    /usr/bin/xattr -cr \"$bundle\" >/dev/null 2>&1 || true\nfi\n\nindex=0\nwhile [ \"$index\" -lt \"${SCRIPT_INPUT_FILE_COUNT:-0}\" ]; do\n    eval file=\\\"\\${SCRIPT_INPUT_FILE_$index:-}\\\"\n    if [ -n \"$file\" ] && [ -e \"$file\" ]; then\n        if [ -d \"$file\" ]; then\n            /usr/bin/xattr -cr \"$file\" >/dev/null 2>&1 || true\n        else\n            /usr/bin/xattr -c \"$file\" >/dev/null 2>&1 || true\n        fi\n    fi\n    index=$((index + 1))\ndone\n\ntouch \"$stamp\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

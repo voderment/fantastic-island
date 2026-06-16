@@ -1050,7 +1050,10 @@ final class CodexModuleModel: ObservableObject, IslandModule {
             Task { @MainActor [self] in
                 self.handleHookApprovalTimeout(requestID: requestID)
             }
-            return nil
+            return CodexHookDirective.deny(
+                reason: "Permission timed out in Fantastic Island.",
+                for: payload.hookEventName
+            )
         }
 
         return result.directive
@@ -1140,7 +1143,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
         handleAgentEvent(.actionableStateResolved(
             ActionableStateResolvedEvent(
                 sessionID: sessionID,
-                summary: "Approval timed out (fail-open).",
+                summary: "Approval timed out and was denied.",
                 timestamp: .now
             )
         ))

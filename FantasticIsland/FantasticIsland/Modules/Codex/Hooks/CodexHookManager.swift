@@ -148,9 +148,12 @@ struct CodexHookManager {
         }
 
         let data = try Data(contentsOf: url)
-        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let hooks = root["hooks"] as? [String: Any] else {
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw CodexHookManagerError.invalidHooksJSON
+        }
+
+        guard let hooks = root["hooks"] as? [String: Any] else {
+            return false
         }
 
         for event in provider.hookEvents {

@@ -307,6 +307,24 @@ final class IslandLogicTests: XCTestCase {
         }
     }
 
+    func testHookStatusTreatsValidConfigWithoutHooksAsNotInstalled() throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let codexDirectory = root.appendingPathComponent(".codex", isDirectory: true)
+        let manager = CodexHookManager(codexDirectory: codexDirectory, homeDirectory: root)
+        try FileManager.default.createDirectory(at: codexDirectory, withIntermediateDirectories: true)
+
+        try "[features]\ncodex_hooks = true\n".write(
+            to: codexDirectory.appendingPathComponent("config.toml"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try writeJSONObject(["theme": "dark"], to: root.appendingPathComponent(".claude/settings.json"))
+
+        XCTAssertNoThrow(try manager.status())
+        XCTAssertEqual(try manager.status(), .notInstalled)
+    }
+
     func testAgentsOverviewCapsDefaultListAndFocusesNotificationSession() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let sessions = [
