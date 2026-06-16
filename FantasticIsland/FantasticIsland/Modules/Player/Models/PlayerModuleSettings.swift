@@ -2,7 +2,7 @@ import Foundation
 
 enum PlayerModuleSettings {
     private static let defaultSourceKey = "player.module.defaultSource"
-    private static let migratedNowPlayingDefaultKey = "player.module.defaultSource.migratedNowPlayingV2"
+    private static let migratedNowPlayingDefaultKey = "player.module.defaultSource.migratedNowPlayingV3"
 
     static var storedDefaultSource: PlayerSourceKind? {
         PlayerSourceKind(rawValue: UserDefaults.standard.string(forKey: defaultSourceKey) ?? "")

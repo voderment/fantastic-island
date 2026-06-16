@@ -5,40 +5,10 @@ struct IslandExpandedNavigationView: View {
 
     var body: some View {
         HStack(spacing: CodexIslandChromeMetrics.moduleHeaderToolbarSpacing) {
-            HStack(spacing: CodexIslandChromeMetrics.moduleTabSpacing) {
+            HStack(spacing: tabSpacing) {
                 ForEach(state.tabs) { tab in
                     Button(action: tab.action) {
-                        HStack(spacing: tab.isSelected ? 7 : 0) {
-                            tabIcon(tab)
-                                .frame(width: 14, height: 14, alignment: .center)
-
-                            if tab.isSelected {
-                                Text(tab.title)
-                                    .font(IslandVisualLanguage.islandBody(12, weight: .semibold))
-                                    .lineLimit(1)
-                                    .fixedSize(horizontal: true, vertical: false)
-                                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
-                            }
-
-                            if tab.showsPendingBadge {
-                                Circle()
-                                    .fill(IslandVisualLanguage.accent)
-                                    .frame(width: 7, height: 7)
-                            }
-                        }
-                        .foregroundStyle(tab.isSelected ? Color.black.opacity(0.9) : .white.opacity(0.74))
-                        .padding(.horizontal, tab.isSelected ? CodexIslandChromeMetrics.moduleTabHorizontalPadding : 9)
-                        .padding(.vertical, CodexIslandChromeMetrics.moduleTabVerticalPadding)
-                        .background {
-                            if tab.isSelected {
-                                Capsule(style: .continuous)
-                                    .fill(Color.white.opacity(0.94))
-                                    .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
-                            } else {
-                                Capsule(style: .continuous)
-                                    .fill(Color.white.opacity(0.06))
-                            }
-                        }
+                        tabLabel(tab)
                         .frame(height: max(32, CodexIslandChromeMetrics.moduleNavigationRowHeight - 4))
                     }
                     .buttonStyle(.plain)
@@ -64,6 +34,62 @@ struct IslandExpandedNavigationView: View {
             .buttonStyle(.plain)
             .help("Open settings")
         }
+    }
+
+    private var usesCompactTabs: Bool {
+        state.tabs.count > 3
+    }
+
+    private var tabSpacing: CGFloat {
+        usesCompactTabs ? 4 : CodexIslandChromeMetrics.moduleTabSpacing
+    }
+
+    private func tabLabel(_ tab: IslandShellTabRenderState) -> some View {
+        ZStack(alignment: .topTrailing) {
+            HStack(spacing: tab.isSelected && !usesCompactTabs ? 7 : 0) {
+                tabIcon(tab)
+                    .frame(width: 14, height: 14, alignment: .center)
+
+                if tab.isSelected && !usesCompactTabs {
+                    Text(tab.title)
+                        .font(IslandVisualLanguage.islandBody(12, weight: .semibold))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                }
+            }
+            .foregroundStyle(tab.isSelected ? Color.black.opacity(0.9) : .white.opacity(0.74))
+            .frame(width: tabWidth(for: tab), height: 28)
+            .background {
+                tabBackground(tab)
+            }
+
+            if tab.showsPendingBadge {
+                Circle()
+                    .fill(IslandVisualLanguage.accent)
+                    .frame(width: 7, height: 7)
+                    .offset(x: 1.5, y: -1.5)
+            }
+        }
+        .contentShape(Capsule(style: .continuous))
+    }
+
+    private func tabWidth(for tab: IslandShellTabRenderState) -> CGFloat? {
+        usesCompactTabs ? 30 : nil
+    }
+
+    private func tabBackground(_ tab: IslandShellTabRenderState) -> some View {
+        Capsule(style: .continuous)
+            .fill(tabBackgroundColor(tab))
+            .overlay {
+                Capsule(style: .continuous)
+                    .strokeBorder(Color.white.opacity(tab.isSelected ? 0 : 0.09), lineWidth: 0.7)
+            }
+            .shadow(color: tab.isSelected ? .black.opacity(0.12) : .clear, radius: 6, y: 2)
+    }
+
+    private func tabBackgroundColor(_ tab: IslandShellTabRenderState) -> Color {
+        tab.isSelected ? Color.white.opacity(0.94) : Color.white.opacity(0.055)
     }
 
     @ViewBuilder
