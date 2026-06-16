@@ -672,6 +672,12 @@ final class IslandAppModel: ObservableObject {
         guard height > 0 else {
             return
         }
+        let measuredModule =
+            enabledModules.first(where: { $0.id == moduleID })
+            ?? moduleRegistry.module(id: moduleID)
+        guard measuredModule?.allowsInternalScrolling == true else {
+            return
+        }
 
         let measurementKey = moduleContentMeasurementKey(for: moduleID, presentation: presentation)
         let previousHeight = measuredModuleContentHeights[measurementKey] ?? 0

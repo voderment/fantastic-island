@@ -654,23 +654,9 @@ private final class IslandShellHostingView<Content: View>: NSHostingView<Content
 
     override var isOpaque: Bool { false }
     override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric) }
-    override var needsUpdateConstraints: Bool {
-        get { false }
-        set {
-            if newValue {
-                needsLayout = true
-            } else {
-                super.needsUpdateConstraints = false
-            }
-        }
-    }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
-    }
-
-    override func updateConstraints() {
-        super.updateConstraints()
     }
 
     override func mouseDown(with event: NSEvent) {
