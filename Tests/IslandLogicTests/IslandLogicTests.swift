@@ -501,6 +501,31 @@ final class IslandLogicTests: XCTestCase {
         XCTAssertEqual(expanded.count, buckets.primary.count)
     }
 
+    func testAgentActivityCountsIslandVisibleSessionsWithoutEndedSessions() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var endedRecentSession = makeSession(
+            id: "ended",
+            title: "Ended",
+            phase: .completed,
+            at: now.addingTimeInterval(-20)
+        )
+        endedRecentSession.isSessionEnded = true
+
+        let state = AgentActivityModel.recompute(
+            from: [
+                makeSession(id: "older-running", title: "Older Running", phase: .running, at: now.addingTimeInterval(-14 * 60)),
+                makeSession(id: "recent-complete", title: "Recent Complete", phase: .completed, at: now.addingTimeInterval(-19 * 60)),
+                makeSession(id: "stale-complete", title: "Stale Complete", phase: .completed, at: now.addingTimeInterval(-21 * 60)),
+                endedRecentSession,
+            ],
+            now: now
+        )
+
+        XCTAssertEqual(state.activeSessionCount, 2)
+        XCTAssertEqual(state.inProgressSessionCount, 1)
+        XCTAssertEqual(state.busySessionCount, 0)
+    }
+
     func testSessionSnapshotCanSendTextFollowsDirectReplyCapability() {
         XCTAssertTrue(makeSession(id: "codex", provider: .codex, jumpTarget: replyCapableJumpTarget(sessionID: "codex")).canSendText)
         XCTAssertTrue(makeSession(id: "codex-no-target", provider: .codex).canSendText)

@@ -65,6 +65,7 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
         private var accumulatedVertical: CGFloat = 0
         private var lastSwitchAt = Date.distantPast
         private var lastScrollEventAt = Date.distantPast
+        private var suppressWheelEventsUntil = Date.distantPast
         private var hasSwitchedDuringGesture = false
 
         init(model: IslandAppModel) {
@@ -87,6 +88,17 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
 
         private func handle(_ event: NSEvent) -> Bool {
             let now = Date()
+            guard let model,
+                  model.islandExpanded,
+                  !model.islandLayoutTransitionInFlight,
+                  isEventInsideShellWindow(event) else {
+                return false
+            }
+
+            guard now >= suppressWheelEventsUntil else {
+                return true
+            }
+
             if now.timeIntervalSince(lastScrollEventAt) > 0.42 {
                 resetGestureState()
             }
@@ -94,13 +106,6 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
 
             if shouldResetAccumulation(for: event) {
                 resetGestureState()
-                return false
-            }
-
-            guard let model,
-                  model.islandExpanded,
-                  !model.islandLayoutTransitionInFlight,
-                  isEventInsideShellWindow(event) else {
                 return false
             }
 
@@ -129,6 +134,7 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
                now.timeIntervalSince(lastSwitchAt) > 0.24 {
                 model.selectAdjacentModule(offset: accumulatedHorizontal > 0 ? 1 : -1)
                 lastSwitchAt = now
+                suppressWheelEventsUntil = now.addingTimeInterval(0.32)
                 hasSwitchedDuringGesture = true
                 resetAccumulation()
             }
@@ -163,6 +169,11 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
         private func resetGestureState() {
             resetAccumulation()
             hasSwitchedDuringGesture = false
+        }
+
+        func suppressWheelMomentum(after date: Date = .now) {
+            suppressWheelEventsUntil = date.addingTimeInterval(0.32)
+            resetGestureState()
         }
     }
 }

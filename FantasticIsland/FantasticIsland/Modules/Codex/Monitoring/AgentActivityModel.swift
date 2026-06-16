@@ -6,7 +6,7 @@ enum AgentActivityModel {
             $0.isLikelyLive(at: now)
         }
         let activeSessions = sessions.filter {
-            $0.isLikelyLive(at: now) || now.timeIntervalSince($0.lastEventAt ?? .distantPast) <= 12
+            !$0.isSessionEnded && $0.isVisibleInIsland(at: now)
         }
         let busySessions = activeSessions.filter { $0.phase == .busy }
         let recentUpdates = sessions.filter {

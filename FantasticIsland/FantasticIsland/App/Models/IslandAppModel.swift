@@ -501,11 +501,11 @@ final class IslandAppModel: ObservableObject {
     func closedSurfaceWidth(baseCompactWidth: CGFloat, hardwareNotchExclusionWidth: CGFloat = 0) -> CGFloat {
         let contentWidth = visibleCompactModules.first?.estimatedWidth ?? 0
         if hardwareNotchExclusionWidth > 0 {
-            let wingWidth = max(44, min(66, contentWidth + 12))
+            let wingWidth = max(36, min(54, contentWidth + 8))
             return max(baseCompactWidth, hardwareNotchExclusionWidth + (wingWidth * 2))
         }
 
-        return max(baseCompactWidth, contentWidth + 44, 128)
+        return max(baseCompactWidth, contentWidth + 28, 112)
     }
 
     func expandIsland(reason: IslandOpenReason = .manualTap) {
@@ -667,7 +667,8 @@ final class IslandAppModel: ObservableObject {
             return
         }
 
-        let nextIndex = (selectedIndex + offset + count) % count
+        let step = offset > 0 ? 1 : -1
+        let nextIndex = (selectedIndex + step + count) % count
         guard nextIndex != selectedIndex else {
             return
         }
