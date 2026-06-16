@@ -10,6 +10,9 @@ struct PlayerModuleRenderState {
     let canRequestAutomationAccess: Bool
     let isResolvingAutomationAccess: Bool
     let activeSourceIconImage: NSImage?
+    let sourceOptions: [PlayerSourceKind]
+    let selectedSource: PlayerSourceKind
+    let selectPlaybackSource: (PlayerSourceKind) -> Void
     let previousTrack: () -> Void
     let togglePlayPause: () -> Void
     let nextTrack: () -> Void
@@ -52,55 +55,30 @@ struct PlayerModuleContentView: View {
     }
 
     private var standardContent: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: 11) {
             artworkView
 
             if showsAutomationIssue {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 7) {
                     titleBlock
                     automationIssueActionRow
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 7) {
                     playerTitleRow
                     playerControlStrip
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .background(Color.white.opacity(0.018), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(Color.white.opacity(0.014), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.055), lineWidth: 0.75)
+                .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.75)
         }
-    }
-
-    private var legacyStandardContent: some View {
-        VStack(alignment: .leading, spacing: PlayerExpandedMetrics.outerSpacing) {
-            HStack(alignment: .top, spacing: PlayerExpandedMetrics.primaryColumnSpacing) {
-                artworkView
-
-                VStack(alignment: .leading, spacing: PlayerExpandedMetrics.controlsSpacing) {
-                    titleBlock
-
-                    if showsAutomationIssue {
-                        automationIssueActionRow
-                    } else {
-                        controlsRow
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-            }
-
-            if !showsAutomationIssue, state.nowPlayingState.track != nil {
-                progressSection
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
     }
 
     private var playerTitleRow: some View {
@@ -125,7 +103,7 @@ struct PlayerModuleContentView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            sourceBadge
+            sourceMenu
         }
     }
 
@@ -244,7 +222,7 @@ struct PlayerModuleContentView: View {
 
                 Spacer(minLength: 0)
 
-                sourceBadge
+                sourceMenu
             }
 
             HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -269,35 +247,60 @@ struct PlayerModuleContentView: View {
         }
     }
 
-    private var sourceBadge: some View {
-        HStack(spacing: 5) {
-            if let activeSourceIconImage = state.activeSourceIconImage {
-                Image(nsImage: activeSourceIconImage)
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFill()
-                    .frame(width: 12, height: 12)
-                    .clipShape(.rect(cornerRadius: 2.5, style: .continuous))
-            } else {
-                Image(systemName: "waveform")
-                    .font(.system(size: 10.5, weight: .bold))
+    private var sourceMenu: some View {
+        Menu {
+            ForEach(state.sourceOptions) { source in
+                Button {
+                    state.selectPlaybackSource(source)
+                } label: {
+                    HStack {
+                        Text(source.displayName)
+                        if source == state.selectedSource {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
             }
+            Divider()
+            Button("Refresh") {
+                state.refresh()
+            }
+        } label: {
+            HStack(spacing: 5) {
+                if let activeSourceIconImage = state.activeSourceIconImage {
+                    Image(nsImage: activeSourceIconImage)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFill()
+                        .frame(width: 12, height: 12)
+                        .clipShape(.rect(cornerRadius: 2.5, style: .continuous))
+                } else {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 10.5, weight: .bold))
+                }
 
-            Text(sourceBadgeText)
-                .font(.system(size: 10.5, weight: .bold))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .minimumScaleFactor(0.78)
+                Text(sourceBadgeText)
+                    .font(.system(size: 10.5, weight: .bold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .minimumScaleFactor(0.78)
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.42))
+            }
+            .foregroundStyle(.white.opacity(0.72))
+            .padding(.horizontal, 8)
+            .frame(height: 22)
+            .frame(maxWidth: 142, alignment: .leading)
+            .background(Color.white.opacity(0.065), in: Capsule())
+            .overlay {
+                Capsule()
+                    .strokeBorder(Color.white.opacity(0.11), lineWidth: 0.7)
+            }
         }
-        .foregroundStyle(.white.opacity(0.72))
-        .padding(.horizontal, 8)
-        .frame(height: 22)
-        .frame(maxWidth: 132, alignment: .leading)
-        .background(Color.white.opacity(0.075), in: Capsule())
-        .overlay {
-            Capsule()
-                .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.7)
-        }
+        .menuStyle(.borderlessButton)
+        .fixedSize(horizontal: true, vertical: false)
         .help("Now Playing follows the current media app")
     }
 
@@ -537,7 +540,7 @@ private struct PlayerAnimatedTitleText: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: 16.5, weight: .bold))
+                .font(.system(size: 15.5, weight: .bold))
             .foregroundStyle(.white.opacity(0.96))
             .lineLimit(lineLimit)
             .contentTransition(.numericText())

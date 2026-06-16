@@ -144,9 +144,20 @@ final class CodexModuleModel: ObservableObject, IslandModule {
         CodexIslandSessionPresentation.computeBuckets(from: monitoredSessions)
     }
 
+    var overviewCandidateSessions: [SessionSnapshot] {
+        let buckets = sessionBuckets
+        if !buckets.primary.isEmpty {
+            return buckets.primary
+        }
+
+        return buckets.overflow.filter { session in
+            !session.isSessionEnded && !session.isInternalSupportSession
+        }
+    }
+
     var islandListSessions: [SessionSnapshot] {
         CodexIslandSessionPresentation.overviewSessions(
-            from: sessionBuckets.primary,
+            from: overviewCandidateSessions,
             activeNotificationSession: activeNotificationSession,
             isNotificationMode: isNotificationMode,
             isShowingAllSessions: isShowingAllSessions
@@ -154,12 +165,13 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     }
 
     var sessionListTotalCount: Int {
-        sessionBuckets.primary.count
+        overviewCandidateSessions.count
     }
 
     var closedAgentIndicators: (visible: [CompactAgentIndicator], overflow: Int) {
-        let visibleSessions = monitoredSessions
-            .filter { !$0.isInternalSupportSession && $0.isVisibleInIsland(at: .now) }
+        let buckets = sessionBuckets
+        let visibleSessions = (buckets.primary.isEmpty ? overviewCandidateSessions : buckets.primary)
+            .filter { !$0.isInternalSupportSession }
             .sorted { lhs, rhs in
                 let lhsAttention = lhs.phase.requiresAttention ? 1 : 0
                 let rhsAttention = rhs.phase.requiresAttention ? 1 : 0

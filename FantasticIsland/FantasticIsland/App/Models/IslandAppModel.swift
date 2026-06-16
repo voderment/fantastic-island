@@ -683,7 +683,7 @@ final class IslandAppModel: ObservableObject {
     @discardableResult
     func selectAdjacentModuleFromPointer(offset: Int, now: Date = .now) -> Bool {
         guard islandExpanded,
-              now.timeIntervalSince(lastPointerModuleSwitchAt) >= 0.42 else {
+              now.timeIntervalSince(lastPointerModuleSwitchAt) >= 0.68 else {
             return false
         }
 

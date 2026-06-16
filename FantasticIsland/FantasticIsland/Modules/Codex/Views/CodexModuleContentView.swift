@@ -567,14 +567,19 @@ struct CodexModuleContentView: View {
                 .foregroundStyle(.white.opacity(0.78))
                 .help("Back to conversations")
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(conversationTitle(for: session))
-                        .font(IslandVisualLanguage.islandTitle(14, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                    Text("\(session.provider.displayName) · \(conversationWorkspace(for: session))")
-                        .font(IslandVisualLanguage.islandLabel(10.5, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.45))
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(conversationTitle(for: session))
+                            .font(.system(size: 13.5, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.95))
+                            .lineLimit(1)
+
+                        compactNeutralBadge(session.provider.compactName)
+                    }
+
+                    Text(conversationWorkspace(for: session))
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.42))
                         .lineLimit(1)
                 }
 
@@ -592,16 +597,16 @@ struct CodexModuleContentView: View {
                 .islandGlassCapsule()
                 .help("Open \(session.provider.displayName)")
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
 
             Rectangle()
                 .fill(.white.opacity(0.055))
                 .frame(height: 1)
 
             ScrollViewReader { proxy in
-                ScrollView(.vertical, showsIndicators: true) {
-                    VStack(alignment: .leading, spacing: 6) {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 5) {
                     let turns = state.transcriptTurnsForSession(session)
                     if turns.isEmpty {
                         if let prompt = session.latestUserPrompt?.trimmingCharacters(in: .whitespacesAndNewlines), !prompt.isEmpty {
@@ -632,12 +637,12 @@ struct CodexModuleContentView: View {
                         .frame(height: 1)
                         .id("conversation-bottom")
                 }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 7)
                     .frame(maxWidth: .infinity, alignment: .bottomLeading)
-                    .frame(minHeight: 220, alignment: .bottom)
+                    .frame(minHeight: 188, alignment: .bottom)
                 }
-                .frame(minHeight: 220, maxHeight: 300)
+                .frame(minHeight: 188, maxHeight: 264)
                 .onAppear {
                     proxy.scrollTo("conversation-bottom", anchor: .bottom)
                 }
@@ -656,7 +661,11 @@ struct CodexModuleContentView: View {
                 unsupportedReplyFooter(for: session)
             }
         }
-        .background(Color.white.opacity(0.018), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(Color.white.opacity(0.014), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.white.opacity(0.06), lineWidth: 0.75)
+        }
     }
 
     private var newSessionCard: some View {
@@ -861,21 +870,30 @@ struct CodexModuleContentView: View {
 
     private func conversationBubble(label: String, text: String, isUser: Bool, role: AgentTranscriptTurn.Role) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(label)
-                .font(IslandVisualLanguage.islandLabel(10, weight: .bold))
-                .foregroundStyle(conversationAccent(for: role).opacity(0.82))
+            HStack(spacing: 6) {
+                Capsule()
+                    .fill(conversationAccent(for: role).opacity(0.75))
+                    .frame(width: 5, height: 5)
+
+                Text(label)
+                    .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.54))
+                    .lineLimit(1)
+            }
+
             Text(text)
-                .font(IslandVisualLanguage.islandBody(12.5, weight: .medium))
-                .foregroundStyle(.white.opacity(0.88))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white.opacity(isUser ? 0.9 : 0.84))
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(9)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(isUser ? 0.07 : 0.04), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .background(Color.white.opacity(isUser ? 0.055 : 0.032), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .stroke(conversationAccent(for: role).opacity(isUser ? 0.18 : 0.1), lineWidth: 0.7)
+                .stroke(conversationAccent(for: role).opacity(isUser ? 0.14 : 0.08), lineWidth: 0.7)
         }
     }
 

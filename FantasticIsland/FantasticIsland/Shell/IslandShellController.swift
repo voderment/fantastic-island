@@ -36,9 +36,9 @@ final class IslandShellController {
     }
 
     static let defaultNotchSize = islandDefaultNotchSize
-    private static let minimumExpandedContentWidth: CGFloat = 408
-    private static let maximumExpandedContentWidth: CGFloat = 444
-    private static let expandedContentWidthFactor: CGFloat = 0.20
+    private static let minimumExpandedContentWidth: CGFloat = 430
+    private static let maximumExpandedContentWidth: CGFloat = 476
+    private static let expandedContentWidthFactor: CGFloat = 0.22
     private static let openedContentBottomPadding: CGFloat = CodexIslandChromeMetrics.openedSurfaceBottomInset
     private static let closedHoverOpenDelay: TimeInterval = 0.18
 

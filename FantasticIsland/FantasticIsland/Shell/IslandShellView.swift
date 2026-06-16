@@ -100,7 +100,7 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
                 return true
             }
 
-            let idleResetDelay: TimeInterval = hasSwitchedDuringGesture ? 0.95 : 0.42
+            let idleResetDelay: TimeInterval = hasSwitchedDuringGesture ? 1.35 : 0.42
             if now.timeIntervalSince(lastScrollEventAt) > idleResetDelay {
                 resetGestureState()
             }
@@ -132,11 +132,11 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
                 return true
             }
 
-            if abs(accumulatedHorizontal) > 24,
-               now.timeIntervalSince(lastSwitchAt) > 0.24 {
+            if abs(accumulatedHorizontal) > 30,
+               now.timeIntervalSince(lastSwitchAt) > 0.58 {
                 _ = model.selectAdjacentModuleFromPointer(offset: accumulatedHorizontal > 0 ? 1 : -1, now: now)
                 lastSwitchAt = now
-                suppressWheelEventsUntil = now.addingTimeInterval(0.42)
+                suppressWheelEventsUntil = now.addingTimeInterval(0.82)
                 hasSwitchedDuringGesture = true
                 resetAccumulation()
             }
@@ -174,7 +174,7 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
         }
 
         func suppressWheelMomentum(after date: Date = .now) {
-            suppressWheelEventsUntil = date.addingTimeInterval(0.42)
+            suppressWheelEventsUntil = date.addingTimeInterval(0.82)
             resetAccumulation()
         }
     }
@@ -638,8 +638,8 @@ struct IslandShellView: View {
 
                 let horizontalTravel = value.translation.width
                 let verticalTravel = value.translation.height
-                guard abs(horizontalTravel) > 44,
-                      abs(horizontalTravel) > abs(verticalTravel) * 1.15 else {
+                guard abs(horizontalTravel) > 32,
+                      abs(horizontalTravel) > abs(verticalTravel) * 1.05 else {
                     return
                 }
 
