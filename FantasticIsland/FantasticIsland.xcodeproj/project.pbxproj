@@ -53,6 +53,7 @@
 				403C20EF2F8CAF6100C9A86C /* Sources */,
 				403C20F02F8CAF6100C9A86C /* Frameworks */,
 				403C20F12F8CAF6100C9A86C /* Resources */,
+				40F9A0022F99B000009E4658 /* Build Hook Helper */,
 				40F9A0012F99B000009E4658 /* Clear Bundle Extended Attributes */,
 			);
 			buildRules = (
@@ -115,9 +116,28 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		40F9A0022F99B000009E4658 /* Build Hook Helper */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/Helpers/fantastic-island-hook.swift",
+			);
+			name = "Build Hook Helper";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Helpers/fantastic-island-hook",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -eu\n\nsource=\"$SRCROOT/Helpers/fantastic-island-hook.swift\"\noutput=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/Helpers/fantastic-island-hook\"\nmkdir -p \"$(dirname \"$output\")\"\n/usr/bin/xcrun --sdk macosx swiftc \"$source\" -O -o \"$output\"\nchmod 755 \"$output\"\n";
+		};
 		40F9A0012F99B000009E4658 /* Clear Bundle Extended Attributes */ = {
 			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);

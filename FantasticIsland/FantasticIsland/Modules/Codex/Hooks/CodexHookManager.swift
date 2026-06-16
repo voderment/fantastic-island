@@ -85,6 +85,10 @@ struct CodexHookManager {
         hookCommand(provider: .codex, eventName: nil)
     }
 
+    func ensureHelperInstalled() throws {
+        try writeHelper()
+    }
+
     func installUsageBridges() throws {
         try writeHelper()
         for provider in Self.statusLineUsageBridgeProviders {

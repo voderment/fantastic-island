@@ -650,7 +650,6 @@ struct SessionSnapshot: Identifiable, Codable {
     var canSendText: Bool {
         guard !phase.requiresAttention else { return false }
         return provider.supportsDirectIslandReply
-            && jumpTarget?.canReply == true
     }
 
     var canResolvePermission: Bool {

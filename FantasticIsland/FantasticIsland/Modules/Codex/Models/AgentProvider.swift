@@ -195,7 +195,7 @@ enum AgentProvider: String, Codable, CaseIterable, Identifiable {
                 .init(name: "SessionStart", timeout: 5),
                 .init(name: "SessionEnd", timeout: 5, isAsync: true),
                 .init(name: "UserPromptSubmit", timeout: 5),
-                .init(name: "PreToolUse", timeout: 5),
+                .init(name: "PreToolUse", timeout: 45),
                 .init(name: "PostToolUse", timeout: 5),
                 .init(name: "PermissionRequest", timeout: 45),
                 .init(name: "Stop", timeout: 5),
@@ -203,7 +203,7 @@ enum AgentProvider: String, Codable, CaseIterable, Identifiable {
         case .claudeCode, .antigravity:
             return [
                 .init(name: "UserPromptSubmit", timeout: 5, isAsync: true),
-                .init(name: "PreToolUse", timeout: 5),
+                .init(name: "PreToolUse", timeout: 45),
                 .init(name: "PostToolUse", timeout: 5, isAsync: true),
                 .init(name: "PostToolUseFailure", timeout: 5, isAsync: true),
                 .init(name: "PermissionRequest", timeout: 86_400),

@@ -128,9 +128,6 @@ final class HorizonModuleModel: ObservableObject, IslandModule {
         refreshClock()
         refreshBattery()
         loadShelfItems()
-        weatherService.refreshIfNeeded(force: true)
-        requestCalendarAccessIfNeeded()
-        requestReminderAccessIfNeeded()
         startTimer()
     }
 
@@ -247,6 +244,12 @@ final class HorizonModuleModel: ObservableObject, IslandModule {
         if let view = NSApp.keyWindow?.contentView ?? NSApp.windows.first(where: \.isVisible)?.contentView {
             picker.show(relativeTo: .zero, of: view, preferredEdge: .minY)
         }
+    }
+
+    func activateForUserIntent() {
+        weatherService.refreshIfNeeded(force: true, requestAuthorizationIfNeeded: true)
+        requestCalendarAccessIfNeeded()
+        requestReminderAccessIfNeeded()
     }
 
     private func startTimer() {

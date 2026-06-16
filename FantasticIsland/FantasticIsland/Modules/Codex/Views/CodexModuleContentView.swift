@@ -86,8 +86,9 @@ struct CodexModuleContentView: View {
                 } else if let session = state.selectedConversationSession {
                     conversationDetail(for: session)
                 } else {
-                    globalInfoCard
+                    agentsHeaderBar
                     sessionList
+                    providerQuotaFooter
                 }
             }
         case let .activity(activity):
@@ -288,22 +289,6 @@ struct CodexModuleContentView: View {
             }
         } else {
             VStack(spacing: 0) {
-                Button {
-                    state.showNewSession()
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "plus.circle.fill")
-                        Text("New Session")
-                        Spacer()
-                    }
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.82))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.035))
-                }
-                .buttonStyle(.plain)
-
                 if state.islandListSessions.isEmpty {
                     emptyStateCard
                 }
@@ -337,29 +322,34 @@ struct CodexModuleContentView: View {
         }
     }
 
-    private var globalInfoCard: some View {
+    private var agentsHeaderBar: some View {
         sectionCard {
-            VStack(alignment: .leading, spacing: 7) {
-                HStack(alignment: .center, spacing: 8) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.7))
+            HStack(alignment: .center, spacing: 8) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.7))
 
-                    Text("Agents")
-                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                        .tracking(0.6)
-                        .foregroundStyle(.white.opacity(0.9))
-                        .lineLimit(1)
+                Text("Agents")
+                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                    .tracking(0.6)
+                    .foregroundStyle(.white.opacity(0.9))
+                    .lineLimit(1)
 
-                    Spacer(minLength: 0)
+                liveCountBadge
 
-                    HStack(spacing: 7) {
-                        liveCountBadge
-                    }
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+                Spacer(minLength: 0)
+
+                Button {
+                    state.showNewSession()
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(width: 22, height: 22)
                 }
-
-                providerQuotaStrip
+                .buttonStyle(.plain)
+                .foregroundStyle(.white.opacity(0.82))
+                .background(Color.white.opacity(0.075), in: Circle())
+                .help("New Session")
             }
         }
         .background {
@@ -373,6 +363,16 @@ struct CodexModuleContentView: View {
             }
 
             measuredGlobalInfoCardHeight = height
+        }
+    }
+
+    @ViewBuilder
+    private var providerQuotaFooter: some View {
+        if !state.providerQuotaItems.isEmpty {
+            providerQuotaStrip
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
     }
 
@@ -546,7 +546,11 @@ struct CodexModuleContentView: View {
                 .fill(.white.opacity(0.055))
                 .frame(height: 1)
 
-            replyComposer(for: session)
+            if state.canReplyToSession(session) {
+                replyComposer(for: session)
+            } else {
+                unsupportedReplyFooter(for: session)
+            }
         }
         .islandModuleCardSurface()
     }
@@ -697,7 +701,6 @@ struct CodexModuleContentView: View {
     }
 
     private func replyComposer(for session: SessionSnapshot) -> some View {
-        let canReply = state.canReplyToSession(session)
         let placeholder = state.replyPlaceholder(session)
 
         return HStack(spacing: 8) {
@@ -705,7 +708,6 @@ struct CodexModuleContentView: View {
                 .textFieldStyle(.plain)
                 .font(IslandVisualLanguage.islandBody(12.5, weight: .medium))
                 .foregroundStyle(.white.opacity(0.9))
-                .disabled(!canReply)
 
             Button {
                 let reply = conversationReplyText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -717,11 +719,39 @@ struct CodexModuleContentView: View {
                     .font(.system(size: 24))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(canReply ? .white.opacity(0.9) : .white.opacity(0.22))
-            .disabled(!canReply || conversationReplyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .foregroundStyle(.white.opacity(0.9))
+            .disabled(conversationReplyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
+        .background(Color.white.opacity(0.025))
+    }
+
+    private func unsupportedReplyFooter(for session: SessionSnapshot) -> some View {
+        HStack(spacing: 9) {
+            Image(systemName: "arrow.up.forward.app")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(.white.opacity(0.54))
+
+            Text(state.replyPlaceholder(session))
+                .font(IslandVisualLanguage.islandBody(11.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.58))
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+
+            Button {
+                state.openSessionApp(session.id)
+            } label: {
+                Text("Open App")
+                    .font(IslandVisualLanguage.islandLabel(10.5, weight: .bold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.white.opacity(0.82))
+            .islandGlassCapsule()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
         .background(Color.white.opacity(0.025))
     }
 

@@ -346,11 +346,19 @@ final class IslandLogicTests: XCTestCase {
 
     func testSessionSnapshotCanSendTextFollowsDirectReplyCapability() {
         XCTAssertTrue(makeSession(id: "codex", provider: .codex, jumpTarget: replyCapableJumpTarget(sessionID: "codex")).canSendText)
-        XCTAssertFalse(makeSession(id: "codex-no-target", provider: .codex).canSendText)
+        XCTAssertTrue(makeSession(id: "codex-no-target", provider: .codex).canSendText)
+        XCTAssertFalse(makeSession(id: "codex-attention", provider: .codex, phase: .waitingForApproval).canSendText)
         XCTAssertFalse(makeSession(id: "claude", provider: .claudeCode, jumpTarget: replyCapableJumpTarget(sessionID: "claude")).canSendText)
         XCTAssertFalse(makeSession(id: "cursor", provider: .cursor, jumpTarget: replyCapableJumpTarget(sessionID: "cursor")).canSendText)
         XCTAssertFalse(makeSession(id: "antigravity", provider: .antigravity, jumpTarget: replyCapableJumpTarget(sessionID: "antigravity")).canSendText)
         XCTAssertFalse(makeSession(id: "conductor", provider: .conductor, jumpTarget: replyCapableJumpTarget(sessionID: "conductor")).canSendText)
+    }
+
+    func testInteractiveHookTimeoutsExceedIslandApprovalWait() {
+        XCTAssertEqual(hookTimeout(for: "PreToolUse", provider: .codex), 45)
+        XCTAssertEqual(hookTimeout(for: "PreToolUse", provider: .claudeCode), 45)
+        XCTAssertEqual(hookTimeout(for: "PreToolUse", provider: .antigravity), 45)
+        XCTAssertEqual(hookTimeout(for: "PermissionRequest", provider: .codex), 45)
     }
 
     func testAntigravityHookPayloadNormalizesClaudeStyleEventShape() throws {
@@ -1045,6 +1053,10 @@ final class IslandLogicTests: XCTestCase {
             paneTitle: "pane",
             terminalSessionID: "terminal-\(sessionID)"
         )
+    }
+
+    private func hookTimeout(for eventName: String, provider: AgentProvider) -> Int? {
+        provider.hookEvents.first { $0.name == eventName }?.timeout
     }
 
     private func encodedProjectDirectoryName(for url: URL) -> String {

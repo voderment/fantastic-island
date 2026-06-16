@@ -32,13 +32,15 @@ final class HorizonWeatherService: NSObject, ObservableObject {
         authorizationStatus = locationManager.authorizationStatus
     }
 
-    func refreshIfNeeded(force: Bool = false) {
+    func refreshIfNeeded(force: Bool = false, requestAuthorizationIfNeeded: Bool = false) {
         let status = locationManager.authorizationStatus
         authorizationStatus = status
 
         switch status {
         case .notDetermined:
-            locationManager.requestWhenInUseAuthorization()
+            if requestAuthorizationIfNeeded {
+                locationManager.requestWhenInUseAuthorization()
+            }
         case .authorizedAlways, .authorizedWhenInUse:
             guard force || Date().timeIntervalSince(lastFetchAt) > 900 else {
                 return

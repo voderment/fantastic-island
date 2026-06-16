@@ -209,7 +209,9 @@ final class IslandAppModel: ObservableObject {
             rawValue: defaults.string(forKey: IslandDefaults.interfaceLanguageKey) ?? ""
         ) ?? .followSystem
         self.enabledModuleIDs = loadedEnabledModuleIDs
-        self.selectedModuleID = loadedEnabledModuleIDs.first ?? agentsModule.id
+        self.selectedModuleID = loadedEnabledModuleIDs.contains(agentsModule.id)
+            ? agentsModule.id
+            : (allModules.first { loadedEnabledModuleIDs.contains($0.id) }?.id ?? agentsModule.id)
         normalizeSelectedModuleID()
         refreshLaunchAtLoginState()
 
@@ -499,6 +501,7 @@ final class IslandAppModel: ObservableObject {
         openReason = reason
         if !reason.isNotification {
             presentedActivity = nil
+            prepareModuleForUserIntent(selectedModuleID)
         }
         islandPeeking = false
         setIslandExpanded(true, shouldReposition: false)
@@ -596,6 +599,7 @@ final class IslandAppModel: ObservableObject {
             let fromState = logicalPresentationState
             let didChange = selectedModuleID != id
             selectedModuleID = id
+            prepareModuleForUserIntent(id)
             if didChange {
                 reconcileActivities(allowAutoPresentation: false)
             }
@@ -1424,6 +1428,7 @@ final class IslandAppModel: ObservableObject {
         }
 
         selectedModuleID = activity.moduleID
+        prepareModuleForUserIntent(activity.moduleID)
     }
 
     private func updateNotificationAutoCollapse() {
@@ -1740,14 +1745,25 @@ final class IslandAppModel: ObservableObject {
     ) -> Set<String> {
         let availableIDs = Set(availableModules.map(\.id))
         let storedIDs = Set(defaults.stringArray(forKey: IslandDefaults.enabledModuleIDsKey) ?? [])
-        var sanitizedIDs = availableIDs.intersection(storedIDs)
-        if !storedIDs.isEmpty, availableIDs.contains(HorizonModuleModel.moduleID) {
-            sanitizedIDs.insert(HorizonModuleModel.moduleID)
+        let defaultIDs: Set<String> = [
+            CodexModuleModel.moduleID,
+            PlayerModuleModel.moduleID,
+            HorizonModuleModel.moduleID,
+        ]
+        let sanitizedDefaults = availableIDs.intersection(defaultIDs)
+
+        guard !storedIDs.isEmpty else {
+            return sanitizedDefaults.isEmpty ? availableIDs : sanitizedDefaults
         }
-        if !storedIDs.isEmpty, availableIDs.contains(XPostModuleModel.moduleID) {
-            sanitizedIDs.insert(XPostModuleModel.moduleID)
+
+        let sanitizedIDs = availableIDs.intersection(storedIDs)
+        return sanitizedIDs.isEmpty ? (sanitizedDefaults.isEmpty ? availableIDs : sanitizedDefaults) : sanitizedIDs
+    }
+
+    private func prepareModuleForUserIntent(_ moduleID: String) {
+        if moduleID == HorizonModuleModel.moduleID {
+            horizonModule.activateForUserIntent()
         }
-        return sanitizedIDs.isEmpty ? availableIDs : sanitizedIDs
     }
 
 }

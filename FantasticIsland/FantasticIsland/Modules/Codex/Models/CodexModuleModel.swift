@@ -117,6 +117,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
 
         do {
             try hookBridgeServer.start()
+            try hookManager.ensureHelperInstalled()
             bridgeStatusText = "Ready"
         } catch {
             bridgeStatusText = "Unavailable"
