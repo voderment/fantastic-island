@@ -607,7 +607,7 @@ final class IslandShellController {
                 return
             }
 
-            model.expandIsland(reason: .manualTap)
+            model.expandIsland(reason: .hover)
             self.pendingHoverOpen = nil
         }
         pendingHoverOpen = workItem
