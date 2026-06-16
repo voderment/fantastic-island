@@ -52,6 +52,33 @@ struct PlayerModuleContentView: View {
     }
 
     private var standardContent: some View {
+        HStack(alignment: .center, spacing: 12) {
+            artworkView
+
+            if showsAutomationIssue {
+                VStack(alignment: .leading, spacing: 8) {
+                    titleBlock
+                    automationIssueActionRow
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    playerTitleRow
+                    playerControlStrip
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .background(Color.white.opacity(0.018), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.055), lineWidth: 0.75)
+        }
+    }
+
+    private var legacyStandardContent: some View {
         VStack(alignment: .leading, spacing: PlayerExpandedMetrics.outerSpacing) {
             HStack(alignment: .top, spacing: PlayerExpandedMetrics.primaryColumnSpacing) {
                 artworkView
@@ -74,6 +101,65 @@ struct PlayerModuleContentView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
+    }
+
+    private var playerTitleRow: some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 7) {
+                    PlayerAnimatedTitleText(
+                        title: state.nowPlayingState.titleText,
+                        lineLimit: 1
+                    )
+                    .layoutPriority(1)
+
+                    if state.nowPlayingState.playbackStatus.isPlaying {
+                        PlayerVisualizerView(isPlaying: true)
+                    }
+                }
+
+                Text(state.nowPlayingState.artistText)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.52))
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            sourceBadge
+        }
+    }
+
+    private var playerControlStrip: some View {
+        HStack(alignment: .center, spacing: 10) {
+            controlsRow
+                .layoutPriority(1)
+
+            VStack(alignment: .leading, spacing: 3) {
+                PlayerProgressBar(
+                    progress: displayedProgress,
+                    isEnabled: state.nowPlayingState.supportsSeeking,
+                    onChanged: { progress in
+                        scrubProgress = progress
+                    },
+                    onEnded: { progress in
+                        scrubProgress = nil
+                        state.seek(progress)
+                    }
+                )
+                .frame(height: 10)
+
+                HStack(spacing: 0) {
+                    Text(displayedElapsedText)
+                    Spacer(minLength: 0)
+                    Text(displayedRemainingText)
+                }
+                .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.46))
+            }
+            .frame(maxWidth: .infinity)
+
+            playbackModeControls
+        }
     }
 
     private func peekContent(notification: PlayerModuleModel.TrackSwitchNotification) -> some View {
@@ -204,9 +290,9 @@ struct PlayerModuleContentView: View {
                 .minimumScaleFactor(0.78)
         }
         .foregroundStyle(.white.opacity(0.72))
-        .padding(.horizontal, 7)
-        .frame(height: 20)
-        .frame(maxWidth: 128, alignment: .leading)
+        .padding(.horizontal, 8)
+        .frame(height: 22)
+        .frame(maxWidth: 132, alignment: .leading)
         .background(Color.white.opacity(0.075), in: Capsule())
         .overlay {
             Capsule()
@@ -231,7 +317,7 @@ struct PlayerModuleContentView: View {
     }
 
     private var playbackModeControls: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 5) {
             modeButton(
                 systemName: state.nowPlayingState.shuffleMode.symbolName,
                 isActive: state.nowPlayingState.shuffleMode == .on,
@@ -277,20 +363,20 @@ struct PlayerModuleContentView: View {
     }
 
     private var controlsRow: some View {
-        HStack(spacing: PlayerExpandedMetrics.controlsSpacing) {
-            controlButton(systemName: "backward.fill", iconSize: 16, frameWidth: 30, frameHeight: 26, action: state.previousTrack)
+        HStack(spacing: 2) {
+            controlButton(systemName: "backward.fill", iconSize: 14, frameWidth: 26, frameHeight: 24, action: state.previousTrack)
                 .disabled(!state.supportsTransportControls)
 
             controlButton(
                 systemName: state.nowPlayingState.playbackStatus.isPlaying ? "pause.fill" : "play.fill",
-                iconSize: 20,
-                frameWidth: 32,
-                frameHeight: 28,
+                iconSize: 18,
+                frameWidth: 30,
+                frameHeight: 26,
                 action: state.togglePlayPause
             )
             .disabled(!state.supportsTransportControls)
 
-            controlButton(systemName: "forward.fill", iconSize: 16, frameWidth: 30, frameHeight: 26, action: state.nextTrack)
+            controlButton(systemName: "forward.fill", iconSize: 14, frameWidth: 26, frameHeight: 24, action: state.nextTrack)
                 .disabled(!state.supportsTransportControls)
         }
         .opacity(state.supportsTransportControls ? 1 : PlayerExpandedMetrics.controlButtonOpacityDisabled)
@@ -336,10 +422,10 @@ struct PlayerModuleContentView: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(modeButtonForegroundColor(isActive: isActive, isEnabled: isEnabled))
-                .frame(width: 30, height: 26)
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .frame(width: 24, height: 24)
+                .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
         .buttonStyle(PlayerModeButtonStyle(isActive: isActive, isEnabled: isEnabled))
         .disabled(!isEnabled)

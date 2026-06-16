@@ -58,7 +58,7 @@ struct IslandExpandedNavigationView: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.96)))
                 }
             }
-            .foregroundStyle(tab.isSelected ? Color.black.opacity(0.9) : .white.opacity(0.74))
+            .foregroundStyle(tab.isSelected ? Color.white.opacity(0.94) : .white.opacity(0.68))
             .frame(width: tabWidth(for: tab), height: 28)
             .background {
                 tabBackground(tab)
@@ -83,13 +83,13 @@ struct IslandExpandedNavigationView: View {
             .fill(tabBackgroundColor(tab))
             .overlay {
                 Capsule(style: .continuous)
-                    .strokeBorder(Color.white.opacity(tab.isSelected ? 0 : 0.09), lineWidth: 0.7)
+                    .strokeBorder(Color.white.opacity(tab.isSelected ? 0.18 : 0.08), lineWidth: 0.7)
             }
-            .shadow(color: tab.isSelected ? .black.opacity(0.12) : .clear, radius: 6, y: 2)
+            .shadow(color: tab.isSelected ? .black.opacity(0.18) : .clear, radius: 5, y: 2)
     }
 
     private func tabBackgroundColor(_ tab: IslandShellTabRenderState) -> Color {
-        tab.isSelected ? Color.white.opacity(0.94) : Color.white.opacity(0.055)
+        tab.isSelected ? Color.white.opacity(0.13) : Color.white.opacity(0.045)
     }
 
     @ViewBuilder
