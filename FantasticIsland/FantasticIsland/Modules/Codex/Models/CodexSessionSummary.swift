@@ -104,14 +104,26 @@ enum CodexIslandSessionPresentation {
             }
 
             let resolvedLimit = max(1, limit)
-            return Array(([activeNotificationSession] + remainingSessions).prefix(resolvedLimit))
+            return [activeNotificationSession]
+                + compactSessions(from: remainingSessions, limit: resolvedLimit - 1)
         }
 
         if isShowingAllSessions {
             return primarySessions
         }
 
-        return Array(primarySessions.prefix(max(0, limit)))
+        return compactSessions(from: primarySessions, limit: limit)
+    }
+
+    private static func compactSessions(from sessions: [SessionSnapshot], limit: Int) -> [SessionSnapshot] {
+        let requiredSessions = sessions.filter { session in
+            session.phase.requiresAttention || session.isInProgressSession
+        }
+        let optionalSessions = sessions.filter { session in
+            !(session.phase.requiresAttention || session.isInProgressSession)
+        }
+        let optionalLimit = max(0, limit - requiredSessions.count)
+        return requiredSessions + optionalSessions.prefix(optionalLimit)
     }
 
     private static func displayPriority(for session: SessionSnapshot, now: Date) -> Int {

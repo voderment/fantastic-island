@@ -509,6 +509,80 @@ final class IslandLogicTests: XCTestCase {
         XCTAssertEqual(expanded.first?.id, "approval")
     }
 
+    func testAgentsCompactOverviewIncludesAllWorkingSessionsBeforeRecentOverflow() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let sessions = [
+            makeSession(id: "running-1", title: "Running 1", phase: .running, at: now.addingTimeInterval(-10)),
+            makeSession(id: "running-2", title: "Running 2", phase: .running, at: now.addingTimeInterval(-20)),
+            makeSession(id: "running-3", title: "Running 3", phase: .running, at: now.addingTimeInterval(-30)),
+            makeSession(id: "busy-1", title: "Busy 1", phase: .busy, at: now.addingTimeInterval(-40)),
+            makeSession(id: "busy-2", title: "Busy 2", phase: .busy, at: now.addingTimeInterval(-50)),
+            makeSession(id: "busy-3", title: "Busy 3", phase: .busy, at: now.addingTimeInterval(-60)),
+            makeSession(id: "recent-complete", title: "Recent Complete", phase: .completed, at: now.addingTimeInterval(-70)),
+        ]
+        let buckets = CodexIslandSessionPresentation.computeBuckets(from: sessions, now: now)
+
+        let compact = CodexIslandSessionPresentation.overviewSessions(
+            from: buckets.primary,
+            activeNotificationSession: nil,
+            isNotificationMode: false,
+            isShowingAllSessions: false
+        )
+
+        XCTAssertEqual(compact.map(\.id), ["running-1", "running-2", "running-3", "busy-1", "busy-2", "busy-3"])
+        XCTAssertFalse(compact.contains { $0.id == "recent-complete" })
+    }
+
+    func testNotificationOverviewKeepsWorkingSessionsVisibleBeyondCompactLimit() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let approval = makeSession(id: "approval", title: "Approval", phase: .waitingForApproval, at: now.addingTimeInterval(-10))
+        let sessions = [
+            approval,
+            makeSession(id: "running-1", title: "Running 1", phase: .running, at: now.addingTimeInterval(-20)),
+            makeSession(id: "running-2", title: "Running 2", phase: .running, at: now.addingTimeInterval(-30)),
+            makeSession(id: "busy-1", title: "Busy 1", phase: .busy, at: now.addingTimeInterval(-40)),
+            makeSession(id: "busy-2", title: "Busy 2", phase: .busy, at: now.addingTimeInterval(-50)),
+            makeSession(id: "busy-3", title: "Busy 3", phase: .busy, at: now.addingTimeInterval(-60)),
+            makeSession(id: "recent-complete", title: "Recent Complete", phase: .completed, at: now.addingTimeInterval(-70)),
+        ]
+        let buckets = CodexIslandSessionPresentation.computeBuckets(from: sessions, now: now)
+
+        let focused = CodexIslandSessionPresentation.overviewSessions(
+            from: buckets.primary,
+            activeNotificationSession: approval,
+            isNotificationMode: true,
+            isShowingAllSessions: false,
+            limit: 3
+        )
+
+        XCTAssertEqual(focused.map(\.id), ["approval", "running-1", "running-2", "busy-1", "busy-2", "busy-3"])
+        XCTAssertFalse(focused.contains { $0.id == "recent-complete" })
+    }
+
+    func testAgentsCompactOverviewIncludesAllAttentionSessionsBeforeRecentOverflow() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let sessions = [
+            makeSession(id: "approval-1", title: "Approval 1", phase: .waitingForApproval, at: now.addingTimeInterval(-10)),
+            makeSession(id: "approval-2", title: "Approval 2", phase: .waitingForApproval, at: now.addingTimeInterval(-20)),
+            makeSession(id: "approval-3", title: "Approval 3", phase: .waitingForApproval, at: now.addingTimeInterval(-30)),
+            makeSession(id: "question-1", title: "Question 1", phase: .waitingForAnswer, at: now.addingTimeInterval(-40)),
+            makeSession(id: "question-2", title: "Question 2", phase: .waitingForAnswer, at: now.addingTimeInterval(-50)),
+            makeSession(id: "question-3", title: "Question 3", phase: .waitingForAnswer, at: now.addingTimeInterval(-60)),
+            makeSession(id: "recent-complete", title: "Recent Complete", phase: .completed, at: now.addingTimeInterval(-70)),
+        ]
+        let buckets = CodexIslandSessionPresentation.computeBuckets(from: sessions, now: now)
+
+        let compact = CodexIslandSessionPresentation.overviewSessions(
+            from: buckets.primary,
+            activeNotificationSession: nil,
+            isNotificationMode: false,
+            isShowingAllSessions: false
+        )
+
+        XCTAssertEqual(compact.map(\.id), ["approval-1", "approval-2", "approval-3", "question-1", "question-2", "question-3"])
+        XCTAssertFalse(compact.contains { $0.id == "recent-complete" })
+    }
+
     func testInProgressSessionsRemainIslandVisibleUntilEnded() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         var endedRunningSession = makeSession(
