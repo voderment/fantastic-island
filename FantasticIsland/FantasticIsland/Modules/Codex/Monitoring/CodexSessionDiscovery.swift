@@ -6,6 +6,12 @@ struct DiscoveredSession: Equatable {
     let cwd: String
     let title: String
     let transcriptPath: String
+    let phaseHint: SessionPhase?
+    let isSessionEndedHint: Bool?
+    let currentCommandPreview: String?
+    let latestUserPrompt: String?
+    let latestAssistantMessage: String?
+    let completionMessageMarkdown: String?
     let jumpTarget: CodexTerminalJumpTarget?
     let assistantSummary: String?
     let sessionSurface: CodexSessionSurface
@@ -17,6 +23,12 @@ struct DiscoveredSession: Equatable {
         cwd: String,
         title: String,
         transcriptPath: String,
+        phaseHint: SessionPhase? = nil,
+        isSessionEndedHint: Bool? = nil,
+        currentCommandPreview: String? = nil,
+        latestUserPrompt: String? = nil,
+        latestAssistantMessage: String? = nil,
+        completionMessageMarkdown: String? = nil,
         jumpTarget: CodexTerminalJumpTarget? = nil,
         assistantSummary: String? = nil,
         sessionSurface: CodexSessionSurface = .unknown,
@@ -27,10 +39,38 @@ struct DiscoveredSession: Equatable {
         self.cwd = cwd
         self.title = title
         self.transcriptPath = transcriptPath
+        self.phaseHint = phaseHint
+        self.isSessionEndedHint = isSessionEndedHint
+        self.currentCommandPreview = currentCommandPreview
+        self.latestUserPrompt = latestUserPrompt
+        self.latestAssistantMessage = latestAssistantMessage
+        self.completionMessageMarkdown = completionMessageMarkdown
         self.jumpTarget = jumpTarget
         self.assistantSummary = assistantSummary
         self.sessionSurface = sessionSurface
         self.modifiedAt = modifiedAt
+    }
+}
+
+private extension DiscoveredSession {
+    func fillingGaps(from fallback: DiscoveredSession) -> DiscoveredSession {
+        DiscoveredSession(
+            id: id,
+            provider: provider,
+            cwd: cwd,
+            title: title,
+            transcriptPath: transcriptPath,
+            phaseHint: phaseHint,
+            isSessionEndedHint: isSessionEndedHint,
+            currentCommandPreview: currentCommandPreview,
+            latestUserPrompt: latestUserPrompt,
+            latestAssistantMessage: latestAssistantMessage,
+            completionMessageMarkdown: completionMessageMarkdown,
+            jumpTarget: jumpTarget ?? fallback.jumpTarget,
+            assistantSummary: assistantSummary ?? fallback.assistantSummary,
+            sessionSurface: sessionSurface.merged(with: fallback.sessionSurface),
+            modifiedAt: modifiedAt ?? fallback.modifiedAt
+        )
     }
 }
 
@@ -139,6 +179,12 @@ struct CodexSessionDiscovery {
                 cwd: stored.cwd,
                 title: stored.title,
                 transcriptPath: stored.transcriptPath,
+                phaseHint: stored.phase,
+                isSessionEndedHint: stored.isSessionEnded,
+                currentCommandPreview: stored.currentCommandPreview,
+                latestUserPrompt: stored.latestUserPrompt,
+                latestAssistantMessage: stored.latestAssistantMessage,
+                completionMessageMarkdown: stored.completionMessageMarkdown,
                 jumpTarget: stored.jumpTarget,
                 assistantSummary: stored.assistantSummary,
                 sessionSurface: stored.sessionSurface,
@@ -293,7 +339,9 @@ struct CodexSessionDiscovery {
         let lhsIsStored = isStoredSession(lhs)
         let rhsIsStored = isStoredSession(rhs)
         if lhsIsStored != rhsIsStored {
-            return lhsIsStored ? rhs : lhs
+            let native = lhsIsStored ? rhs : lhs
+            let stored = lhsIsStored ? lhs : rhs
+            return native.fillingGaps(from: stored)
         }
 
         if lhs.provider == .codex, rhs.provider != .codex {

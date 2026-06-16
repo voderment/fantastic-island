@@ -20,6 +20,12 @@ struct AgentStoredSession: Equatable {
     var cwd: String
     var title: String
     var transcriptPath: String
+    var phase: SessionPhase
+    var isSessionEnded: Bool
+    var currentCommandPreview: String?
+    var latestUserPrompt: String?
+    var latestAssistantMessage: String?
+    var completionMessageMarkdown: String?
     var jumpTarget: CodexTerminalJumpTarget?
     var assistantSummary: String?
     var sessionSurface: CodexSessionSurface
@@ -104,10 +110,18 @@ struct AgentSessionStore {
         let provider = payload.agentProvider
         let title = SessionSnapshot.title(for: payload.cwd, provider: provider)
         let assistantSummary = records.reversed().compactMap(\.payload.assistantSummary).first
+        let latestAssistantMessage = records.reversed().compactMap(\.payload.assistantSummary).first
+        let latestUserPrompt = records.reversed().compactMap(\.payload.prompt).first
+        let currentCommandPreview = records.reversed().compactMap { record in
+            record.payload.toolInput?.command
+                ?? record.payload.toolInput?.description
+                ?? record.payload.prompt
+        }.first
         let jumpTarget = records.reversed().compactMap(\.payload.terminalJumpTarget).first
         let surface = records.reduce(CodexSessionSurface.unknown) { partial, record in
             partial.merged(with: record.payload.sessionSurface)
         }
+        let phase = Self.phaseHint(from: latest.payload)
 
         return AgentStoredSession(
             id: payload.sessionID,
@@ -115,6 +129,12 @@ struct AgentSessionStore {
             cwd: payload.cwd,
             title: title,
             transcriptPath: url.path,
+            phase: phase,
+            isSessionEnded: false,
+            currentCommandPreview: currentCommandPreview,
+            latestUserPrompt: latestUserPrompt,
+            latestAssistantMessage: latestAssistantMessage,
+            completionMessageMarkdown: phase == .completed ? latestAssistantMessage : nil,
             jumpTarget: jumpTarget,
             assistantSummary: assistantSummary,
             sessionSurface: surface,
@@ -151,6 +171,17 @@ struct AgentSessionStore {
         }
         let result = String(scalars).trimmingCharacters(in: CharacterSet(charactersIn: "-."))
         return result.isEmpty ? UUID().uuidString : result
+    }
+
+    private static func phaseHint(from payload: CodexHookPayload) -> SessionPhase {
+        switch payload.hookEventName {
+        case .sessionStart, .userPromptSubmit, .postToolUse:
+            return .running
+        case .preToolUse, .permissionRequest:
+            return .busy
+        case .stop:
+            return .completed
+        }
     }
 }
 

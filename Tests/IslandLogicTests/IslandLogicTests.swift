@@ -748,6 +748,95 @@ final class IslandLogicTests: XCTestCase {
         XCTAssertEqual(sessions.first?.assistantSummary, "Antigravity surfaced.")
     }
 
+    func testSessionStoreRestoresActivePhaseFromLatestHookRecord() throws {
+        let rootURL = temporaryDirectory().appendingPathComponent("store", isDirectory: true)
+        let store = AgentSessionStore(rootURL: rootURL)
+        let startPayload = CodexHookPayload(
+            cwd: "/tmp/conductor-workspace",
+            hookEventName: .userPromptSubmit,
+            sessionID: "conductor-active",
+            terminalApp: "Conductor",
+            terminalBundleIdentifier: "com.conductor.app",
+            workspaceName: "belgrade",
+            conductorPort: 3888,
+            source: "codex",
+            prompt: "Keep this visible"
+        )
+        let busyPayload = CodexHookPayload(
+            cwd: "/tmp/conductor-workspace",
+            hookEventName: .preToolUse,
+            sessionID: "conductor-active",
+            terminalApp: "Conductor",
+            terminalBundleIdentifier: "com.conductor.app",
+            workspaceName: "belgrade",
+            conductorPort: 3888,
+            source: "codex",
+            toolName: "shell",
+            toolInput: CodexHookToolInput(command: "swift test"),
+            prompt: "swift test"
+        )
+
+        let url = try store.append(startPayload, timestamp: Date(timeIntervalSince1970: 10))
+        _ = try store.append(busyPayload, timestamp: Date(timeIntervalSince1970: 11))
+        let stored = try XCTUnwrap(store.loadSession(at: url, modifiedAt: Date(timeIntervalSince1970: 11)))
+
+        XCTAssertEqual(stored.provider, .conductor)
+        XCTAssertEqual(stored.phase, .busy)
+        XCTAssertEqual(stored.currentCommandPreview, "swift test")
+        XCTAssertEqual(stored.latestUserPrompt, "swift test")
+        XCTAssertEqual(stored.jumpTarget?.conductorRoutingURL?.absoluteString, "http://127.0.0.1:3888")
+    }
+
+    func testDiscoveredHookStoreSessionBecomesVisibleAfterRestart() throws {
+        let rootURL = temporaryDirectory().appendingPathComponent("store", isDirectory: true)
+        let store = AgentSessionStore(rootURL: rootURL)
+        let payload = CodexHookPayload(
+            cwd: "/tmp/ag-workspace",
+            hookEventName: .preToolUse,
+            sessionID: "ag-active-after-restart",
+            source: "antigravity",
+            toolName: "shell",
+            toolInput: CodexHookToolInput(command: "npm test"),
+            prompt: "Run checks"
+        )
+        let storedURL = try store.append(payload, timestamp: Date(timeIntervalSince1970: 1_800_000_000))
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 1_800_000_000)],
+            ofItemAtPath: storedURL.path
+        )
+
+        let discovery = CodexSessionDiscovery(
+            rootURL: temporaryDirectory().appendingPathComponent("codex", isDirectory: true),
+            claudeRootURL: temporaryDirectory().appendingPathComponent("claude", isDirectory: true),
+            cursorRootURL: temporaryDirectory().appendingPathComponent("cursor", isDirectory: true),
+            sessionStore: store
+        )
+        let session = try XCTUnwrap(discovery.discoverRecentSessions(now: Date(timeIntervalSince1970: 1_800_000_005)).first)
+
+        let restored = SessionSnapshot(
+            id: session.id,
+            provider: session.provider,
+            cwd: session.cwd,
+            title: session.title,
+            transcriptPath: session.transcriptPath,
+            phase: try XCTUnwrap(session.phaseHint),
+            lastEventAt: session.modifiedAt,
+            currentCommandPreview: session.currentCommandPreview,
+            latestUserPrompt: session.latestUserPrompt,
+            latestAssistantMessage: session.latestAssistantMessage,
+            assistantSummary: session.assistantSummary,
+            jumpTarget: session.jumpTarget,
+            sessionSurface: session.sessionSurface,
+            isSessionEnded: session.isSessionEndedHint ?? false
+        )
+
+        XCTAssertEqual(restored.provider, .antigravity)
+        XCTAssertEqual(restored.phase, .busy)
+        XCTAssertEqual(restored.currentCommandPreview, "npm test")
+        XCTAssertTrue(restored.isVisibleInIsland(at: Date(timeIntervalSince1970: 1_800_000_005)))
+        XCTAssertEqual(AgentActivityModel.recompute(from: [restored], now: Date(timeIntervalSince1970: 1_800_000_005)).activeSessionCount, 1)
+    }
+
     func testConductorHookPayloadPreservesWorkspaceMetadata() throws {
         let data = try JSONSerialization.data(withJSONObject: [
             "source": "codex",
@@ -812,12 +901,18 @@ final class IslandLogicTests: XCTestCase {
         let store = AgentSessionStore(rootURL: temp.appendingPathComponent("store", isDirectory: true))
         let payload = CodexHookPayload(
             cwd: "/tmp/stored",
-            hookEventName: .userPromptSubmit,
+            hookEventName: .preToolUse,
             sessionID: "same-session",
             source: "codex",
+            toolName: "shell",
+            toolInput: CodexHookToolInput(command: "swift test"),
             prompt: "stored prompt"
         )
-        _ = try store.append(payload)
+        let storedURL = try store.append(payload)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 1_900_000_000)],
+            ofItemAtPath: storedURL.path
+        )
 
         let discovery = CodexSessionDiscovery(
             rootURL: codexRoot,
@@ -830,6 +925,9 @@ final class IslandLogicTests: XCTestCase {
         XCTAssertEqual(sessions.count, 1)
         XCTAssertEqual(sessions.first?.provider, .codex)
         XCTAssertEqual(sessions.first?.cwd, "/tmp/native")
+        XCTAssertNil(sessions.first?.phaseHint)
+        XCTAssertNil(sessions.first?.currentCommandPreview)
+        XCTAssertNil(sessions.first?.latestUserPrompt)
         XCTAssertEqual(URL(fileURLWithPath: sessions.first?.transcriptPath ?? "").standardizedFileURL.path, codexURL.standardizedFileURL.path)
     }
 

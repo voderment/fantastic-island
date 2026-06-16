@@ -31,6 +31,15 @@ final class CodexSessionReducer {
         snapshot.title = session.title
         snapshot.transcriptPath = session.transcriptPath
         snapshot.sourceFlags.insert(.rollout)
+        if isStoredTranscriptPath(session.transcriptPath) {
+            snapshot.sourceFlags.insert(.hooks)
+        }
+        if let phaseHint = session.phaseHint {
+            snapshot.phase = phaseHint
+        }
+        if let isSessionEndedHint = session.isSessionEndedHint {
+            snapshot.isSessionEnded = isSessionEndedHint
+        }
         snapshot.sessionSurface = snapshot.sessionSurface.merged(with: session.sessionSurface)
         if snapshot.lastEventAt == nil,
            let modifiedAt = session.modifiedAt,
@@ -43,6 +52,18 @@ final class CodexSessionReducer {
         if let assistantSummary = session.assistantSummary {
             snapshot.assistantSummary = assistantSummary
         }
+        if let currentCommandPreview = session.currentCommandPreview {
+            snapshot.currentCommandPreview = currentCommandPreview
+        }
+        if let latestUserPrompt = session.latestUserPrompt {
+            snapshot.latestUserPrompt = latestUserPrompt
+        }
+        if let latestAssistantMessage = session.latestAssistantMessage {
+            snapshot.latestAssistantMessage = latestAssistantMessage
+        }
+        if let completionMessageMarkdown = session.completionMessageMarkdown {
+            snapshot.completionMessageMarkdown = completionMessageMarkdown
+        }
         if let transcriptPath = snapshot.transcriptPath {
             snapshot.transcriptTurns = AgentTranscriptParser.parseTurns(at: transcriptPath, provider: snapshot.provider)
             if let latestUser = snapshot.transcriptTurns.last(where: { $0.role == .user })?.text {
@@ -53,6 +74,10 @@ final class CodexSessionReducer {
             }
         }
         sessions[session.id] = snapshot
+    }
+
+    private func isStoredTranscriptPath(_ path: String) -> Bool {
+        path.contains("/Library/Application Support/Fantastic Island/Agent Sessions/")
     }
 
     func applyRolloutLine(_ line: String, for session: DiscoveredSession) {
@@ -71,6 +96,11 @@ final class CodexSessionReducer {
         }
         let previousPhase = snapshot.phase
         let previousLastEventAt = snapshot.lastEventAt
+        if session.phaseHint != nil,
+           let previousLastEventAt,
+           timestamp < previousLastEventAt {
+            return
+        }
 
         snapshot.merge(terminalDiscovery.inspect(object: object, sessionID: snapshot.id, cwd: snapshot.cwd, transcriptPath: snapshot.transcriptPath))
 
