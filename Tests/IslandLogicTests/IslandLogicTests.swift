@@ -325,6 +325,116 @@ final class IslandLogicTests: XCTestCase {
         XCTAssertEqual(try manager.status(), .notInstalled)
     }
 
+    func testHookDiagnosticsReportsProviderReadinessAndUsageBridgeState() throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let codexDirectory = root.appendingPathComponent(".codex", isDirectory: true)
+        let manager = CodexHookManager(codexDirectory: codexDirectory, homeDirectory: root)
+        try FileManager.default.createDirectory(at: codexDirectory, withIntermediateDirectories: true)
+        try "[features]\ncodex_hooks = true\n".write(
+            to: codexDirectory.appendingPathComponent("config.toml"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        for provider in AgentProvider.hookInstallationProviders {
+            try writeManagedHookConfig(for: provider, root: root, codexDirectory: codexDirectory)
+        }
+
+        let diagnostics = manager.diagnostics()
+        XCTAssertTrue(diagnostics.codexFeatureEnabled)
+        XCTAssertEqual(diagnostics.readyProviderCount, AgentProvider.hookInstallationProviders.count)
+        XCTAssertEqual(diagnostics.providers.first { $0.provider == .codex }?.hookState, .installed)
+        XCTAssertEqual(diagnostics.providers.first { $0.provider == .cursor }?.usageBridgeState, .unsupported)
+        XCTAssertEqual(diagnostics.providers.first { $0.provider == .claudeCode }?.usageBridgeState, .managed)
+        XCTAssertEqual(diagnostics.providers.first { $0.provider == .antigravity }?.usageBridgeState, .managed)
+    }
+
+    func testHookDiagnosticsTreatsMismatchedUsageBridgeAsCustom() throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let codexDirectory = root.appendingPathComponent(".codex", isDirectory: true)
+        let manager = CodexHookManager(codexDirectory: codexDirectory, homeDirectory: root)
+        try writeManagedHookConfig(
+            for: .claudeCode,
+            root: root,
+            codexDirectory: codexDirectory,
+            statusLine: ["type": "command", "command": "fantastic-island-hook --usage-provider antigravity"]
+        )
+
+        let claude = try XCTUnwrap(manager.diagnostics().providers.first { $0.provider == .claudeCode })
+        XCTAssertEqual(claude.hookState, .installed)
+        XCTAssertEqual(claude.usageBridgeState, .custom)
+        XCTAssertFalse(claude.isHealthy)
+        XCTAssertEqual(claude.statusText, "Custom quota")
+    }
+
+    func testHookDiagnosticsPreservesCustomUsageBridgeAsActionableState() throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let codexDirectory = root.appendingPathComponent(".codex", isDirectory: true)
+        let manager = CodexHookManager(codexDirectory: codexDirectory, homeDirectory: root)
+        try writeManagedHookConfig(
+            for: .claudeCode,
+            root: root,
+            codexDirectory: codexDirectory,
+            statusLine: ["type": "command", "command": "custom-status-line"]
+        )
+
+        let claude = try XCTUnwrap(manager.diagnostics().providers.first { $0.provider == .claudeCode })
+        XCTAssertEqual(claude.hookState, .installed)
+        XCTAssertEqual(claude.usageBridgeState, .custom)
+        XCTAssertFalse(claude.isHealthy)
+        XCTAssertEqual(claude.statusText, "Custom quota")
+    }
+
+    func testHookDiagnosticsReportsInvalidAndMissingProviderConfigs() throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let codexDirectory = root.appendingPathComponent(".codex", isDirectory: true)
+        let manager = CodexHookManager(codexDirectory: codexDirectory, homeDirectory: root)
+        let cursorURL = root.appendingPathComponent(AgentProvider.cursor.configRelativePath)
+        try FileManager.default.createDirectory(at: cursorURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "{".write(to: cursorURL, atomically: true, encoding: .utf8)
+
+        let diagnostics = manager.diagnostics()
+        XCTAssertEqual(diagnostics.providers.first { $0.provider == .cursor }?.hookState, .invalidConfig)
+        XCTAssertEqual(diagnostics.providers.first { $0.provider == .antigravity }?.hookState, .missing)
+        XCTAssertTrue(diagnostics.hasProblems)
+    }
+
+    func testHookDiagnosticsSummaryIncludesGlobalProblemState() {
+        let readyProvider = AgentHookProviderDiagnostic(
+            provider: .codex,
+            configPath: "/tmp/hooks.json",
+            hookState: .installed,
+            usageBridgeState: .unsupported,
+            installedEventCount: 1,
+            expectedEventCount: 1
+        )
+
+        XCTAssertEqual(AgentHookDiagnosticsReport(
+            helperInstalled: false,
+            socketExists: false,
+            codexFeatureEnabled: true,
+            providers: [readyProvider]
+        ).compactSummaryText, "Helper missing")
+
+        XCTAssertEqual(AgentHookDiagnosticsReport(
+            helperInstalled: true,
+            socketExists: false,
+            codexFeatureEnabled: false,
+            providers: [readyProvider]
+        ).compactSummaryText, "Codex hooks off")
+
+        XCTAssertTrue(AgentHookDiagnosticsReport(
+            helperInstalled: true,
+            socketExists: false,
+            codexFeatureEnabled: false,
+            providers: [readyProvider]
+        ).hasProblems)
+    }
+
     func testAgentsOverviewCapsDefaultListAndFocusesNotificationSession() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let sessions = [
@@ -1094,6 +1204,38 @@ final class IslandLogicTests: XCTestCase {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let data = try JSONSerialization.data(withJSONObject: object)
         try data.write(to: url, options: .atomic)
+    }
+
+    private func writeManagedHookConfig(
+        for provider: AgentProvider,
+        root: URL,
+        codexDirectory: URL,
+        statusLine: [String: Any]? = nil
+    ) throws {
+        let url = provider == .codex
+            ? codexDirectory.appendingPathComponent("hooks.json")
+            : root.appendingPathComponent(provider.configRelativePath)
+        let command = "fantastic-island-hook --source \(provider.hookSource)"
+        var hooks = [String: Any]()
+        for event in provider.hookEvents {
+            switch provider.hookFormat {
+            case .cursorFlat:
+                hooks[event.name] = [["command": command]]
+            case .codexNested, .claudeStyle:
+                hooks[event.name] = [["hooks": [["type": "command", "command": command, "timeout": event.timeout]]]]
+            }
+        }
+
+        var object: [String: Any] = ["hooks": hooks]
+        if let statusLine {
+            object["statusLine"] = statusLine
+        } else if CodexHookManager.statusLineUsageBridgeProviders.contains(provider) {
+            object["statusLine"] = [
+                "type": "command",
+                "command": "fantastic-island-hook --usage-provider \(provider.hookSource)",
+            ]
+        }
+        try writeJSONObject(object, to: url)
     }
 
     private static func sendPayload(_ payload: Data, to socketURL: URL) throws -> Data {

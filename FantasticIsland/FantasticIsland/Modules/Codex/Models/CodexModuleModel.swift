@@ -68,6 +68,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
 
     @Published private(set) var activityState = AgentActivityState()
     @Published private(set) var hooksStatus = HookInstallStatus.notInstalled
+    @Published private(set) var hookDiagnostics = AgentHookDiagnosticsReport.empty
     @Published private(set) var bridgeStatusText = "Starting"
     @Published private(set) var appServerStatusText = "Disconnected"
     @Published private(set) var sessionSurface: CodexIslandSurface = .sessionList(actionableSessionID: nil)
@@ -231,6 +232,9 @@ final class CodexModuleModel: ObservableObject, IslandModule {
             )
         }
     }
+    var hookDiagnosticItems: [AgentHookProviderDiagnostic] { hookDiagnostics.providers }
+    var hookDiagnosticsCompactSummaryText: String { hookDiagnostics.compactSummaryText }
+    var hookDiagnosticsHasProblems: Bool { hookDiagnostics.hasProblems }
     var tokenUsageHeatmapDays: [CodexTokenUsageDay] { tokenUsageHistory.days(dayCount: Self.tokenUsageHeatmapDayCount) }
     var tokenUsageHeatmapPeriodText: String { "\(Self.tokenUsageHeatmapDayCount)D \(formatTokenCount(tokenUsageHeatmapDays.map(\.totalTokens).reduce(0, +)))" }
     var tokenUsageHeatmapPeakText: String {
@@ -465,6 +469,9 @@ final class CodexModuleModel: ObservableObject, IslandModule {
             globalInfoFiveHourResetCompactText: globalInfoFiveHourResetCompactText,
             globalInfoWeekResetCompactText: globalInfoWeekResetCompactText,
             providerQuotaItems: providerQuotaItems,
+            hookDiagnosticItems: hookDiagnosticItems,
+            hookDiagnosticsSummaryText: hookDiagnosticsCompactSummaryText,
+            hookDiagnosticsHasProblems: hookDiagnosticsHasProblems,
             tokenUsageHeatmapDays: tokenUsageHeatmapDays,
             tokenUsageHeatmapPeriodText: tokenUsageHeatmapPeriodText,
             tokenUsageHeatmapPeakText: tokenUsageHeatmapPeakText,
@@ -562,6 +569,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
             try hookManager.install()
             refreshHooksStatus()
         } catch {
+            refreshHooksStatus()
             hooksStatus = .error(error.localizedDescription)
             presentErrorAlert(
                 title: NSLocalizedString("Failed to install hooks", comment: ""),
@@ -589,6 +597,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
             try hookManager.uninstall()
             refreshHooksStatus()
         } catch {
+            refreshHooksStatus()
             hooksStatus = .error(error.localizedDescription)
             presentErrorAlert(
                 title: NSLocalizedString("Failed to uninstall hooks", comment: ""),
@@ -605,11 +614,13 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     func installUsageBridges() {
         do {
             try hookManager.installUsageBridges()
+            refreshHooksStatus()
             lastActionMessage = NSLocalizedString(
                 "Usage bridges repaired where safe. Existing custom status lines were preserved.",
                 comment: ""
             )
         } catch {
+            refreshHooksStatus()
             hooksStatus = .error(error.localizedDescription)
             presentErrorAlert(
                 title: NSLocalizedString("Failed to repair usage bridges", comment: ""),
@@ -945,6 +956,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     }
 
     private func refreshHooksStatus() {
+        hookDiagnostics = hookManager.diagnostics()
         do {
             hooksStatus = try hookManager.status()
         } catch {

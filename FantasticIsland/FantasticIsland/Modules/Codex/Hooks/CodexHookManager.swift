@@ -21,6 +21,102 @@ enum CodexHookManagerError: LocalizedError {
     }
 }
 
+enum AgentHookInstallState: String, Equatable {
+    case installed
+    case missing
+    case invalidConfig
+}
+
+enum AgentUsageBridgeState: String, Equatable {
+    case managed
+    case missing
+    case custom
+    case invalidConfig
+    case unsupported
+}
+
+struct AgentHookProviderDiagnostic: Identifiable, Equatable {
+    var provider: AgentProvider
+    var configPath: String
+    var hookState: AgentHookInstallState
+    var usageBridgeState: AgentUsageBridgeState
+    var installedEventCount: Int
+    var expectedEventCount: Int
+
+    var id: AgentProvider { provider }
+
+    var hooksInstalled: Bool {
+        hookState == .installed
+    }
+
+    var isHealthy: Bool {
+        hooksInstalled && (usageBridgeState == .managed || usageBridgeState == .unsupported)
+    }
+
+    var statusText: String {
+        switch (hookState, usageBridgeState) {
+        case (.installed, .managed), (.installed, .unsupported):
+            return "Ready"
+        case (.installed, .custom):
+            return "Custom quota"
+        case (.installed, .missing):
+            return "Quota missing"
+        case (.missing, _):
+            return "Hooks missing"
+        case (.invalidConfig, _), (_, .invalidConfig):
+            return "Invalid config"
+        }
+    }
+}
+
+struct AgentHookDiagnosticsReport: Equatable {
+    var helperInstalled: Bool
+    var socketExists: Bool
+    var codexFeatureEnabled: Bool
+    var providers: [AgentHookProviderDiagnostic]
+
+    static let empty = AgentHookDiagnosticsReport(
+        helperInstalled: false,
+        socketExists: false,
+        codexFeatureEnabled: false,
+        providers: []
+    )
+
+    var readyProviderCount: Int {
+        providers.filter(\.isHealthy).count
+    }
+
+    var expectedProviderCount: Int {
+        providers.count
+    }
+
+    var hasProblems: Bool {
+        !helperInstalled
+            || providers.contains { !$0.isHealthy }
+            || !codexFeatureEnabled
+    }
+
+    var compactSummaryText: String {
+        if expectedProviderCount == 0 {
+            return "Hooks unavailable"
+        }
+
+        if !helperInstalled {
+            return "Helper missing"
+        }
+
+        if !codexFeatureEnabled {
+            return "Codex hooks off"
+        }
+
+        if readyProviderCount == expectedProviderCount, codexFeatureEnabled {
+            return "Hooks ready"
+        }
+
+        return "\(readyProviderCount)/\(expectedProviderCount) ready"
+    }
+}
+
 struct CodexHookManager {
     static let appSupportURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Fantastic Island", isDirectory: true)
@@ -50,6 +146,24 @@ struct CodexHookManager {
         }
 
         return featureEnabled && hooksInstalled ? .installed : .notInstalled
+    }
+
+    func diagnostics() -> AgentHookDiagnosticsReport {
+        let configText = (try? String(contentsOf: configURL, encoding: .utf8)) ?? ""
+        let featureEnabled = configText.contains("codex_hooks = true") || configText.contains("hooks = true")
+        let helperInstalled = FileManager.default.fileExists(atPath: Self.helperURL.path)
+        let socketExists = FileManager.default.fileExists(atPath: Self.socketURL.path)
+
+        let providerDiagnostics = AgentProvider.hookInstallationProviders.map { provider in
+            diagnostic(for: provider)
+        }
+
+        return AgentHookDiagnosticsReport(
+            helperInstalled: helperInstalled,
+            socketExists: socketExists,
+            codexFeatureEnabled: featureEnabled,
+            providers: providerDiagnostics
+        )
     }
 
     func install() throws {
@@ -140,6 +254,78 @@ struct CodexHookManager {
     }
 
     static let statusLineUsageBridgeProviders: [AgentProvider] = [.claudeCode, .antigravity]
+
+    private func diagnostic(for provider: AgentProvider) -> AgentHookProviderDiagnostic {
+        let url = configURL(for: provider)
+        let expectedEventCount = provider.hookEvents.count
+
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return AgentHookProviderDiagnostic(
+                provider: provider,
+                configPath: url.path,
+                hookState: .missing,
+                usageBridgeState: usageBridgeState(for: provider, root: nil, isInvalidConfig: false),
+                installedEventCount: 0,
+                expectedEventCount: expectedEventCount
+            )
+        }
+
+        do {
+            let data = try Data(contentsOf: url)
+            let root = try loadRootObject(from: data)
+            let hooks = root["hooks"] as? [String: Any] ?? [:]
+            let installedEventCount = provider.hookEvents.reduce(0) { count, event in
+                guard let groups = hooks[event.name] as? [Any],
+                      containsManagedCommand(groups: groups, provider: provider) else {
+                    return count
+                }
+
+                return count + 1
+            }
+
+            return AgentHookProviderDiagnostic(
+                provider: provider,
+                configPath: url.path,
+                hookState: installedEventCount == expectedEventCount ? .installed : .missing,
+                usageBridgeState: usageBridgeState(for: provider, root: root, isInvalidConfig: false),
+                installedEventCount: installedEventCount,
+                expectedEventCount: expectedEventCount
+            )
+        } catch {
+            return AgentHookProviderDiagnostic(
+                provider: provider,
+                configPath: url.path,
+                hookState: .invalidConfig,
+                usageBridgeState: usageBridgeState(for: provider, root: nil, isInvalidConfig: true),
+                installedEventCount: 0,
+                expectedEventCount: expectedEventCount
+            )
+        }
+    }
+
+    private func usageBridgeState(
+        for provider: AgentProvider,
+        root: [String: Any]?,
+        isInvalidConfig: Bool
+    ) -> AgentUsageBridgeState {
+        guard Self.statusLineUsageBridgeProviders.contains(provider) else {
+            return .unsupported
+        }
+
+        if isInvalidConfig {
+            return .invalidConfig
+        }
+
+        guard let root else {
+            return .missing
+        }
+
+        guard let statusLine = root["statusLine"] else {
+            return .missing
+        }
+
+        return statusLineUsageBridgeIsManaged(statusLine, provider: provider) ? .managed : .custom
+    }
 
     private func hasManagedHooks(provider: AgentProvider) throws -> Bool {
         let url = configURL(for: provider)
@@ -706,24 +892,34 @@ struct CodexHookManager {
             || command.contains("fantastic-island-hook")
     }
 
-    private func statusLineUsageBridgeIsManaged(_ value: Any) -> Bool {
+    private func statusLineUsageBridgeIsManaged(_ value: Any, provider: AgentProvider? = nil) -> Bool {
         if let command = value as? String {
-            return isManagedUsageBridgeCommand(command)
+            return isManagedUsageBridgeCommand(command, provider: provider)
         }
 
         if let object = value as? [String: Any] {
-            return isManagedUsageBridgeCommand(object["command"] as? String)
+            return isManagedUsageBridgeCommand(object["command"] as? String, provider: provider)
         }
 
         return false
     }
 
-    private func isManagedUsageBridgeCommand(_ command: String?) -> Bool {
+    private func isManagedUsageBridgeCommand(_ command: String?, provider: AgentProvider? = nil) -> Bool {
         guard isManagedCommand(command) else {
             return false
         }
 
-        return command?.contains("--usage-provider") == true
+        guard let command, command.contains("--usage-provider") else {
+            return false
+        }
+
+        guard let provider else {
+            return true
+        }
+
+        return command.contains("--usage-provider \(provider.hookSource)")
+            || command.contains("--usage-provider '\(provider.hookSource)'")
+            || command.contains("--usage-provider \"\(provider.hookSource)\"")
     }
 
     private func hookCommand(provider: AgentProvider, eventName: String?) -> String {

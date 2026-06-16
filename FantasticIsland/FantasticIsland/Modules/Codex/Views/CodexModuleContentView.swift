@@ -26,6 +26,9 @@ struct CodexModuleRenderState {
     let globalInfoFiveHourResetCompactText: String
     let globalInfoWeekResetCompactText: String
     let providerQuotaItems: [AgentProviderQuotaDisplayItem]
+    let hookDiagnosticItems: [AgentHookProviderDiagnostic]
+    let hookDiagnosticsSummaryText: String
+    let hookDiagnosticsHasProblems: Bool
     let tokenUsageHeatmapDays: [CodexTokenUsageDay]
     let tokenUsageHeatmapPeriodText: String
     let tokenUsageHeatmapPeakText: String
@@ -87,6 +90,7 @@ struct CodexModuleContentView: View {
                     conversationDetail(for: session)
                 } else {
                     agentsHeaderBar
+                    hookDiagnosticsStrip
                     sessionList
                     providerQuotaFooter
                 }
@@ -389,6 +393,67 @@ struct CodexModuleContentView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
         .background(Color.white.opacity(0.06), in: Capsule())
+    }
+
+    @ViewBuilder
+    private var hookDiagnosticsStrip: some View {
+        if !state.hookDiagnosticItems.isEmpty, state.hookDiagnosticsHasProblems {
+            HStack(spacing: 6) {
+                HStack(spacing: 4) {
+                    ForEach(state.hookDiagnosticItems) { item in
+                        hookDiagnosticPill(item)
+                    }
+                }
+
+                Spacer(minLength: 0)
+
+                Text(state.hookDiagnosticsSummaryText.uppercased())
+                    .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(hookDiagnosticsSummaryTint)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Agent hook diagnostics \(state.hookDiagnosticsSummaryText)")
+        }
+    }
+
+    private func hookDiagnosticPill(_ item: AgentHookProviderDiagnostic) -> some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(hookDiagnosticTint(item))
+                .frame(width: 6, height: 6)
+
+            Text(item.provider.quotaShortName)
+                .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.7))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 5)
+        .padding(.vertical, 3)
+        .background(Color.white.opacity(item.isHealthy ? 0.045 : 0.075), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+        .help("\(item.provider.displayName): \(item.statusText)")
+    }
+
+    private var hookDiagnosticsSummaryTint: Color {
+        state.hookDiagnosticsHasProblems ? Color.orange.opacity(0.84) : Color.green.opacity(0.8)
+    }
+
+    private func hookDiagnosticTint(_ item: AgentHookProviderDiagnostic) -> Color {
+        switch (item.hookState, item.usageBridgeState) {
+        case (.installed, .managed), (.installed, .unsupported):
+            return Color.green.opacity(0.9)
+        case (.installed, .custom):
+            return Color.yellow.opacity(0.9)
+        case (.installed, .missing):
+            return Color.orange.opacity(0.9)
+        case (.missing, _):
+            return Color.white.opacity(0.28)
+        case (.invalidConfig, _), (_, .invalidConfig):
+            return Color.red.opacity(0.92)
+        }
     }
 
     private var providerQuotaStrip: some View {

@@ -310,6 +310,8 @@ struct IslandSettingsView: View {
                         badgeTint: hooksStatusTint
                     )
 
+                    agentHookDiagnosticsRows
+
                     AdaptiveActionGroup {
                         ProminentActionButton(title: model.agentsModule.hooksActionTitle) {
                             model.agentsModule.installOrReinstallHooks()
@@ -512,6 +514,85 @@ struct IslandSettingsView: View {
         case .error:
             return Color(nsColor: .systemRed)
         }
+    }
+
+    private var agentHookDiagnosticsRows: some View {
+        VStack(spacing: 0) {
+            ForEach(model.agentsModule.hookDiagnosticItems) { item in
+                HStack(alignment: .center, spacing: 12) {
+                    Circle()
+                        .fill(agentHookDiagnosticTint(item))
+                        .frame(width: 8, height: 8)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 7) {
+                            Text(item.provider.displayName)
+                                .font(.system(size: 12.5, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.88))
+
+                            Text(item.statusText.uppercased())
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .foregroundStyle(agentHookDiagnosticTint(item).opacity(0.9))
+                        }
+
+                        Text(agentHookDiagnosticDetail(item))
+                            .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.38))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Text("\(item.installedEventCount)/\(item.expectedEventCount)")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(item.hooksInstalled ? 0.7 : 0.42))
+                        .frame(width: 42, alignment: .trailing)
+                }
+                .padding(.vertical, 9)
+
+                if item.id != model.agentsModule.hookDiagnosticItems.last?.id {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.06))
+                        .frame(height: 1)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .background(Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func agentHookDiagnosticTint(_ item: AgentHookProviderDiagnostic) -> Color {
+        switch (item.hookState, item.usageBridgeState) {
+        case (.installed, .managed), (.installed, .unsupported):
+            return Color(nsColor: .systemGreen)
+        case (.installed, .custom):
+            return Color(nsColor: .systemYellow)
+        case (.installed, .missing):
+            return Color(nsColor: .systemOrange)
+        case (.missing, _):
+            return .white.opacity(0.44)
+        case (.invalidConfig, _), (_, .invalidConfig):
+            return Color(nsColor: .systemRed)
+        }
+    }
+
+    private func agentHookDiagnosticDetail(_ item: AgentHookProviderDiagnostic) -> String {
+        let bridgeText: String
+        switch item.usageBridgeState {
+        case .managed:
+            bridgeText = "quota bridge managed"
+        case .missing:
+            bridgeText = "quota bridge missing"
+        case .custom:
+            bridgeText = "custom quota line preserved"
+        case .invalidConfig:
+            bridgeText = "quota bridge unreadable"
+        case .unsupported:
+            bridgeText = "quota bridge not needed"
+        }
+
+        return "\(bridgeText) · \(item.configPath)"
     }
 
     private var bridgeStatusTint: Color {
