@@ -12,8 +12,8 @@ enum PlayerModuleSettings {
             return storedDefaultSource
         }
 
-        if installedControllableSources.contains(.music) {
-            return .music
+        if installedControllableSources.contains(.nowPlaying) {
+            return .nowPlaying
         }
 
         return installedControllableSources.first

@@ -3,9 +3,7 @@ import Foundation
 enum IslandDesignTokenGroup: String, CaseIterable, Identifiable {
     case shell = "Shell"
     case peek = "Peek"
-    case windDrive = "Wind Drive"
     case codexExpanded = "Codex Expanded"
-    case clashExpanded = "Clash Expanded"
     case playerExpanded = "Player Expanded"
 
     var id: String { rawValue }
@@ -22,13 +20,12 @@ enum IslandDesignTokenKey: String, CaseIterable, Identifiable {
     case shellOpenedSurfaceContentHorizontalInset
     case shellClosedHoverScale
     case shellClosedHorizontalPadding
-    case shellClosedFanModuleSpacing
     case shellClosedModuleSpacing
     case shellClosedModuleContentSpacing
     case shellClosedIconSize
     case shellClosedPrimaryFontSize
-    case shellClosedTrafficFontSize
-    case shellClosedTrafficLineSpacing
+    case shellClosedSecondaryFontSize
+    case shellClosedSecondaryLineSpacing
     case shellOpenedBodyRevealDelay
     case shellOpenLayoutSettleDuration
     case shellCloseLayoutSettleDuration
@@ -53,14 +50,6 @@ enum IslandDesignTokenKey: String, CaseIterable, Identifiable {
     case peekBodyCloseFadeDuration
     case peekClosedHeaderRevealDuration
     case peekClosedHeaderRevealLeadTime
-    case windDrivePanelSide
-    case windDriveHeroCornerRadius
-    case windDriveHeroShadowOpacity
-    case windDriveHeroShadowRadius
-    case windDriveHeroShadowYOffset
-    case windDriveBasePlateOpacity
-    case windDriveHubDiameter
-    case windDriveLogoSize
     case codexPeekRowSpacing
     case codexPeekContentSpacing
     case codexPeekBadgeSpacing
@@ -99,14 +88,6 @@ enum IslandDesignTokenKey: String, CaseIterable, Identifiable {
     case codexExpandedCardBorderOpacity
     case codexExpandedTitleFontSize
     case codexExpandedSummaryFontSize
-    case clashExpandedOuterSpacing
-    case clashExpandedCardSpacing
-    case clashExpandedSectionTitleSpacing
-    case clashExpandedCardCornerRadius
-    case clashExpandedCardBackgroundOpacity
-    case clashExpandedCardBorderOpacity
-    case clashExpandedActionPillCornerRadius
-    case clashExpandedActionPillVerticalPadding
     case playerExpandedOuterSpacing
     case playerExpandedPrimaryColumnSpacing
     case playerExpandedTitleBlockSpacing
@@ -122,11 +103,9 @@ enum IslandDesignTokenKey: String, CaseIterable, Identifiable {
         let prefixes = [
             "shell",
             "peek",
-            "windDrive",
             "codexPeek",
             "playerPeek",
             "codexExpanded",
-            "clashExpanded",
             "playerExpanded",
         ]
 
@@ -180,30 +159,40 @@ struct IslandDesignTokenDescriptor: Identifiable {
 }
 
 enum IslandDesignTokenSchema {
-    static let descriptors: [IslandDesignTokenDescriptor] = [
+    static let descriptors: [IslandDesignTokenDescriptor] =
+        shellDescriptors
+        + peekDescriptors
+        + codexPeekDescriptors
+        + playerPeekDescriptors
+        + codexExpandedDescriptors
+        + playerExpandedDescriptors
+
+    private static let shellDescriptors: [IslandDesignTokenDescriptor] = [
         descriptor(.shellOpenedShadowHorizontalInset, .shell, "Shadow Horizontal Inset", "Opened shell outer shadow width.", .slider(range: 0 ... 40, step: 1), \.shell.openedShadowHorizontalInset),
         descriptor(.shellOpenedSurfaceContentHorizontalInset, .shell, "Surface Horizontal Inset", "Opened shell content safe inset.", .slider(range: 0 ... 40, step: 1), \.shell.openedSurfaceContentHorizontalInset),
         descriptor(.shellClosedHoverScale, .shell, "Closed Hover Scale", "Hover scale applied in collapsed state.", .slider(range: 1 ... 1.1, step: 0.001), \.shell.closedHoverScale),
         descriptor(.shellClosedHorizontalPadding, .shell, "Closed Horizontal Padding", "Left and right inset for the collapsed header row.", .slider(range: 0 ... 30, step: 1), \.shell.closedHorizontalPadding),
-        descriptor(.shellClosedFanModuleSpacing, .shell, "Closed Fan-to-Modules Spacing", "Gap between the fan icon and the compact module summary area.", .slider(range: 0 ... 30, step: 1), \.shell.closedFanModuleSpacing),
         descriptor(.shellClosedModuleSpacing, .shell, "Closed Module Spacing", "Gap between compact module summaries.", .slider(range: 0 ... 40, step: 1), \.shell.closedModuleSpacing),
         descriptor(.shellClosedModuleContentSpacing, .shell, "Closed Module Content Spacing", "Gap between icon and text inside one compact module summary.", .slider(range: 0 ... 24, step: 1), \.shell.closedModuleContentSpacing),
         descriptor(.shellClosedIconSize, .shell, "Closed Icon Size", "Compact module icon size in collapsed state.", .slider(range: 12 ... 28, step: 1), \.shell.closedIconSize),
         descriptor(.shellClosedPrimaryFontSize, .shell, "Closed Primary Font Size", "Main compact summary font size.", .slider(range: 8 ... 16, step: 0.5), \.shell.closedPrimaryFontSize),
-        descriptor(.shellClosedTrafficFontSize, .shell, "Closed Traffic Font Size", "Compact Clash traffic text font size.", .slider(range: 7 ... 14, step: 0.5), \.shell.closedTrafficFontSize),
-        descriptor(.shellClosedTrafficLineSpacing, .shell, "Closed Traffic Line Spacing", "Vertical spacing between upload and download lines.", .slider(range: 0 ... 6, step: 0.5), \.shell.closedTrafficLineSpacing),
+        descriptor(.shellClosedSecondaryFontSize, .shell, "Closed Secondary Font Size", "Secondary compact summary font size.", .slider(range: 7 ... 14, step: 0.5), \.shell.closedSecondaryFontSize),
+        descriptor(.shellClosedSecondaryLineSpacing, .shell, "Closed Secondary Line Spacing", "Vertical spacing between secondary compact summary lines.", .slider(range: 0 ... 6, step: 0.5), \.shell.closedSecondaryLineSpacing),
         descriptor(.shellOpenedBodyRevealDelay, .shell, "Opened Body Delay", "Delay before expanded body reveal.", .slider(range: 0 ... 0.5, step: 0.01), \.shell.openedBodyRevealDelay),
         descriptor(.shellOpenLayoutSettleDuration, .shell, "Open Layout Settle", "Layout lock duration during expansion.", .slider(range: 0.1 ... 1.0, step: 0.01), \.shell.openLayoutSettleDuration),
         descriptor(.shellCloseLayoutSettleDuration, .shell, "Close Layout Settle", "Layout lock duration during collapse.", .slider(range: 0.1 ... 1.0, step: 0.01), \.shell.closeLayoutSettleDuration),
         descriptor(.shellExpandedContentBottomPadding, .shell, "Expanded Bottom Padding", "Bottom breathing room for module content.", .slider(range: 0 ... 40, step: 1), \.shell.expandedContentBottomPadding),
         descriptor(.shellExpandedContentTopPadding, .shell, "Expanded Top Padding", "Top gap above expanded content.", .slider(range: 0 ... 40, step: 1), \.shell.expandedContentTopPadding),
-        descriptor(.shellModuleColumnSpacing, .shell, "Module Column Spacing", "Gap between Wind Drive and right column.", .slider(range: 0 ... 40, step: 1), \.shell.moduleColumnSpacing),
+        descriptor(.shellModuleColumnSpacing, .shell, "Module Column Spacing", "Gap between expanded navigation and module body.", .slider(range: 0 ... 40, step: 1), \.shell.moduleColumnSpacing),
         descriptor(.shellModuleNavigationRowHeight, .shell, "Navigation Row Height", "Expanded top row baseline height.", .slider(range: 24 ... 64, step: 1), \.shell.moduleNavigationRowHeight),
         descriptor(.shellModuleTabSpacing, .shell, "Tab Spacing", "Gap between module tabs.", .slider(range: 0 ... 30, step: 1), \.shell.moduleTabSpacing),
         descriptor(.shellModuleTabHorizontalPadding, .shell, "Tab Horizontal Padding", "Single tab horizontal inset.", .slider(range: 0 ... 30, step: 1), \.shell.moduleTabHorizontalPadding),
         descriptor(.shellModuleTabVerticalPadding, .shell, "Tab Vertical Padding", "Single tab vertical inset.", .slider(range: 0 ... 20, step: 1), \.shell.moduleTabVerticalPadding),
         descriptor(.shellModuleHeaderToolbarSpacing, .shell, "Header Toolbar Spacing", "Gap between tabs and toolbar.", .slider(range: 0 ... 30, step: 1), \.shell.moduleHeaderToolbarSpacing),
         descriptor(.shellModuleToolbarButtonGroupSpacing, .shell, "Toolbar Button Group Spacing", "Gap inside toolbar button group.", .slider(range: 0 ... 30, step: 1), \.shell.moduleToolbarButtonGroupSpacing),
+    ]
+
+    private static let peekDescriptors: [IslandDesignTokenDescriptor] = [
         descriptor(.peekContentHorizontalInset, .peek, "Peek Horizontal Inset", "Horizontal inset for peek content.", .slider(range: 0 ... 40, step: 1), \.peek.contentHorizontalInset),
         descriptor(.peekContentTopPadding, .peek, "Peek Top Padding", "Top breathing room for peek content.", .slider(range: 0 ... 24, step: 1), \.peek.contentTopPadding),
         descriptor(.peekContentBottomPadding, .peek, "Peek Bottom Padding", "Bottom breathing room for peek content.", .slider(range: 0 ... 24, step: 1), \.peek.contentBottomPadding),
@@ -216,14 +205,9 @@ enum IslandDesignTokenSchema {
         descriptor(.peekBodyCloseFadeDuration, .peek, "Body Close Fade", "Body fade-out duration during close.", .slider(range: 0.05 ... 0.5, step: 0.01), \.peek.bodyCloseFadeDuration),
         descriptor(.peekClosedHeaderRevealDuration, .peek, "Header Reveal Duration", "Collapsed header re-entry fade duration.", .slider(range: 0.05 ... 0.3, step: 0.01), \.peek.closedHeaderRevealDuration),
         descriptor(.peekClosedHeaderRevealLeadTime, .peek, "Header Reveal Lead", "How early header starts returning before close ends.", .slider(range: 0.01 ... 0.2, step: 0.01), \.peek.closedHeaderRevealLeadTime),
-        descriptor(.windDrivePanelSide, .windDrive, "Panel Side", "Expanded Wind Drive panel width/height.", .slider(range: 160 ... 280, step: 2), \.windDrive.panelSide),
-        descriptor(.windDriveHeroCornerRadius, .windDrive, "Hero Corner Radius", "Wind Drive hero tile radius.", .slider(range: 0 ... 48, step: 1), \.windDrive.heroCornerRadius),
-        descriptor(.windDriveHeroShadowOpacity, .windDrive, "Hero Shadow Opacity", "Wind Drive hero shadow opacity.", .slider(range: 0 ... 1, step: 0.01), \.windDrive.heroShadowOpacity),
-        descriptor(.windDriveHeroShadowRadius, .windDrive, "Hero Shadow Radius", "Wind Drive hero shadow blur radius.", .slider(range: 0 ... 40, step: 1), \.windDrive.heroShadowRadius),
-        descriptor(.windDriveHeroShadowYOffset, .windDrive, "Hero Shadow Y", "Wind Drive hero shadow y offset.", .slider(range: 0 ... 20, step: 1), \.windDrive.heroShadowYOffset),
-        descriptor(.windDriveBasePlateOpacity, .windDrive, "Base Plate Opacity", "Base plate fill opacity.", .slider(range: 0 ... 1, step: 0.01), \.windDrive.basePlateOpacity),
-        descriptor(.windDriveHubDiameter, .windDrive, "Hub Diameter", "Center hub diameter.", .slider(range: 24 ... 72, step: 1), \.windDrive.hubDiameter),
-        descriptor(.windDriveLogoSize, .windDrive, "Logo Size", "Logo mark size inside hub.", .slider(range: 16 ... 48, step: 1), \.windDrive.logoSize),
+    ]
+
+    private static let codexPeekDescriptors: [IslandDesignTokenDescriptor] = [
         descriptor(.codexPeekRowSpacing, .peek, "Codex Peek Row Spacing", "Gap between dot and text column.", .slider(range: 0 ... 24, step: 1), \.codexPeek.rowSpacing),
         descriptor(.codexPeekContentSpacing, .peek, "Codex Peek Content Spacing", "Gap between Codex peek text rows.", .slider(range: 0 ... 20, step: 1), \.codexPeek.contentSpacing),
         descriptor(.codexPeekBadgeSpacing, .peek, "Codex Peek Badge Spacing", "Gap between badge pills.", .slider(range: 0 ... 20, step: 1), \.codexPeek.badgeSpacing),
@@ -238,6 +222,9 @@ enum IslandDesignTokenSchema {
         descriptor(.codexPeekSummaryOpacity, .peek, "Codex Peek Summary Opacity", "Summary text opacity.", .slider(range: 0 ... 1, step: 0.01), \.codexPeek.summaryOpacity),
         descriptor(.codexPeekBackgroundOpacity, .peek, "Codex Peek Background Opacity", "Peek card background opacity.", .slider(range: 0 ... 0.2, step: 0.005), \.codexPeek.backgroundOpacity),
         colorDescriptor(.codexPeekStatusDotColor, .peek, "Codex Peek Status Color", "Semantic status color for completion dot.", \.statusDotColor),
+    ]
+
+    private static let playerPeekDescriptors: [IslandDesignTokenDescriptor] = [
         descriptor(.playerPeekHorizontalSpacing, .peek, "Player Peek Horizontal Spacing", "Gap between artwork and text block.", .slider(range: 0 ... 24, step: 1), \.playerPeek.horizontalSpacing),
         descriptor(.playerPeekTextSpacing, .peek, "Player Peek Text Spacing", "Gap between title and artist lines.", .slider(range: 0 ... 20, step: 1), \.playerPeek.textSpacing),
         descriptor(.playerPeekTitleFontSize, .peek, "Player Peek Title Size", "Player peek title size.", .slider(range: 10 ... 24, step: 0.5), \.playerPeek.titleFontSize),
@@ -253,6 +240,9 @@ enum IslandDesignTokenSchema {
         descriptor(.playerPeekPlaceholderOpacity, .peek, "Player Peek Placeholder Opacity", "Placeholder icon opacity.", .slider(range: 0 ... 1, step: 0.01), \.playerPeek.placeholderOpacity),
         descriptor(.playerPeekArtworkBackgroundStartOpacity, .peek, "Player Peek Artwork Start Opacity", "Gradient start opacity behind artwork.", .slider(range: 0 ... 0.3, step: 0.01), \.playerPeek.artworkBackgroundStartOpacity),
         descriptor(.playerPeekArtworkBackgroundEndOpacity, .peek, "Player Peek Artwork End Opacity", "Gradient end opacity behind artwork.", .slider(range: 0 ... 0.3, step: 0.01), \.playerPeek.artworkBackgroundEndOpacity),
+    ]
+
+    private static let codexExpandedDescriptors: [IslandDesignTokenDescriptor] = [
         descriptor(.codexExpandedContentSpacing, .codexExpanded, "Codex Content Spacing", "Primary vertical spacing inside Codex expanded content.", .slider(range: 0 ... 24, step: 1), \.codexExpanded.contentSpacing),
         descriptor(.codexExpandedSectionRowSpacing, .codexExpanded, "Codex Section Row Spacing", "Gap between session cards.", .slider(range: 0 ... 20, step: 1), \.codexExpanded.sectionRowSpacing),
         descriptor(.codexExpandedGlobalInfoBadgeSpacing, .codexExpanded, "Codex Badge Spacing", "Spacing inside Global Info badge row.", .slider(range: 0 ... 20, step: 1), \.codexExpanded.globalInfoBadgeSpacing),
@@ -262,20 +252,15 @@ enum IslandDesignTokenSchema {
         descriptor(.codexExpandedCardBorderOpacity, .codexExpanded, "Codex Card Border", "Common Codex card border opacity.", .slider(range: 0 ... 0.2, step: 0.005), \.codexExpanded.cardBorderOpacity),
         descriptor(.codexExpandedTitleFontSize, .codexExpanded, "Codex Title Size", "Primary title size in Codex cards.", .slider(range: 11 ... 22, step: 0.5), \.codexExpanded.titleFontSize),
         descriptor(.codexExpandedSummaryFontSize, .codexExpanded, "Codex Summary Size", "Summary text size in Codex cards.", .slider(range: 10 ... 18, step: 0.5), \.codexExpanded.summaryFontSize),
-        descriptor(.clashExpandedOuterSpacing, .clashExpanded, "Clash Outer Spacing", "Primary vertical spacing inside Clash content.", .slider(range: 0 ... 24, step: 1), \.clashExpanded.outerSpacing),
-        descriptor(.clashExpandedCardSpacing, .clashExpanded, "Clash Card Spacing", "Gap between Clash cards.", .slider(range: 0 ... 16, step: 1), \.clashExpanded.cardSpacing),
-        descriptor(.clashExpandedSectionTitleSpacing, .clashExpanded, "Clash Section Spacing", "Spacing below section title.", .slider(range: 0 ... 20, step: 1), \.clashExpanded.sectionTitleSpacing),
-        descriptor(.clashExpandedCardCornerRadius, .clashExpanded, "Clash Card Radius", "Common Clash card radius.", .slider(range: 0 ... 30, step: 1), \.clashExpanded.cardCornerRadius),
-        descriptor(.clashExpandedCardBackgroundOpacity, .clashExpanded, "Clash Card Background", "Common Clash card background opacity.", .slider(range: 0 ... 0.2, step: 0.005), \.clashExpanded.cardBackgroundOpacity),
-        descriptor(.clashExpandedCardBorderOpacity, .clashExpanded, "Clash Card Border", "Common Clash card border opacity.", .slider(range: 0 ... 0.2, step: 0.005), \.clashExpanded.cardBorderOpacity),
-        descriptor(.clashExpandedActionPillCornerRadius, .clashExpanded, "Clash Pill Radius", "Corner radius for action pills.", .slider(range: 0 ... 24, step: 1), \.clashExpanded.actionPillCornerRadius),
-        descriptor(.clashExpandedActionPillVerticalPadding, .clashExpanded, "Clash Pill Vertical Padding", "Vertical padding for action pills.", .slider(range: 0 ... 16, step: 1), \.clashExpanded.actionPillVerticalPadding),
+    ]
+
+    private static let playerExpandedDescriptors: [IslandDesignTokenDescriptor] = [
         descriptor(.playerExpandedOuterSpacing, .playerExpanded, "Player Outer Spacing", "Primary vertical spacing inside Player content.", .slider(range: 0 ... 30, step: 1), \.playerExpanded.outerSpacing),
         descriptor(.playerExpandedPrimaryColumnSpacing, .playerExpanded, "Player Column Spacing", "Gap between text column and artwork.", .slider(range: 0 ... 40, step: 1), \.playerExpanded.primaryColumnSpacing),
         descriptor(.playerExpandedTitleBlockSpacing, .playerExpanded, "Player Title Block Spacing", "Gap in title block.", .slider(range: 0 ... 16, step: 1), \.playerExpanded.titleBlockSpacing),
         descriptor(.playerExpandedControlsSpacing, .playerExpanded, "Player Controls Spacing", "Gap between transport controls.", .slider(range: 0 ... 30, step: 1), \.playerExpanded.controlsSpacing),
         descriptor(.playerExpandedArtworkCornerRadius, .playerExpanded, "Player Artwork Radius", "Artwork radius in expanded mode.", .slider(range: 0 ... 30, step: 1), \.playerExpanded.artworkCornerRadius),
-        descriptor(.playerExpandedArtworkSize, .playerExpanded, "Player Artwork Size", "Artwork size in expanded mode.", .slider(range: 72 ... 160, step: 1), \.playerExpanded.artworkSize),
+        descriptor(.playerExpandedArtworkSize, .playerExpanded, "Player Artwork Size", "Artwork size in expanded mode.", .slider(range: 44 ... 120, step: 1), \.playerExpanded.artworkSize),
         descriptor(.playerExpandedProgressSectionSpacing, .playerExpanded, "Player Progress Spacing", "Gap inside progress section.", .slider(range: 0 ... 16, step: 1), \.playerExpanded.progressSectionSpacing),
         descriptor(.playerExpandedControlButtonOpacityDisabled, .playerExpanded, "Player Disabled Controls Opacity", "Opacity for disabled transport controls.", .slider(range: 0 ... 1, step: 0.01), \.playerExpanded.controlButtonOpacityDisabled),
     ]
@@ -301,114 +286,6 @@ enum IslandDesignTokenSchema {
             getNumber: { $0[keyPath: keyPath] },
             setNumber: { $0[keyPath: keyPath] = $1 }
         )
-    }
-
-    private static func descriptor<Root>(
-        _ key: IslandDesignTokenKey,
-        _ group: IslandDesignTokenGroup,
-        _ title: String,
-        _ detail: String,
-        _ kind: IslandDesignTokenEditorKind,
-        _ keyPath: WritableKeyPath<Root, Double>,
-        in rootKeyPath: WritableKeyPath<IslandDesignTokens, Root>
-    ) -> IslandDesignTokenDescriptor {
-        IslandDesignTokenDescriptor(
-            key: key,
-            group: group,
-            title: title,
-            detail: detail,
-            kind: kind,
-            getNumber: { $0[keyPath: rootKeyPath][keyPath: keyPath] },
-            setNumber: { $0[keyPath: rootKeyPath][keyPath: keyPath] = $1 }
-        )
-    }
-
-    private static func descriptor(
-        _ key: IslandDesignTokenKey,
-        _ group: IslandDesignTokenGroup,
-        _ title: String,
-        _ detail: String,
-        _ kind: IslandDesignTokenEditorKind,
-        _ keyPath: WritableKeyPath<IslandDesignTokens.ShellTokens, Double>
-    ) -> IslandDesignTokenDescriptor {
-        descriptor(key, group, title, detail, kind, keyPath, in: \.shell)
-    }
-
-    private static func descriptor(
-        _ key: IslandDesignTokenKey,
-        _ group: IslandDesignTokenGroup,
-        _ title: String,
-        _ detail: String,
-        _ kind: IslandDesignTokenEditorKind,
-        _ keyPath: WritableKeyPath<IslandDesignTokens.PeekTokens, Double>
-    ) -> IslandDesignTokenDescriptor {
-        descriptor(key, group, title, detail, kind, keyPath, in: \.peek)
-    }
-
-    private static func descriptor(
-        _ key: IslandDesignTokenKey,
-        _ group: IslandDesignTokenGroup,
-        _ title: String,
-        _ detail: String,
-        _ kind: IslandDesignTokenEditorKind,
-        _ keyPath: WritableKeyPath<IslandDesignTokens.WindDriveTokens, Double>
-    ) -> IslandDesignTokenDescriptor {
-        descriptor(key, group, title, detail, kind, keyPath, in: \.windDrive)
-    }
-
-    private static func descriptor(
-        _ key: IslandDesignTokenKey,
-        _ group: IslandDesignTokenGroup,
-        _ title: String,
-        _ detail: String,
-        _ kind: IslandDesignTokenEditorKind,
-        _ keyPath: WritableKeyPath<IslandDesignTokens.CodexPeekTokens, Double>
-    ) -> IslandDesignTokenDescriptor {
-        descriptor(key, group, title, detail, kind, keyPath, in: \.codexPeek)
-    }
-
-    private static func descriptor(
-        _ key: IslandDesignTokenKey,
-        _ group: IslandDesignTokenGroup,
-        _ title: String,
-        _ detail: String,
-        _ kind: IslandDesignTokenEditorKind,
-        _ keyPath: WritableKeyPath<IslandDesignTokens.PlayerPeekTokens, Double>
-    ) -> IslandDesignTokenDescriptor {
-        descriptor(key, group, title, detail, kind, keyPath, in: \.playerPeek)
-    }
-
-    private static func descriptor(
-        _ key: IslandDesignTokenKey,
-        _ group: IslandDesignTokenGroup,
-        _ title: String,
-        _ detail: String,
-        _ kind: IslandDesignTokenEditorKind,
-        _ keyPath: WritableKeyPath<IslandDesignTokens.CodexExpandedTokens, Double>
-    ) -> IslandDesignTokenDescriptor {
-        descriptor(key, group, title, detail, kind, keyPath, in: \.codexExpanded)
-    }
-
-    private static func descriptor(
-        _ key: IslandDesignTokenKey,
-        _ group: IslandDesignTokenGroup,
-        _ title: String,
-        _ detail: String,
-        _ kind: IslandDesignTokenEditorKind,
-        _ keyPath: WritableKeyPath<IslandDesignTokens.ClashExpandedTokens, Double>
-    ) -> IslandDesignTokenDescriptor {
-        descriptor(key, group, title, detail, kind, keyPath, in: \.clashExpanded)
-    }
-
-    private static func descriptor(
-        _ key: IslandDesignTokenKey,
-        _ group: IslandDesignTokenGroup,
-        _ title: String,
-        _ detail: String,
-        _ kind: IslandDesignTokenEditorKind,
-        _ keyPath: WritableKeyPath<IslandDesignTokens.PlayerExpandedTokens, Double>
-    ) -> IslandDesignTokenDescriptor {
-        descriptor(key, group, title, detail, kind, keyPath, in: \.playerExpanded)
     }
 
     private static func colorDescriptor(

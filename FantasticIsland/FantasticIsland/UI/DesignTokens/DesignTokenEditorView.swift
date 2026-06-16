@@ -122,19 +122,22 @@ struct DesignTokenEditorView: View {
     @ViewBuilder
     private func tokenEditorRow(_ descriptor: IslandDesignTokenDescriptor) -> some View {
         let isModified = store.isModified(descriptor)
+        let displayTitle = descriptor.key.writebackSymbolName ?? descriptor.title
+        let keyName = descriptor.key.rawValue
+        let detailText = DesignTokenEditorLocalization.detail(for: descriptor, locale: locale)
 
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(descriptor.key.writebackSymbolName ?? descriptor.title)
+                    Text(displayTitle)
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(.white)
 
-                    Text(descriptor.key.rawValue)
+                    Text(keyName)
                         .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.34))
 
-                    Text(descriptor.displayDetail(for: locale))
+                    Text(detailText)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.white.opacity(0.52))
                         .fixedSize(horizontal: false, vertical: true)

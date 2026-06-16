@@ -10,11 +10,13 @@ private struct GlobalInfoCardHeightKey: PreferenceKey {
 
 struct CodexModuleRenderState {
     let presentation: IslandModulePresentationContext
-    let activityState: FanActivityState
+    let activityState: AgentActivityState
     let sessionSurface: CodexIslandSurface
     let isNotificationMode: Bool
     let islandListSessions: [SessionSnapshot]
+    let sessionListTotalCount: Int
     let activeNotificationSession: SessionSnapshot?
+    let selectedConversationSession: SessionSnapshot?
     let presentedSession: SessionSnapshot?
     let shouldShowShowAllButton: Bool
     let canCollapseSessionList: Bool
@@ -23,15 +25,29 @@ struct CodexModuleRenderState {
     let globalInfoWeekValueText: String
     let globalInfoFiveHourResetCompactText: String
     let globalInfoWeekResetCompactText: String
+    let providerQuotaItems: [AgentProviderQuotaDisplayItem]
     let tokenUsageHeatmapDays: [CodexTokenUsageDay]
     let tokenUsageHeatmapPeriodText: String
     let tokenUsageHeatmapPeakText: String
     let approvePermission: (String, CodexApprovalAction) -> Void
     let answerQuestion: (String, CodexQuestionResponse) -> Void
+    let canReplyToSession: (SessionSnapshot) -> Bool
+    let replyPlaceholder: (SessionSnapshot) -> String
     let replyToSession: (String, String) -> Void
-    let jumpToSession: (String) -> Void
+    let transcriptTurnsForSession: (SessionSnapshot) -> [AgentTranscriptTurn]
+    let openConversation: (String) -> Void
+    let openSessionApp: (String) -> Void
+    let showNewSession: () -> Void
+    let startNewSession: (AgentNewSessionRequest) -> Void
     let showAllSessions: () -> Void
     let collapseSessionList: () -> Void
+}
+
+struct AgentProviderQuotaDisplayItem: Identifiable {
+    let id: AgentProvider
+    let title: String
+    let fiveHourText: String
+    let weekText: String
 }
 
 struct CodexModuleLiveContentView: View {
@@ -46,23 +62,31 @@ struct CodexModuleLiveContentView: View {
 struct CodexModuleContentView: View {
     let state: CodexModuleRenderState
     @State private var measuredGlobalInfoCardHeight = Self.estimatedGlobalInfoCardHeight
+    @State private var newSessionProvider = AgentProvider.codex
+    @State private var newSessionPath = FileManager.default.homeDirectoryForCurrentUser.path
+    @State private var newSessionPrompt = ""
+    @State private var conversationReplyText = ""
+    @State private var conversationAnswerText = ""
 
     private static let estimatedGlobalInfoCardHeight: CGFloat = 58
     private static let alignedModuleBodyHeight: CGFloat =
-        CodexIslandChromeMetrics.windDrivePanelHeight
+        176
         - CodexIslandChromeMetrics.moduleNavigationRowHeight
         - CodexIslandChromeMetrics.moduleColumnSpacing
+    private static let providerGridColumns = [
+        GridItem(.adaptive(minimum: 72), spacing: 8)
+    ]
 
     var body: some View {
         switch state.presentation {
         case .standard:
-            VStack(alignment: .leading, spacing: CodexExpandedMetrics.contentSpacing) {
-                globalInfoCard
-                tokenHeatmapCard
-
-                if state.islandListSessions.isEmpty {
-                    emptyStateCard
+            VStack(alignment: .leading, spacing: 6) {
+                if case .newSession = state.sessionSurface {
+                    newSessionCard
+                } else if let session = state.selectedConversationSession {
+                    conversationDetail(for: session)
                 } else {
+                    globalInfoCard
                     sessionList
                 }
             }
@@ -84,10 +108,13 @@ struct CodexModuleContentView: View {
                     referenceDate: .now,
                     isActionable: true,
                     surfaceStyle: .peek,
+                    canReply: state.canReplyToSession(session),
+                    replyPlaceholder: state.replyPlaceholder(session),
                     onApprove: { state.approvePermission(session.id, $0) },
                     onAnswer: { state.answerQuestion(session.id, $0) },
                     onReply: { state.replyToSession(session.id, $0) },
-                    onJump: { state.jumpToSession(session.id) }
+                    onOpenConversation: { state.openConversation(session.id) },
+                    onOpenApp: { state.openSessionApp(session.id) }
                 )
             }
         } else {
@@ -104,10 +131,13 @@ struct CodexModuleContentView: View {
                     referenceDate: .now,
                     isActionable: true,
                     surfaceStyle: .peek,
+                    canReply: state.canReplyToSession(session),
+                    replyPlaceholder: state.replyPlaceholder(session),
                     onApprove: { state.approvePermission(session.id, $0) },
                     onAnswer: { state.answerQuestion(session.id, $0) },
                     onReply: { state.replyToSession(session.id, $0) },
-                    onJump: { state.jumpToSession(session.id) }
+                    onOpenConversation: { state.openConversation(session.id) },
+                    onOpenApp: { state.openSessionApp(session.id) }
                 )
             } else {
                 peekNotificationCard(for: session)
@@ -207,16 +237,14 @@ struct CodexModuleContentView: View {
                 .fill(.white.opacity(0.04))
                 .frame(height: 1)
 
-            ScrollView(.vertical, showsIndicators: false) {
-                Text(completedActivityMessage(for: session))
-                    .font(.system(size: CodexExpandedMetrics.summaryFontSize, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.9))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .textSelection(.enabled)
-            }
-            .frame(maxHeight: 220)
+            Text(completedActivityMessage(for: session))
+                .font(.system(size: CodexExpandedMetrics.summaryFontSize, weight: .medium))
+                .foregroundStyle(.white.opacity(0.9))
+                .lineLimit(4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .textSelection(.enabled)
         }
         .background(
             RoundedRectangle(cornerRadius: CodexExpandedMetrics.cardCornerRadius, style: .continuous)
@@ -228,7 +256,7 @@ struct CodexModuleContentView: View {
         }
         .contentShape(RoundedRectangle(cornerRadius: CodexExpandedMetrics.cardCornerRadius, style: .continuous))
         .onTapGesture {
-            state.jumpToSession(session.id)
+            state.openConversation(session.id)
         }
     }
 
@@ -239,14 +267,17 @@ struct CodexModuleContentView: View {
                 session: session,
                 referenceDate: .now,
                 isActionable: true,
+                canReply: state.canReplyToSession(session),
+                replyPlaceholder: state.replyPlaceholder(session),
                 onApprove: { state.approvePermission(session.id, $0) },
                 onAnswer: { state.answerQuestion(session.id, $0) },
                 onReply: { state.replyToSession(session.id, $0) },
-                onJump: { state.jumpToSession(session.id) }
+                onOpenConversation: { state.openConversation(session.id) },
+                onOpenApp: { state.openSessionApp(session.id) }
             )
 
             if state.shouldShowShowAllButton {
-                Button("Show all \(state.islandListSessions.count) sessions") {
+                Button("Show all \(state.sessionListTotalCount) sessions") {
                     state.showAllSessions()
                 }
                 .buttonStyle(.plain)
@@ -256,16 +287,39 @@ struct CodexModuleContentView: View {
                 .padding(.vertical, 8)
             }
         } else {
-            VStack(spacing: CodexExpandedMetrics.sectionRowSpacing) {
+            VStack(spacing: 0) {
+                Button {
+                    state.showNewSession()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "plus.circle.fill")
+                        Text("New Session")
+                        Spacer()
+                    }
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.82))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.white.opacity(0.035))
+                }
+                .buttonStyle(.plain)
+
+                if state.islandListSessions.isEmpty {
+                    emptyStateCard
+                }
+
                 ForEach(state.islandListSessions) { session in
                     CodexIslandSessionRow(
                         session: session,
                         referenceDate: .now,
                         isActionable: session.phase.requiresAttention || session.id == state.sessionSurface.sessionID,
+                        canReply: state.canReplyToSession(session),
+                        replyPlaceholder: state.replyPlaceholder(session),
                         onApprove: { state.approvePermission(session.id, $0) },
                         onAnswer: { state.answerQuestion(session.id, $0) },
                         onReply: { state.replyToSession(session.id, $0) },
-                        onJump: { state.jumpToSession(session.id) }
+                        onOpenConversation: { state.openConversation(session.id) },
+                        onOpenApp: { state.openSessionApp(session.id) }
                     )
                 }
             }
@@ -285,25 +339,20 @@ struct CodexModuleContentView: View {
 
     private var globalInfoCard: some View {
         sectionCard {
-            HStack(alignment: .center, spacing: 12) {
-                Text("Global Info")
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+            HStack(alignment: .center, spacing: 8) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.7))
+
+                Text("Agents")
+                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                    .tracking(0.6)
                     .foregroundStyle(.white.opacity(0.9))
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
 
-                HStack(spacing: CodexExpandedMetrics.globalInfoBadgeSpacing) {
-                    quotaBadge(
-                        title: "5H",
-                        value: state.globalInfoFiveHourValueText,
-                        resetText: state.globalInfoFiveHourResetCompactText
-                    )
-                    quotaBadge(
-                        title: "W",
-                        value: state.globalInfoWeekValueText,
-                        resetText: state.globalInfoWeekResetCompactText
-                    )
+                HStack(spacing: 7) {
                     liveCountBadge
                 }
                 .frame(maxWidth: .infinity, alignment: .trailing)
@@ -333,8 +382,8 @@ struct CodexModuleContentView: View {
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundStyle(state.activityState.inProgressSessionCount > 0 ? Color.green.opacity(0.95) : Color.white.opacity(0.52))
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
         .background(Color.white.opacity(0.06), in: Capsule())
     }
 
@@ -348,53 +397,384 @@ struct CodexModuleContentView: View {
         }
     }
 
-    private func quotaBadge(title: String, value: String, resetText: String) -> some View {
-        HStack(spacing: 8) {
-            Text(title)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.48))
+    private var emptyStateCard: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("No live conversations")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.58))
 
-            Text(value)
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.9))
-                .lineLimit(1)
+            Text("Start or open an agent session to populate the island.")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white.opacity(0.32))
 
-            Text(resetText)
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.64))
-                .lineLimit(1)
+            Button {
+                state.showNewSession()
+            } label: {
+                Label("New Session", systemImage: "plus.circle.fill")
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.82))
+            .padding(.top, 8)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color.white.opacity(0.06), in: Capsule())
+        .frame(maxWidth: .infinity, minHeight: 86, alignment: .center)
+        .padding(.horizontal, 18)
+        .background(Color.white.opacity(0.012))
+        .overlay(alignment: .top) {
+            Rectangle().fill(.white.opacity(0.05)).frame(height: 1)
+        }
     }
 
-    private var emptyStateCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("No live conversations")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.72))
+    private func conversationDetail(for session: SessionSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .center, spacing: 10) {
+                Button {
+                    state.showAllSessions()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 12, weight: .bold))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.white.opacity(0.78))
+                .help("Back to conversations")
 
-            Text("Open Codex to populate live sessions here.")
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(conversationTitle(for: session))
+                        .font(IslandVisualLanguage.islandTitle(14, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    Text("\(session.provider.displayName) · \(conversationWorkspace(for: session))")
+                        .font(IslandVisualLanguage.islandLabel(10.5, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.45))
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                Button {
+                    state.openSessionApp(session.id)
+                } label: {
+                    Label("Open App", systemImage: "arrow.up.forward.app")
+                        .labelStyle(.iconOnly)
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.white.opacity(0.82))
+                .islandGlassCapsule()
+                .help("Open \(session.provider.displayName)")
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+
+            Rectangle()
+                .fill(.white.opacity(0.055))
+                .frame(height: 1)
+
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 10) {
+                    let turns = state.transcriptTurnsForSession(session)
+                    if turns.isEmpty {
+                        if let prompt = session.latestUserPrompt?.trimmingCharacters(in: .whitespacesAndNewlines), !prompt.isEmpty {
+                            conversationBubble(label: "You", text: prompt, isUser: true, role: .user)
+                        }
+                        if let body = conversationBody(for: session) {
+                            conversationBubble(label: session.provider.compactName, text: body, isUser: false, role: .assistant)
+                        }
+                    } else {
+                        ForEach(turns) { turn in
+                            conversationBubble(
+                                label: conversationLabel(for: turn),
+                                text: turn.text,
+                                isUser: turn.role == .user,
+                                role: turn.role
+                            )
+                        }
+                    }
+
+                    if session.phase == .waitingForApproval, let request = session.permissionRequest {
+                        approvalPanel(session: session, request: request)
+                    }
+
+                    if session.phase == .waitingForAnswer, let prompt = session.questionPrompt {
+                        questionPanel(session: session, prompt: prompt)
+                    }
+                }
+                .padding(14)
+            }
+            .frame(maxHeight: 560)
+
+            Rectangle()
+                .fill(.white.opacity(0.055))
+                .frame(height: 1)
+
+            replyComposer(for: session)
+        }
+        .islandModuleCardSurface()
+    }
+
+    private var newSessionCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Button {
+                    state.showAllSessions()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 12, weight: .bold))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.white.opacity(0.78))
+
+                Text("New Session")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+
+                Spacer()
+            }
+
+            LazyVGrid(columns: Self.providerGridColumns, alignment: .leading, spacing: 8) {
+                ForEach(AgentProvider.allCases) { provider in
+                    Button {
+                        newSessionProvider = provider
+                    } label: {
+                        Label(provider.compactName, systemImage: provider.symbolName)
+                            .labelStyle(.titleAndIcon)
+                    }
+                    .buttonStyle(AgentProviderChoiceButtonStyle(isSelected: newSessionProvider == provider))
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 7) {
+                Text("Workspace")
+                    .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.48))
+                TextField("Workspace path", text: $newSessionPath)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12.5, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 9)
+                    .background(Color.white.opacity(0.075), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+
+            VStack(alignment: .leading, spacing: 7) {
+                Text("Opening Prompt")
+                    .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.48))
+                TextField(newSessionProvider.canLaunchWithPromptInTerminal ? "Optional prompt" : "Prompt is copied after the workspace opens", text: $newSessionPrompt)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 9)
+                    .background(Color.white.opacity(0.075), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+
+            Button {
+                state.startNewSession(AgentNewSessionRequest(
+                    provider: newSessionProvider,
+                    workingDirectory: newSessionPath,
+                    initialPrompt: newSessionPrompt
+                ))
+            } label: {
+                Label("Start \(newSessionProvider.displayName)", systemImage: "play.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(AgentPrimaryButtonStyle())
+        }
+        .padding(14)
+        .islandModuleCardSurface()
+    }
+
+    private func approvalPanel(session: SessionSnapshot, request: CodexPermissionRequest) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(request.title)
+                .font(.system(size: 12.5, weight: .bold))
+                .foregroundStyle(.orange.opacity(0.96))
+
+            Text(request.summary)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white.opacity(0.38))
+                .foregroundStyle(.white.opacity(0.82))
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                Button(request.secondaryActionTitle) {
+                    state.approvePermission(session.id, .deny)
+                }
+                .buttonStyle(AgentInlineButtonStyle())
+
+                Button(request.primaryActionTitle) {
+                    state.approvePermission(session.id, .allowOnce)
+                }
+                .buttonStyle(AgentInlineButtonStyle(isProminent: true))
+            }
         }
-        .frame(maxWidth: .infinity, minHeight: emptyStateMinimumHeight, alignment: .center)
-        .padding(.horizontal, 18)
-        .background(Color.white.opacity(0.02), in: RoundedRectangle(cornerRadius: CodexExpandedMetrics.cardCornerRadius, style: .continuous))
+        .padding(12)
+        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func questionPanel(session: SessionSnapshot, prompt: CodexQuestionPrompt) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(prompt.title)
+                .font(.system(size: 12.5, weight: .bold))
+                .foregroundStyle(.yellow.opacity(0.96))
+                .fixedSize(horizontal: false, vertical: true)
+
+            if !prompt.options.isEmpty {
+                HStack(spacing: 8) {
+                    ForEach(prompt.options.prefix(3), id: \.self) { option in
+                        Button(option) {
+                            state.answerQuestion(session.id, CodexQuestionResponse(answer: option))
+                        }
+                        .buttonStyle(AgentInlineButtonStyle())
+                    }
+                }
+            }
+
+            HStack(spacing: 8) {
+                TextField("Type an answer", text: $conversationAnswerText)
+                    .textFieldStyle(.plain)
+                    .font(IslandVisualLanguage.islandBody(12.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .islandGlassPanel(cornerRadius: 8)
+
+                Button {
+                    let answer = conversationAnswerText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !answer.isEmpty else { return }
+                    conversationAnswerText = ""
+                    state.answerQuestion(session.id, CodexQuestionResponse(answer: answer))
+                } label: {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 22))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.white.opacity(0.9))
+            }
+        }
+        .padding(12)
+        .background(Color.yellow.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func replyComposer(for session: SessionSnapshot) -> some View {
+        let canReply = state.canReplyToSession(session)
+        let placeholder = state.replyPlaceholder(session)
+
+        return HStack(spacing: 8) {
+            TextField(placeholder, text: $conversationReplyText)
+                .textFieldStyle(.plain)
+                .font(IslandVisualLanguage.islandBody(12.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.9))
+                .disabled(!canReply)
+
+            Button {
+                let reply = conversationReplyText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !reply.isEmpty else { return }
+                conversationReplyText = ""
+                state.replyToSession(session.id, reply)
+            } label: {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 24))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(canReply ? .white.opacity(0.9) : .white.opacity(0.22))
+            .disabled(!canReply || conversationReplyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .background(Color.white.opacity(0.025))
+    }
+
+    private func conversationBubble(label: String, text: String, isUser: Bool, role: AgentTranscriptTurn.Role) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label)
+                .font(IslandVisualLanguage.islandLabel(10, weight: .bold))
+                .foregroundStyle(conversationAccent(for: role).opacity(0.82))
+            Text(text)
+                .font(IslandVisualLanguage.islandBody(12.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.88))
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(
+                colors: [
+                    conversationAccent(for: role).opacity(isUser ? 0.15 : 0.09),
+                    Color.white.opacity(isUser ? 0.065 : 0.04),
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
         .overlay {
-            RoundedRectangle(cornerRadius: CodexExpandedMetrics.cardCornerRadius, style: .continuous)
-                .stroke(Color.white.opacity(CodexExpandedMetrics.cardBorderOpacity), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(conversationAccent(for: role).opacity(isUser ? 0.22 : 0.13), lineWidth: 0.75)
         }
+    }
+
+    private func conversationAccent(for role: AgentTranscriptTurn.Role) -> Color {
+        switch role {
+        case .user:
+            return Color(red: 0.72, green: 0.82, blue: 1.0)
+        case .assistant:
+            return IslandVisualLanguage.accent
+        case .tool:
+            return Color(red: 1.0, green: 0.74, blue: 0.38)
+        case .system:
+            return Color.white.opacity(0.72)
+        }
+    }
+
+    private func conversationLabel(for turn: AgentTranscriptTurn) -> String {
+        switch turn.role {
+        case .user:
+            return "You"
+        case .assistant:
+            return turn.toolName == nil ? "Assistant" : "Assistant"
+        case .tool:
+            return turn.toolName ?? "Tool"
+        case .system:
+            return "System"
+        }
+    }
+
+    private func conversationTitle(for session: SessionSnapshot) -> String {
+        let title = session.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? session.provider.displayName : title
+    }
+
+    private func conversationWorkspace(for session: SessionSnapshot) -> String {
+        if let workspace = session.jumpTarget?.workspaceName.trimmingCharacters(in: .whitespacesAndNewlines),
+           !workspace.isEmpty {
+            return workspace
+        }
+
+        let name = URL(fileURLWithPath: session.cwd).lastPathComponent
+        return name.isEmpty ? session.provider.displayName : name
+    }
+
+    private func conversationBody(for session: SessionSnapshot) -> String? {
+        [
+            session.completionMessageMarkdown,
+            session.latestAssistantMessage,
+            session.assistantSummary,
+            session.currentCommandPreview,
+            session.phase.displayName,
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .first { !$0.isEmpty }
     }
 
     private var emptyStateMinimumHeight: CGFloat {
-        let heatmapHeight: CGFloat = 96
         let remainingHeight =
             Self.alignedModuleBodyHeight
             - measuredGlobalInfoCardHeight
-            - heatmapHeight
-            - (CodexExpandedMetrics.contentSpacing * 2)
+            - CodexExpandedMetrics.contentSpacing
         return max(CodexExpandedMetrics.emptyStateMinimumHeight, remainingHeight)
     }
 
@@ -402,9 +782,13 @@ struct CodexModuleContentView: View {
         VStack(alignment: .leading, spacing: 0) {
             content()
         }
-        .padding(10)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .islandModuleCardSurface()
+        .background(Color.white.opacity(0.018))
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(.white.opacity(0.055)).frame(height: 1)
+        }
     }
 
     private func tokenHeatmapSectionCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -441,7 +825,7 @@ struct CodexModuleContentView: View {
     @ViewBuilder
     private func completedAppIconAccessory(for session: SessionSnapshot) -> some View {
         if let target = session.jumpTarget,
-           !CodexTerminalAppRegistry.isCodexAppTarget(target) {
+           !CodexTerminalAppRegistry.isProviderAppTarget(target) {
             CodexSessionAppIconView(target: target)
         }
     }
@@ -502,7 +886,7 @@ struct CodexModuleContentView: View {
         }
 
         let raw = URL(fileURLWithPath: session.cwd).lastPathComponent
-        return raw.isEmpty ? "Codex" : raw
+        return raw.isEmpty ? session.provider.displayName : raw
     }
 
     private func completedDisplayTitle(for session: SessionSnapshot) -> String {
@@ -511,24 +895,86 @@ struct CodexModuleContentView: View {
             return completedTitleTextWithoutWorkspace(trimmed, for: session)
         }
 
-        return "Codex"
+        return session.provider.displayName
     }
 
     private func completedTitleTextWithoutWorkspace(_ title: String, for session: SessionSnapshot) -> String {
         let workspaceName = completedWorkspaceName(for: session)
-        let fallbackTitle = "Codex · \(workspaceName)"
+        let fallbackTitle = "\(session.provider.displayName) · \(workspaceName)"
         if title == workspaceName || title == fallbackTitle {
-            return "Codex"
+            return session.provider.displayName
         }
 
         let workspacePrefix = "\(workspaceName) · "
         if title.hasPrefix(workspacePrefix) {
             let cleaned = String(title.dropFirst(workspacePrefix.count))
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            return cleaned.isEmpty ? "Codex" : cleaned
+            return cleaned.isEmpty ? session.provider.displayName : cleaned
         }
 
         return title
+    }
+}
+
+private struct AgentProviderChoiceButtonStyle: ButtonStyle {
+    let isSelected: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(isSelected ? .white : .white.opacity(0.62))
+            .lineLimit(1)
+            .minimumScaleFactor(0.78)
+            .frame(maxWidth: .infinity, minHeight: 34)
+            .padding(.horizontal, 8)
+            .background(backgroundColor(isPressed: configuration.isPressed), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(isSelected ? Color.white.opacity(0.22) : Color.white.opacity(0.08), lineWidth: 1)
+            }
+    }
+
+    private func backgroundColor(isPressed: Bool) -> Color {
+        if isSelected {
+            return Color.white.opacity(isPressed ? 0.18 : 0.14)
+        }
+
+        return Color.white.opacity(isPressed ? 0.10 : 0.06)
+    }
+}
+
+private struct AgentPrimaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12.5, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.vertical, 11)
+            .background(Color.white.opacity(configuration.isPressed ? 0.16 : 0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.white.opacity(0.12), lineWidth: 1)
+            }
+    }
+}
+
+private struct AgentInlineButtonStyle: ButtonStyle {
+    var isProminent = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11.5, weight: .semibold))
+            .foregroundStyle(.white.opacity(isProminent ? 0.96 : 0.82))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 9)
+            .background(backgroundColor(isPressed: configuration.isPressed), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func backgroundColor(isPressed: Bool) -> Color {
+        if isProminent {
+            return Color.white.opacity(isPressed ? 0.20 : 0.15)
+        }
+
+        return Color.white.opacity(isPressed ? 0.12 : 0.09)
     }
 }
 
@@ -568,7 +1014,7 @@ private struct CodexTokenHeatmapView: View {
             heatmapGrid
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Codex token usage heatmap")
+        .accessibilityLabel("Agent token usage heatmap")
     }
 
     private var heatmapGrid: some View {
@@ -619,6 +1065,8 @@ private struct CodexTokenHeatmapView: View {
                 }
             }
             .contentShape(Rectangle())
+            .scaleEffect(hoveredDayID == day?.id ? 1.08 : 1, anchor: .center)
+            .animation(.easeOut(duration: 0.12), value: hoveredDayID)
             .onHover { isHovering in
                 guard let day else {
                     return

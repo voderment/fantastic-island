@@ -26,37 +26,22 @@ private struct PreviewShellSurface<Content: View>: View {
     }
 }
 
-#Preview("Shell Gallery") {
-    ScrollView {
+private struct IslandShellPreviewGallery: View {
+    var body: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 28) {
             PreviewShellSurface(title: "Closed") {
                 IslandClosedHeaderView(state: IslandShellPreviewMocks.closedHeader)
                 .frame(width: 360, height: 38)
             }
 
-            PreviewShellSurface(title: "Expanded With Wind Drive") {
+            PreviewShellSurface(title: "Expanded") {
                 VStack(alignment: .leading, spacing: CodexIslandChromeMetrics.moduleColumnSpacing) {
                     IslandExpandedNavigationView(state: IslandShellPreviewMocks.expandedTabs)
 
-                    HStack(alignment: .top, spacing: CodexIslandChromeMetrics.moduleColumnSpacing) {
-                        IslandWindDrivePanelView(state: IslandShellPreviewMocks.windDrivePanel)
-
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(Color.white.opacity(0.05))
-                            .frame(width: 430, height: 220)
-                    }
-                }
-                .padding(CodexIslandChromeMetrics.expandedContentHorizontalInset)
-                .frame(width: 760, alignment: .topLeading)
-            }
-
-            PreviewShellSurface(title: "Expanded Without Wind Drive") {
-                VStack(alignment: .leading, spacing: CodexIslandChromeMetrics.moduleColumnSpacing) {
-                    IslandExpandedNavigationView(state: IslandShellPreviewMocks.playerOnlyTabs)
-
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .fill(Color.white.opacity(0.05))
-                        .frame(width: 620, height: 180)
+                        .frame(width: 620, height: 220)
                 }
                 .padding(CodexIslandChromeMetrics.expandedContentHorizontalInset)
                 .frame(width: 720, alignment: .topLeading)
@@ -74,7 +59,16 @@ private struct PreviewShellSurface<Content: View>: View {
                     .frame(width: 520, height: 180)
             }
         }
+        }
+        .frame(width: 980, height: 1200)
+        .preferredColorScheme(.dark)
     }
-    .frame(width: 980, height: 1200)
-    .preferredColorScheme(.dark)
 }
+
+#if DEBUG
+private struct IslandShellPreviewGalleryProvider: PreviewProvider {
+    static var previews: some View {
+        IslandShellPreviewGallery()
+    }
+}
+#endif

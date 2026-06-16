@@ -60,13 +60,12 @@ struct DesignTokenWritebackService {
                     number("defaultOpenedSurfaceContentHorizontalInset", tokens.shell.openedSurfaceContentHorizontalInset),
                     number("defaultClosedHoverScale", tokens.shell.closedHoverScale),
                     number("defaultClosedHorizontalPadding", tokens.shell.closedHorizontalPadding),
-                    number("defaultClosedFanModuleSpacing", tokens.shell.closedFanModuleSpacing),
                     number("defaultClosedModuleSpacing", tokens.shell.closedModuleSpacing),
                     number("defaultClosedModuleContentSpacing", tokens.shell.closedModuleContentSpacing),
                     number("defaultClosedIconSize", tokens.shell.closedIconSize),
                     number("defaultClosedPrimaryFontSize", tokens.shell.closedPrimaryFontSize),
-                    number("defaultClosedTrafficFontSize", tokens.shell.closedTrafficFontSize),
-                    number("defaultClosedTrafficLineSpacing", tokens.shell.closedTrafficLineSpacing),
+                    number("defaultClosedSecondaryFontSize", tokens.shell.closedSecondaryFontSize),
+                    number("defaultClosedSecondaryLineSpacing", tokens.shell.closedSecondaryLineSpacing),
                     number("defaultOpenedBodyRevealDelay", tokens.shell.openedBodyRevealDelay),
                     number("defaultOpenLayoutSettleDuration", tokens.shell.openLayoutSettleDuration),
                     number("defaultCloseLayoutSettleDuration", tokens.shell.closeLayoutSettleDuration),
@@ -97,20 +96,6 @@ struct DesignTokenWritebackService {
                     number("defaultBodyCloseFadeDuration", tokens.peek.bodyCloseFadeDuration),
                     number("defaultClosedHeaderRevealDuration", tokens.peek.closedHeaderRevealDuration),
                     number("defaultClosedHeaderRevealLeadTime", tokens.peek.closedHeaderRevealLeadTime),
-                ]
-            ),
-            WritebackTarget(
-                group: .windDrive,
-                path: "FantasticIsland/FantasticIsland/UI/Shared/IslandWindDriveMetrics.swift",
-                replacements: [
-                    number("defaultPanelSide", tokens.windDrive.panelSide),
-                    number("defaultHeroCornerRadius", tokens.windDrive.heroCornerRadius),
-                    number("defaultHeroShadowOpacity", tokens.windDrive.heroShadowOpacity),
-                    number("defaultHeroShadowRadius", tokens.windDrive.heroShadowRadius),
-                    number("defaultHeroShadowYOffset", tokens.windDrive.heroShadowYOffset),
-                    number("defaultBasePlateOpacity", tokens.windDrive.basePlateOpacity),
-                    number("defaultHubDiameter", tokens.windDrive.hubDiameter),
-                    number("defaultLogoSize", tokens.windDrive.logoSize),
                 ]
             ),
             WritebackTarget(
@@ -167,20 +152,6 @@ struct DesignTokenWritebackService {
                     number("defaultCardBorderOpacity", tokens.codexExpanded.cardBorderOpacity),
                     number("defaultTitleFontSize", tokens.codexExpanded.titleFontSize),
                     number("defaultSummaryFontSize", tokens.codexExpanded.summaryFontSize),
-                ]
-            ),
-            WritebackTarget(
-                group: .clashExpanded,
-                path: "FantasticIsland/FantasticIsland/UI/Modules/Clash/ClashExpandedMetrics.swift",
-                replacements: [
-                    number("defaultOuterSpacing", tokens.clashExpanded.outerSpacing),
-                    number("defaultCardSpacing", tokens.clashExpanded.cardSpacing),
-                    number("defaultSectionTitleSpacing", tokens.clashExpanded.sectionTitleSpacing),
-                    number("defaultCardCornerRadius", tokens.clashExpanded.cardCornerRadius),
-                    number("defaultCardBackgroundOpacity", tokens.clashExpanded.cardBackgroundOpacity),
-                    number("defaultCardBorderOpacity", tokens.clashExpanded.cardBorderOpacity),
-                    number("defaultActionPillCornerRadius", tokens.clashExpanded.actionPillCornerRadius),
-                    number("defaultActionPillVerticalPadding", tokens.clashExpanded.actionPillVerticalPadding),
                 ]
             ),
             WritebackTarget(

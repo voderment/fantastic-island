@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-final class HookBridgeServer {
+final class HookBridgeServer: @unchecked Sendable {
     var onPayload: ((CodexHookPayload) -> CodexHookDirective?)?
 
     private let queue = DispatchQueue(label: "fantastic-island.hook-bridge")
@@ -10,8 +10,12 @@ final class HookBridgeServer {
     private var acceptSource: DispatchSourceRead?
     private var activeConnections: [ObjectIdentifier: ClientConnection] = [:]
     private var listenFD: Int32 = -1
-    private let socketURL = CodexHookManager.socketURL
+    private let socketURL: URL
     private var isAcceptingConnections = false
+
+    init(socketURL: URL = CodexHookManager.socketURL) {
+        self.socketURL = socketURL
+    }
 
     deinit {
         stop()
@@ -143,8 +147,16 @@ final class HookBridgeServer {
             break
         }
 
-        guard !payload.isEmpty,
-              let decoded = try? JSONDecoder().decode(CodexHookPayload.self, from: payload) else {
+        guard !payload.isEmpty else {
+            logBridgeIssue("empty hook payload")
+            return
+        }
+
+        let decoded: CodexHookPayload
+        do {
+            decoded = try JSONDecoder().decode(CodexHookPayload.self, from: payload)
+        } catch {
+            logBridgeIssue("invalid hook payload: \(error.localizedDescription)")
             return
         }
 
@@ -154,6 +166,28 @@ final class HookBridgeServer {
             var response = encoded
             response.append(contentsOf: [0x0A])
             connection.write(response)
+        }
+    }
+
+    private func logBridgeIssue(_ message: String) {
+        let url = CodexHookManager.appSupportURL.appendingPathComponent("hook-bridge.log")
+        let line = "[\(ISO8601DateFormatter().string(from: Date()))] \(message)\n"
+        guard let data = line.data(using: .utf8) else {
+            return
+        }
+
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if FileManager.default.fileExists(atPath: url.path) {
+                let handle = try FileHandle(forWritingTo: url)
+                try handle.seekToEnd()
+                try handle.write(contentsOf: data)
+                try handle.close()
+            } else {
+                try data.write(to: url, options: .atomic)
+            }
+        } catch {
+            NSLog("Fantastic Island hook bridge log failed: %@", error.localizedDescription)
         }
     }
 
@@ -179,13 +213,23 @@ final class HookBridgeServer {
         }
     }
 
-    private final class ClientConnection {
+    private final class ClientConnection: @unchecked Sendable {
         private let lock = NSLock()
         private var fileDescriptor: Int32
         private var isCancelled = false
 
         init(fileDescriptor: Int32) {
             self.fileDescriptor = fileDescriptor
+            let flags = fcntl(fileDescriptor, F_GETFL, 0)
+            if flags >= 0 {
+                _ = fcntl(fileDescriptor, F_SETFL, flags & ~O_NONBLOCK)
+            }
+            var timeout = timeval(tv_sec: 1, tv_usec: 0)
+            _ = withUnsafePointer(to: &timeout) { pointer in
+                pointer.withMemoryRebound(to: UInt8.self, capacity: MemoryLayout<timeval>.size) { rawPointer in
+                    setsockopt(fileDescriptor, SOL_SOCKET, SO_RCVTIMEO, rawPointer, socklen_t(MemoryLayout<timeval>.size))
+                }
+            }
         }
 
         deinit {

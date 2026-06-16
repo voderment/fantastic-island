@@ -31,26 +31,25 @@ struct IslandDesignTokens: Codable, Equatable {
         var openedShadowBottomInset: Double = 0
         var openedSurfaceBottomInset: Double = 0
         var openedSurfaceContentHorizontalInset: Double = 22
-        var closedHoverScale: Double = 1.028
+        var closedHoverScale: Double = 1.014
         var closedHorizontalPadding: Double = 14
-        var closedFanModuleSpacing: Double = 16
         var closedModuleSpacing: Double = 26
         var closedModuleContentSpacing: Double = 10
         var closedIconSize: Double = 18
         var closedPrimaryFontSize: Double = 10
-        var closedTrafficFontSize: Double = 8.5
-        var closedTrafficLineSpacing: Double = 1
+        var closedSecondaryFontSize: Double = 8.5
+        var closedSecondaryLineSpacing: Double = 1
         var openedBodyRevealDelay: Double = 0.12
         var openLayoutSettleDuration: Double = 0.46
         var closeLayoutSettleDuration: Double = 0.30
         var expandedContentBottomPadding: Double = 16
         var expandedContentTopPadding: Double = 24
-        var moduleColumnSpacing: Double = 20
-        var moduleNavigationRowHeight: Double = 38
-        var moduleTabSpacing: Double = 10
-        var moduleTabHorizontalPadding: Double = 16
-        var moduleTabVerticalPadding: Double = 9
-        var moduleHeaderToolbarSpacing: Double = 16
+        var moduleColumnSpacing: Double = 12
+        var moduleNavigationRowHeight: Double = 32
+        var moduleTabSpacing: Double = 8
+        var moduleTabHorizontalPadding: Double = 12
+        var moduleTabVerticalPadding: Double = 7
+        var moduleHeaderToolbarSpacing: Double = 10
         var moduleToolbarButtonGroupSpacing: Double = 12
     }
 
@@ -67,17 +66,6 @@ struct IslandDesignTokens: Codable, Equatable {
         var bodyCloseFadeDuration: Double = 0.20
         var closedHeaderRevealDuration: Double = 0.10
         var closedHeaderRevealLeadTime: Double = 0.10
-    }
-
-    struct WindDriveTokens: Codable, Equatable {
-        var panelSide: Double = 220
-        var heroCornerRadius: Double = 32
-        var heroShadowOpacity: Double = 0.28
-        var heroShadowRadius: Double = 24
-        var heroShadowYOffset: Double = 14
-        var basePlateOpacity: Double = 0.2
-        var hubDiameter: Double = 46
-        var logoSize: Double = 28
     }
 
     struct CodexPeekTokens: Codable, Equatable {
@@ -117,46 +105,33 @@ struct IslandDesignTokens: Codable, Equatable {
     }
 
     struct CodexExpandedTokens: Codable, Equatable {
-        var contentSpacing: Double = 12
+        var contentSpacing: Double = 8
         var sectionRowSpacing: Double = 6
         var globalInfoBadgeSpacing: Double = 8
         var emptyStateMinimumHeight: Double = 72
-        var cardCornerRadius: Double = 18
-        var cardBackgroundOpacity: Double = 0.045
-        var cardBorderOpacity: Double = 0.08
+        var cardCornerRadius: Double = 8
+        var cardBackgroundOpacity: Double = 0.05
+        var cardBorderOpacity: Double = 0.12
         var titleFontSize: Double = 15
         var summaryFontSize: Double = 13
     }
 
-    struct ClashExpandedTokens: Codable, Equatable {
-        var outerSpacing: Double = 12
-        var cardSpacing: Double = 6
-        var sectionTitleSpacing: Double = 8
-        var cardCornerRadius: Double = 18
-        var cardBackgroundOpacity: Double = 0.04
-        var cardBorderOpacity: Double = 0.08
-        var actionPillCornerRadius: Double = 10
-        var actionPillVerticalPadding: Double = 6
-    }
-
     struct PlayerExpandedTokens: Codable, Equatable {
-        var outerSpacing: Double = 18
-        var primaryColumnSpacing: Double = 24
-        var titleBlockSpacing: Double = 6
-        var controlsSpacing: Double = 18
-        var artworkCornerRadius: Double = 18
-        var artworkSize: Double = 112
-        var progressSectionSpacing: Double = 8
+        var outerSpacing: Double = 9
+        var primaryColumnSpacing: Double = 10
+        var titleBlockSpacing: Double = 5
+        var controlsSpacing: Double = 7
+        var artworkCornerRadius: Double = 8
+        var artworkSize: Double = 58
+        var progressSectionSpacing: Double = 5
         var controlButtonOpacityDisabled: Double = 0.42
     }
 
     var shell = ShellTokens()
     var peek = PeekTokens()
-    var windDrive = WindDriveTokens()
     var codexPeek = CodexPeekTokens()
     var playerPeek = PlayerPeekTokens()
     var codexExpanded = CodexExpandedTokens()
-    var clashExpanded = ClashExpandedTokens()
     var playerExpanded = PlayerExpandedTokens()
 
     @MainActor
@@ -169,13 +144,12 @@ struct IslandDesignTokens: Codable, Equatable {
                 openedSurfaceContentHorizontalInset: Double(CodexIslandChromeMetrics.defaultOpenedSurfaceContentHorizontalInset),
                 closedHoverScale: Double(CodexIslandChromeMetrics.defaultClosedHoverScale),
                 closedHorizontalPadding: Double(CodexIslandChromeMetrics.defaultClosedHorizontalPadding),
-                closedFanModuleSpacing: Double(CodexIslandChromeMetrics.defaultClosedFanModuleSpacing),
                 closedModuleSpacing: Double(CodexIslandChromeMetrics.defaultClosedModuleSpacing),
                 closedModuleContentSpacing: Double(CodexIslandChromeMetrics.defaultClosedModuleContentSpacing),
                 closedIconSize: Double(CodexIslandChromeMetrics.defaultClosedIconSize),
                 closedPrimaryFontSize: Double(CodexIslandChromeMetrics.defaultClosedPrimaryFontSize),
-                closedTrafficFontSize: Double(CodexIslandChromeMetrics.defaultClosedTrafficFontSize),
-                closedTrafficLineSpacing: Double(CodexIslandChromeMetrics.defaultClosedTrafficLineSpacing),
+                closedSecondaryFontSize: Double(CodexIslandChromeMetrics.defaultClosedSecondaryFontSize),
+                closedSecondaryLineSpacing: Double(CodexIslandChromeMetrics.defaultClosedSecondaryLineSpacing),
                 openedBodyRevealDelay: Double(CodexIslandChromeMetrics.defaultOpenedBodyRevealDelay),
                 openLayoutSettleDuration: Double(CodexIslandChromeMetrics.defaultOpenLayoutSettleDuration),
                 closeLayoutSettleDuration: Double(CodexIslandChromeMetrics.defaultCloseLayoutSettleDuration),
@@ -202,16 +176,6 @@ struct IslandDesignTokens: Codable, Equatable {
                 bodyCloseFadeDuration: Double(CodexIslandPeekMetrics.defaultBodyCloseFadeDuration),
                 closedHeaderRevealDuration: Double(CodexIslandPeekMetrics.defaultClosedHeaderRevealDuration),
                 closedHeaderRevealLeadTime: Double(CodexIslandPeekMetrics.defaultClosedHeaderRevealLeadTime)
-            ),
-            windDrive: WindDriveTokens(
-                panelSide: Double(IslandWindDriveMetrics.defaultPanelSide),
-                heroCornerRadius: Double(IslandWindDriveMetrics.defaultHeroCornerRadius),
-                heroShadowOpacity: Double(IslandWindDriveMetrics.defaultHeroShadowOpacity),
-                heroShadowRadius: Double(IslandWindDriveMetrics.defaultHeroShadowRadius),
-                heroShadowYOffset: Double(IslandWindDriveMetrics.defaultHeroShadowYOffset),
-                basePlateOpacity: Double(IslandWindDriveMetrics.defaultBasePlateOpacity),
-                hubDiameter: Double(IslandWindDriveMetrics.defaultHubDiameter),
-                logoSize: Double(IslandWindDriveMetrics.defaultLogoSize)
             ),
             codexPeek: CodexPeekTokens(
                 rowSpacing: Double(CodexPeekMetrics.defaultRowSpacing),
@@ -257,16 +221,6 @@ struct IslandDesignTokens: Codable, Equatable {
                 cardBorderOpacity: Double(CodexExpandedMetrics.defaultCardBorderOpacity),
                 titleFontSize: Double(CodexExpandedMetrics.defaultTitleFontSize),
                 summaryFontSize: Double(CodexExpandedMetrics.defaultSummaryFontSize)
-            ),
-            clashExpanded: ClashExpandedTokens(
-                outerSpacing: Double(ClashExpandedMetrics.defaultOuterSpacing),
-                cardSpacing: Double(ClashExpandedMetrics.defaultCardSpacing),
-                sectionTitleSpacing: Double(ClashExpandedMetrics.defaultSectionTitleSpacing),
-                cardCornerRadius: Double(ClashExpandedMetrics.defaultCardCornerRadius),
-                cardBackgroundOpacity: Double(ClashExpandedMetrics.defaultCardBackgroundOpacity),
-                cardBorderOpacity: Double(ClashExpandedMetrics.defaultCardBorderOpacity),
-                actionPillCornerRadius: Double(ClashExpandedMetrics.defaultActionPillCornerRadius),
-                actionPillVerticalPadding: Double(ClashExpandedMetrics.defaultActionPillVerticalPadding)
             ),
             playerExpanded: PlayerExpandedTokens(
                 outerSpacing: Double(PlayerExpandedMetrics.defaultOuterSpacing),

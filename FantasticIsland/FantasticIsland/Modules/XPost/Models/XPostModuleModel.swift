@@ -57,7 +57,7 @@ final class XPostModuleModel: ObservableObject, IslandModule {
         CodexIslandChromeMetrics.moduleChromeHeight + 236
 
     let id = XPostModuleModel.moduleID
-    let title = "Twitter"
+    let title = "Post"
     let symbolName = "square.and.pencil"
     let iconAssetName: String? = "Xicon"
 

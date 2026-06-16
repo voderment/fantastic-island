@@ -9,9 +9,9 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
     private static let transientNotificationAutoDismissDelay: TimeInterval = 1.5
     private static let trackSwitchActivityPriority = 240
     private static let minimumRefreshInterval: TimeInterval = 0.18
-    private static let estimatedArtworkBlockHeight: CGFloat = 112
-    private static let estimatedProgressSectionHeight: CGFloat = 30
-    private static let estimatedOuterSpacing: CGFloat = 18
+    private static let estimatedArtworkBlockHeight: CGFloat = 66
+    private static let estimatedProgressSectionHeight: CGFloat = 24
+    private static let estimatedOuterSpacing: CGFloat = 9
 
     private struct TrackIdentity: Equatable {
         let source: PlayerSourceKind
@@ -156,12 +156,7 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
             Self.estimatedArtworkBlockHeight
             + Self.estimatedOuterSpacing
             + Self.estimatedProgressSectionHeight
-        let alignedBodyHeight =
-            CodexIslandChromeMetrics.windDrivePanelHeight
-            - CodexIslandChromeMetrics.moduleNavigationRowHeight
-            - CodexIslandChromeMetrics.moduleColumnSpacing
-
-        return CodexIslandChromeMetrics.moduleChromeHeight + max(estimatedBodyHeight, alignedBodyHeight)
+        return CodexIslandChromeMetrics.moduleChromeHeight + estimatedBodyHeight
     }
     var allowsInternalScrolling: Bool { false }
 

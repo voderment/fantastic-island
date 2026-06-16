@@ -20,11 +20,13 @@ final class CodexSessionReducer {
     func upsertDiscoveredSession(_ session: DiscoveredSession) {
         var snapshot = sessions[session.id] ?? SessionSnapshot(
             id: session.id,
+            provider: session.provider,
             cwd: session.cwd,
             title: session.title,
             transcriptPath: session.transcriptPath
         )
 
+        snapshot.provider = session.provider
         snapshot.cwd = session.cwd
         snapshot.title = session.title
         snapshot.transcriptPath = session.transcriptPath
@@ -35,6 +37,15 @@ final class CodexSessionReducer {
         }
         if let assistantSummary = session.assistantSummary {
             snapshot.assistantSummary = assistantSummary
+        }
+        if let transcriptPath = snapshot.transcriptPath {
+            snapshot.transcriptTurns = AgentTranscriptParser.parseTurns(at: transcriptPath, provider: snapshot.provider)
+            if let latestUser = snapshot.transcriptTurns.last(where: { $0.role == .user })?.text {
+                snapshot.latestUserPrompt = latestUser
+            }
+            if let latestAssistant = snapshot.transcriptTurns.last(where: { $0.role == .assistant })?.text {
+                snapshot.latestAssistantMessage = latestAssistant
+            }
         }
         sessions[session.id] = snapshot
     }
@@ -104,14 +115,16 @@ final class CodexSessionReducer {
 
     func applyHookPayload(_ payload: CodexHookPayload) {
         let now = Date()
+        let provider = payload.agentProvider
         let workspaceName = URL(fileURLWithPath: payload.cwd).lastPathComponent
-        let title = workspaceName.isEmpty ? "Codex" : "Codex · \(workspaceName)"
+        let title = workspaceName.isEmpty ? provider.displayName : "\(provider.displayName) · \(workspaceName)"
         let jumpTarget = payload.terminalJumpTarget
         let startEvent = SessionStartedEvent(
             sessionID: payload.sessionID,
+            provider: provider,
             cwd: payload.cwd,
             title: title,
-            summary: payload.assistantSummary ?? payload.prompt ?? "Codex session.",
+            summary: payload.assistantSummary ?? payload.prompt ?? "\(provider.displayName) session.",
             timestamp: now,
             jumpTarget: jumpTarget,
             transcriptPath: payload.transcriptPath,
@@ -211,11 +224,13 @@ final class CodexSessionReducer {
         case let .sessionStarted(payload):
             var session = sessions[payload.sessionID] ?? SessionSnapshot(
                 id: payload.sessionID,
+                provider: payload.provider,
                 cwd: payload.cwd,
                 title: payload.title,
                 transcriptPath: payload.transcriptPath,
                 phase: .completed
             )
+            session.provider = payload.provider
             session.cwd = payload.cwd
             session.title = payload.title
             session.transcriptPath = payload.transcriptPath ?? session.transcriptPath

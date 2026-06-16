@@ -1,6 +1,7 @@
 build/
 */build/
 .build/
+.context/
 *.xcuserstate
 *.xcuserdatad
 *.xcodeproj/xcuserdata/

@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-private let islandDefaultNotchSize = CGSize(width: 224, height: 38)
+private let islandDefaultNotchSize = CGSize(width: 168, height: 38)
 
 // Copyright 2026 Fantastic Island contributors
 // Portions adapted from open-vibe-island contributors
@@ -36,9 +36,9 @@ final class IslandShellController {
     }
 
     static let defaultNotchSize = islandDefaultNotchSize
-    private static let minimumExpandedContentWidth: CGFloat = 720
-    private static let maximumExpandedContentWidth: CGFloat = 780
-    private static let expandedContentWidthFactor: CGFloat = 0.46
+    private static let minimumExpandedContentWidth: CGFloat = 440
+    private static let maximumExpandedContentWidth: CGFloat = 520
+    private static let expandedContentWidthFactor: CGFloat = 0.24
     private static let openedContentBottomPadding: CGFloat = CodexIslandChromeMetrics.openedSurfaceBottomInset
 
     fileprivate weak var model: IslandAppModel?
@@ -224,8 +224,7 @@ final class IslandShellController {
 
     func expandedContentWidth(for model: IslandAppModel, on screen: NSScreen?) -> CGFloat {
         let resolvedWidth = CodexIslandChromeMetrics.resolvedExpandedContentWidth(
-            baseContentWidth: expandedContentWidth(for: screen),
-            showsWindDrivePanel: model.showsExpandedWindDrivePanel
+            baseContentWidth: expandedContentWidth(for: screen)
         )
 
         guard let screen else {

@@ -41,7 +41,7 @@ struct XPostModuleContentView: View {
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
                         .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
                                 .fill(Color.white.opacity(model.canSignIn ? 0.92 : 0.44))
                         )
                 }
@@ -52,12 +52,12 @@ struct XPostModuleContentView: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.white.opacity(0.045))
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
         }
     }
 
@@ -85,11 +85,11 @@ struct XPostModuleContentView: View {
             }
             .frame(minHeight: 116, maxHeight: 116)
             .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.white.opacity(isComposerFocused ? 0.072 : 0.055))
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(composerStrokeColor, lineWidth: isComposerFocused ? 1.8 : 1)
             }
             .shadow(color: composerGlowColor, radius: isComposerFocused ? 7 : 0)
@@ -115,7 +115,7 @@ struct XPostModuleContentView: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 9)
                         .background(
-                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
                                 .fill(Color.white.opacity(model.canPost ? 0.92 : 0.36))
                         )
                 }

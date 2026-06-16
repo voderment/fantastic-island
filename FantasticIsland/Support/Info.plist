@@ -37,6 +37,18 @@
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Fantastic Island needs access to Music, Podcasts, and Spotify so Player can read playback and control transport.</string>
+		<key>NSCalendarsUsageDescription</key>
+		<string>Fantastic Island uses calendar access to show your next event in Horizon.</string>
+		<key>NSCalendarsFullAccessUsageDescription</key>
+		<string>Fantastic Island uses calendar access to show your next event in Horizon.</string>
+		<key>NSRemindersUsageDescription</key>
+		<string>Fantastic Island uses reminders access to show your next due reminder in Horizon.</string>
+		<key>NSRemindersFullAccessUsageDescription</key>
+		<string>Fantastic Island uses reminders access to show your next due reminder in Horizon.</string>
+		<key>NSLocationUsageDescription</key>
+		<string>Fantastic Island uses your location to show local weather in Horizon.</string>
+		<key>NSAccessibilityUsageDescription</key>
+		<string>Fantastic Island checks whether the frontmost app is fullscreen so it can hide the island when requested.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

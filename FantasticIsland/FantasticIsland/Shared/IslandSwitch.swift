@@ -1,9 +1,9 @@
 import SwiftUI
 
 enum IslandCardMetrics {
-    static let moduleCardCornerRadius: CGFloat = 14
-    static let moduleCardFillColor = Color.white.opacity(0.05)
-    static let moduleCardStrokeColor = Color.white.opacity(0.10)
+    static let moduleCardCornerRadius: CGFloat = 16
+    static let moduleCardFillColor = Color.white.opacity(0.045)
+    static let moduleCardStrokeColor = Color.white.opacity(0.11)
 }
 
 private struct IslandModuleCardSurfaceModifier: ViewModifier {
@@ -14,10 +14,32 @@ private struct IslandModuleCardSurfaceModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .background(fillColor, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .background {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [fillColor.opacity(1.35), fillColor.opacity(0.75)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(strokeColor, lineWidth: strokeWidth)
+                    .stroke(
+                        LinearGradient(
+                            colors: [strokeColor.opacity(1.2), strokeColor.opacity(0.55)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: strokeWidth
+                    )
+            }
+            .overlay(alignment: .top) {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color.white.opacity(0.05))
+                    .frame(height: 1)
+                    .padding(.horizontal, cornerRadius)
             }
     }
 }

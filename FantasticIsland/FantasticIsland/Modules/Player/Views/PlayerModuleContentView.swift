@@ -57,6 +57,8 @@ struct PlayerModuleContentView: View {
     private var standardContent: some View {
         VStack(alignment: .leading, spacing: PlayerExpandedMetrics.outerSpacing) {
             HStack(alignment: .top, spacing: PlayerExpandedMetrics.primaryColumnSpacing) {
+                artworkView
+
                 VStack(alignment: .leading, spacing: PlayerExpandedMetrics.controlsSpacing + 4) {
                     titleBlock
 
@@ -67,8 +69,6 @@ struct PlayerModuleContentView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
-
-                artworkView
             }
 
             if !showsAutomationIssue {
@@ -138,16 +138,6 @@ struct PlayerModuleContentView: View {
 
     private var artworkBody: some View {
         artworkThumbnail
-            .overlay(alignment: .bottom) {
-                PlayerSourceSelectorView(
-                    selectedSource: state.selectedSource,
-                    options: state.sourceOptions,
-                    iconImages: state.sourceIconImages,
-                    selectSource: state.selectSource
-                )
-                .frame(width: PlayerExpandedMetrics.artworkSize - 8)
-                .padding(.bottom, 7)
-            }
     }
 
     private var artworkThumbnail: some View {
@@ -163,7 +153,7 @@ struct PlayerModuleContentView: View {
 
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: PlayerExpandedMetrics.titleBlockSpacing) {
-            HStack(alignment: .center, spacing: 16) {
+            HStack(alignment: .center, spacing: 10) {
                 PlayerAnimatedTitleText(
                     title: state.nowPlayingState.titleText,
                     lineLimit: showsAutomationIssue ? 2 : 1
@@ -172,17 +162,32 @@ struct PlayerModuleContentView: View {
 
                 Spacer(minLength: 0)
 
+                if !showsAutomationIssue, state.nowPlayingState.playbackStatus.isPlaying {
+                    PlayerVisualizerView(isPlaying: true)
+                }
+
                 if !showsAutomationIssue {
+                    sourceSelector
                     playbackModeControls
                 }
             }
 
             Text(state.nowPlayingState.artistText)
-                .font(.system(size: 15, weight: .medium))
+                .font(.system(size: 13.5, weight: .medium))
                 .foregroundStyle(.white.opacity(0.56))
                 .lineLimit(showsAutomationIssue ? 2 : 1)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private var sourceSelector: some View {
+        PlayerSourceSelectorView(
+            selectedSource: state.selectedSource,
+            options: state.sourceOptions,
+            currentSourceLabel: state.nowPlayingState.sourceLabel,
+            iconImages: state.sourceIconImages,
+            selectSource: state.selectSource
+        )
     }
 
     private var automationIssueActionRow: some View {
@@ -248,19 +253,19 @@ struct PlayerModuleContentView: View {
 
     private var controlsRow: some View {
         HStack(spacing: PlayerExpandedMetrics.controlsSpacing) {
-            controlButton(systemName: "backward.fill", iconSize: 24, frameWidth: 42, frameHeight: 32, action: state.previousTrack)
+            controlButton(systemName: "backward.fill", iconSize: 18, frameWidth: 34, frameHeight: 28, action: state.previousTrack)
                 .disabled(!state.supportsTransportControls)
 
             controlButton(
                 systemName: state.nowPlayingState.playbackStatus.isPlaying ? "pause.fill" : "play.fill",
-                iconSize: 28,
-                frameWidth: 36,
-                frameHeight: 36,
+                iconSize: 22,
+                frameWidth: 34,
+                frameHeight: 30,
                 action: state.togglePlayPause
             )
             .disabled(!state.supportsTransportControls)
 
-            controlButton(systemName: "forward.fill", iconSize: 24, frameWidth: 42, frameHeight: 32, action: state.nextTrack)
+            controlButton(systemName: "forward.fill", iconSize: 18, frameWidth: 34, frameHeight: 28, action: state.nextTrack)
                 .disabled(!state.supportsTransportControls)
         }
         .opacity(state.supportsTransportControls ? 1 : PlayerExpandedMetrics.controlButtonOpacityDisabled)
@@ -309,7 +314,7 @@ struct PlayerModuleContentView: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(modeButtonForegroundColor(isActive: isActive, isEnabled: isEnabled))
                 .frame(width: 30, height: 26)
-                .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(PlayerModeButtonStyle(isActive: isActive, isEnabled: isEnabled))
         .disabled(!isEnabled)
@@ -407,7 +412,7 @@ private struct PlayerAnimatedTitleText: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: 20, weight: .bold))
+            .font(.system(size: 16.5, weight: .bold))
             .foregroundStyle(.white.opacity(0.96))
             .lineLimit(lineLimit)
             .contentTransition(.numericText())
@@ -517,6 +522,7 @@ private struct PlayerArtworkThumbnailView: View {
 private struct PlayerSourceSelectorView: View {
     let selectedSource: PlayerSourceKind
     let options: [PlayerSourceKind]
+    let currentSourceLabel: String
     let iconImages: [PlayerSourceKind: NSImage]
     let selectSource: (PlayerSourceKind) -> Void
 
@@ -532,12 +538,12 @@ private struct PlayerSourceSelectorView: View {
             isEnabled: options.count > 1,
             localizeLabel: false,
             localizeMenuItems: false,
-            maxLabelWidth: 42,
+            maxLabelWidth: 62,
             icon: { iconImages[$0] },
-            iconSize: 13,
+            iconSize: 12,
             itemSpacing: 4,
-            horizontalPadding: 7,
-            verticalPadding: 6,
+            horizontalPadding: 6,
+            verticalPadding: 4,
             backgroundColor: .black,
             backgroundOpacity: 0.72,
             disabledBackgroundOpacity: 0.62,
@@ -545,13 +551,16 @@ private struct PlayerSourceSelectorView: View {
             strokeOpacity: 0.16,
             strokeLineWidth: 0.8
         )
-        .frame(width: PlayerExpandedMetrics.artworkSize - 8, height: 34)
+        .frame(width: max(68, PlayerExpandedMetrics.artworkSize + 8), height: 24)
         .clipShape(Capsule())
         .help("Switch playback source")
     }
 
     private func sourceLabel(for source: PlayerSourceKind) -> String {
         switch source {
+        case .nowPlaying:
+            let label = currentSourceLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+            return label.isEmpty || label == PlayerSourceKind.nowPlaying.displayName ? "Now" : label
         case .music:
             return "Music"
         case .podcasts:
@@ -566,7 +575,7 @@ private struct PlayerTransportButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.white.opacity(configuration.isPressed ? 0.12 : 0.001))
             )
             .scaleEffect(configuration.isPressed ? 0.94 : 1)
@@ -581,7 +590,7 @@ private struct PlayerModeButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(
                         backgroundFill(isPressed: configuration.isPressed)
                     )
@@ -638,11 +647,11 @@ private struct PlayerIssueActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.white.opacity(configuration.isPressed ? 0.16 : 0.08))
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(Color.white.opacity(configuration.isPressed ? 0.22 : 0.10), lineWidth: 0.8)
             }
             .scaleEffect(configuration.isPressed ? 0.97 : 1)

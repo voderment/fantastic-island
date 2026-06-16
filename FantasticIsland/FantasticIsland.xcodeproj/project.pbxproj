@@ -53,6 +53,7 @@
 				403C20EF2F8CAF6100C9A86C /* Sources */,
 				403C20F02F8CAF6100C9A86C /* Frameworks */,
 				403C20F12F8CAF6100C9A86C /* Resources */,
+				40F9A0012F99B000009E4658 /* Clear Bundle Extended Attributes */,
 			);
 			buildRules = (
 			);
@@ -89,8 +90,6 @@
 			knownRegions = (
 				en,
 				Base,
-				"zh-Hans",
-				"zh-Hant",
 			);
 			mainGroup = 403C20EA2F8CAF6100C9A86C;
 			minimizedProjectReferenceProxies = 1;
@@ -114,6 +113,32 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		40F9A0012F99B000009E4658 /* Clear Bundle Extended Attributes */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 0;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/Info.plist",
+				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/MacOS/$(EXECUTABLE_NAME)",
+				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/Resources/Assets.car",
+			);
+			name = "Clear Bundle Extended Attributes";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_TEMP_DIR)/clear-bundle-xattrs.stamp",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -eu\n\nmkdir -p \"$TARGET_TEMP_DIR\"\nstamp=\"$TARGET_TEMP_DIR/clear-bundle-xattrs.stamp\"\n\nindex=0\nwhile [ \"$index\" -lt \"${SCRIPT_INPUT_FILE_COUNT:-0}\" ]; do\n    eval file=\\\"\\${SCRIPT_INPUT_FILE_$index:-}\\\"\n    if [ -n \"$file\" ] && [ -e \"$file\" ]; then\n        /usr/bin/xattr -c \"$file\" >/dev/null 2>&1 || true\n    fi\n    index=$((index + 1))\ndone\n\ntouch \"$stamp\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		403C20EF2F8CAF6100C9A86C /* Sources */ = {
@@ -164,7 +189,7 @@
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -229,7 +254,7 @@
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;

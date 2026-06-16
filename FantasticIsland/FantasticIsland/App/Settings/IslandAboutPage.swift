@@ -17,28 +17,6 @@ struct IslandAboutPage: View {
                 "Provides the interaction baseline that Fantastic Island extends with its own modules and settings surface.",
             ]
         ),
-        IslandThirdPartyProject(
-            name: "mihomo",
-            repositoryURL: "https://github.com/MetaCubeX/mihomo",
-            licenseName: "MIT",
-            summary: "Provides the runtime core Fantastic Island can integrate with for managed Clash workflows.",
-            versionText: "v1.19.23",
-            evidenceTitle: "Role in Fantastic Island",
-            evidenceItems: [
-                "Provides the local proxy core used when managed Clash runtime assets are available.",
-            ]
-        ),
-        IslandThirdPartyProject(
-            name: "metacubexd",
-            repositoryURL: "https://github.com/MetaCubeX/metacubexd",
-            licenseName: "MIT",
-            summary: "Provides the Clash dashboard Fantastic Island can integrate with for advanced inspection.",
-            versionText: "v1.245.0",
-            evidenceTitle: "Role in Fantastic Island",
-            evidenceItems: [
-                "Supplies the web dashboard interface used for Clash inspection and control when runtime assets are available.",
-            ]
-        ),
     ]
 
     var body: some View {
@@ -71,7 +49,7 @@ struct IslandAboutPage: View {
                             .font(.system(size: 24, weight: .bold))
                             .foregroundStyle(.white)
 
-                        Text("A notch-first macOS utility that brings Codex, Clash, and Player into one shared island surface.")
+                        Text("A notch-first macOS utility that brings agents, playback, and lightweight system context into one compact island surface.")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(.white.opacity(0.56))
                             .fixedSize(horizontal: false, vertical: true)
@@ -89,7 +67,7 @@ struct IslandAboutPage: View {
 
                 AboutInfoBlock(
                     title: "Product concept",
-                    value: "Fantastic Island treats the notch as a shared command surface instead of a passive status strip. Codex lives beside Clash and Player so lightweight status, quick actions, and module switching all happen in one compact place."
+                    value: "Fantastic Island treats the notch as a shared command surface instead of a passive status strip. Agents, playback, and horizon context stay close enough to read, reply, and act without leaving the island."
                 )
             }
         }
@@ -110,12 +88,12 @@ struct IslandAboutPage: View {
 
                 AboutAuditRow(
                     title: "Optional runtime integrations",
-                    value: "mihomo, metacubexd"
+                    value: "Codex CLI, Codex.app"
                 )
 
                 AboutAuditRow(
                     title: "Product modules",
-                    value: "Codex, Clash, Player"
+                    value: "Agents, Player, Horizon"
                 )
 
                 AboutAuditRow(
@@ -199,15 +177,15 @@ private struct AboutCard<Content: View>: View {
         VStack(alignment: .leading, spacing: 16) {
             content
         }
-        .padding(20)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.white.opacity(0.04))
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.white.opacity(0.05), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
         }
     }
 }
@@ -323,21 +301,21 @@ private struct AboutProjectCard: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(Color.white.opacity(0.08))
                     )
             }
             .buttonStyle(.plain)
         }
-        .padding(16)
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.white.opacity(0.035))
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.05), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
         }
     }
 

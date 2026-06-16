@@ -2,13 +2,13 @@ import CoreGraphics
 
 @MainActor
 enum PlayerExpandedMetrics {
-    static let defaultOuterSpacing: CGFloat = 24
-    static let defaultPrimaryColumnSpacing: CGFloat = 12
-    static let defaultTitleBlockSpacing: CGFloat = 6
-    static let defaultControlsSpacing: CGFloat = 18
-    static let defaultArtworkCornerRadius: CGFloat = 18
-    static let defaultArtworkSize: CGFloat = 90
-    static let defaultProgressSectionSpacing: CGFloat = 8
+    static let defaultOuterSpacing: CGFloat = 9
+    static let defaultPrimaryColumnSpacing: CGFloat = 10
+    static let defaultTitleBlockSpacing: CGFloat = 5
+    static let defaultControlsSpacing: CGFloat = 7
+    static let defaultArtworkCornerRadius: CGFloat = 8
+    static let defaultArtworkSize: CGFloat = 58
+    static let defaultProgressSectionSpacing: CGFloat = 5
     static let defaultControlButtonOpacityDisabled: CGFloat = 0.42
 
     static var outerSpacing: CGFloat { CGFloat(IslandDesignTokenRuntime.current.playerExpanded.outerSpacing) }

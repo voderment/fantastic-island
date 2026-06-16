@@ -35,19 +35,39 @@ enum SessionPhase: String, Codable {
 
 enum CodexIslandSurface: Equatable, Codable {
     case sessionList(actionableSessionID: String? = nil)
+    case conversation(sessionID: String)
+    case newSession
 
     var sessionID: String? {
         switch self {
         case let .sessionList(actionableSessionID):
             actionableSessionID
+        case let .conversation(sessionID):
+            sessionID
+        case .newSession:
+            nil
         }
     }
 
     var isNotificationCard: Bool {
-        sessionID != nil
+        switch self {
+        case .sessionList(actionableSessionID: .some):
+            return true
+        case .sessionList, .conversation, .newSession:
+            return false
+        }
     }
 
     func matchesCurrentState(of session: SessionSnapshot?) -> Bool {
+        switch self {
+        case .conversation:
+            return session != nil
+        case .newSession:
+            return true
+        case .sessionList:
+            break
+        }
+
         guard sessionID != nil else {
             return true
         }
@@ -298,6 +318,9 @@ struct CodexTerminalJumpTarget: Identifiable, Codable, Hashable {
     var tmuxTarget: String?
     var tmuxSocketPath: String?
     var warpPaneUUID: String?
+    var workspaceIdentifier: String?
+    var conductorPort: Int?
+    var conductorURL: String?
 
     init(
         sessionID: String,
@@ -315,7 +338,10 @@ struct CodexTerminalJumpTarget: Identifiable, Codable, Hashable {
         paneIdentifier: String? = nil,
         tmuxTarget: String? = nil,
         tmuxSocketPath: String? = nil,
-        warpPaneUUID: String? = nil
+        warpPaneUUID: String? = nil,
+        workspaceIdentifier: String? = nil,
+        conductorPort: Int? = nil,
+        conductorURL: String? = nil
     ) {
         self.sessionID = sessionID
         self.transcriptPath = transcriptPath
@@ -333,6 +359,9 @@ struct CodexTerminalJumpTarget: Identifiable, Codable, Hashable {
         self.tmuxTarget = tmuxTarget
         self.tmuxSocketPath = tmuxSocketPath
         self.warpPaneUUID = warpPaneUUID
+        self.workspaceIdentifier = workspaceIdentifier
+        self.conductorPort = conductorPort
+        self.conductorURL = conductorURL
         self.id = Self.makeIdentifier(
             sessionID: sessionID,
             transcriptPath: transcriptPath,
@@ -348,7 +377,10 @@ struct CodexTerminalJumpTarget: Identifiable, Codable, Hashable {
             tabIdentifier: tabIdentifier,
             paneIdentifier: paneIdentifier,
             tmuxTarget: tmuxTarget,
-            warpPaneUUID: warpPaneUUID
+            warpPaneUUID: warpPaneUUID,
+            workspaceIdentifier: workspaceIdentifier,
+            conductorPort: conductorPort,
+            conductorURL: conductorURL
         )
     }
 
@@ -365,6 +397,20 @@ struct CodexTerminalJumpTarget: Identifiable, Codable, Hashable {
         return "Terminal"
     }
 
+    var conductorRoutingURL: URL? {
+        if let rawURL = conductorURL?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !rawURL.isEmpty,
+           let url = URL(string: rawURL) {
+            return url
+        }
+
+        if let conductorPort, conductorPort > 0 {
+            return URL(string: "http://127.0.0.1:\(conductorPort)")
+        }
+
+        return nil
+    }
+
     var detailLabel: String? {
         var parts: [String] = []
 
@@ -379,6 +425,12 @@ struct CodexTerminalJumpTarget: Identifiable, Codable, Hashable {
         }
         if let paneIdentifier, !paneIdentifier.isEmpty {
             parts.append("pane \(paneIdentifier)")
+        }
+        if let workspaceIdentifier, !workspaceIdentifier.isEmpty {
+            parts.append(workspaceIdentifier)
+        }
+        if let conductorPort {
+            parts.append(":\(conductorPort)")
         }
 
         guard !parts.isEmpty else {
@@ -403,7 +455,12 @@ struct CodexTerminalJumpTarget: Identifiable, Codable, Hashable {
             return true
         }
 
-        return terminalApp.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "ghostty"
+        let app = terminalApp.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return app == "ghostty"
+            || app == "terminal"
+            || app == "apple_terminal"
+            || app == "iterm"
+            || app == "iterm2"
     }
 
     func merged(with other: CodexTerminalJumpTarget) -> CodexTerminalJumpTarget {
@@ -423,7 +480,10 @@ struct CodexTerminalJumpTarget: Identifiable, Codable, Hashable {
             paneIdentifier: other.paneIdentifier ?? paneIdentifier,
             tmuxTarget: other.tmuxTarget ?? tmuxTarget,
             tmuxSocketPath: other.tmuxSocketPath ?? tmuxSocketPath,
-            warpPaneUUID: other.warpPaneUUID ?? warpPaneUUID
+            warpPaneUUID: other.warpPaneUUID ?? warpPaneUUID,
+            workspaceIdentifier: other.workspaceIdentifier ?? workspaceIdentifier,
+            conductorPort: other.conductorPort ?? conductorPort,
+            conductorURL: other.conductorURL ?? conductorURL
         )
     }
 
@@ -442,7 +502,10 @@ struct CodexTerminalJumpTarget: Identifiable, Codable, Hashable {
         tabIdentifier: String?,
         paneIdentifier: String?,
         tmuxTarget: String?,
-        warpPaneUUID: String?
+        warpPaneUUID: String?,
+        workspaceIdentifier: String?,
+        conductorPort: Int?,
+        conductorURL: String?
     ) -> String {
         let rawComponents: [String?] = [
             sessionID,
@@ -460,6 +523,9 @@ struct CodexTerminalJumpTarget: Identifiable, Codable, Hashable {
             paneIdentifier,
             tmuxTarget,
             warpPaneUUID,
+            workspaceIdentifier,
+            conductorPort.map(String.init),
+            conductorURL,
         ]
 
         let components = rawComponents.compactMap { value -> String? in
@@ -502,6 +568,7 @@ struct SessionSnapshot: Identifiable, Codable {
     ]
 
     let id: String
+    var provider: AgentProvider
     var cwd: String
     var title: String
     var transcriptPath: String?
@@ -521,9 +588,11 @@ struct SessionSnapshot: Identifiable, Codable {
     var sourceFlags: SessionSourceFlags
     var toolTransitionTimestamps: [Date]
     var isSessionEnded: Bool
+    var transcriptTurns: [AgentTranscriptTurn]
 
     init(
         id: String,
+        provider: AgentProvider = .codex,
         cwd: String,
         title: String,
         transcriptPath: String? = nil,
@@ -542,9 +611,11 @@ struct SessionSnapshot: Identifiable, Codable {
         sessionSurface: CodexSessionSurface = .unknown,
         sourceFlags: SessionSourceFlags = [],
         toolTransitionTimestamps: [Date] = [],
-        isSessionEnded: Bool = false
+        isSessionEnded: Bool = false,
+        transcriptTurns: [AgentTranscriptTurn] = []
     ) {
         self.id = id
+        self.provider = provider
         self.cwd = cwd
         self.title = title
         self.transcriptPath = transcriptPath
@@ -564,11 +635,12 @@ struct SessionSnapshot: Identifiable, Codable {
         self.sourceFlags = sourceFlags
         self.toolTransitionTimestamps = toolTransitionTimestamps
         self.isSessionEnded = isSessionEnded
+        self.transcriptTurns = transcriptTurns
     }
 
-    static func title(for cwd: String) -> String {
+    static func title(for cwd: String, provider: AgentProvider = .codex) -> String {
         let workspace = URL(fileURLWithPath: cwd).lastPathComponent
-        return workspace.isEmpty ? "Codex" : "Codex · \(workspace)"
+        return workspace.isEmpty ? provider.displayName : "\(provider.displayName) · \(workspace)"
     }
 
     var canJumpBack: Bool {
@@ -576,7 +648,14 @@ struct SessionSnapshot: Identifiable, Codable {
     }
 
     var canSendText: Bool {
-        phase == .completed && jumpTarget?.canReply == true
+        guard !phase.requiresAttention else { return false }
+        if jumpTarget?.canReply == true { return true }
+        switch provider {
+        case .codex, .claudeCode:
+            return true
+        case .cursor, .antigravity, .conductor:
+            return jumpTarget?.canReply == true
+        }
     }
 
     var canResolvePermission: Bool {
@@ -663,6 +742,7 @@ struct SessionSnapshot: Identifiable, Codable {
 
 struct SessionStartedEvent: Equatable, Codable {
     var sessionID: String
+    var provider: AgentProvider = .codex
     var cwd: String
     var title: String
     var summary: String
@@ -735,10 +815,8 @@ enum CodexAgentEvent: Equatable, Codable {
     case actionableStateResolved(ActionableStateResolvedEvent)
 }
 
-struct FanActivityState {
+struct AgentActivityState {
     var activityScore = 0.0
-    var isSpinning = false
-    var rotationPeriod = 1.6
     var activeSessionCount = 0
     var inProgressSessionCount = 0
     var busySessionCount = 0

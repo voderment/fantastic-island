@@ -114,9 +114,9 @@ struct CodexWorkspaceBadge: View {
     private var maxWidth: CGFloat {
         switch prominence {
         case .standard:
-            return 116
-        case .compact:
             return 96
+        case .compact:
+            return 80
         }
     }
 }
@@ -140,10 +140,13 @@ struct CodexIslandSessionRow: View {
     let referenceDate: Date
     var isActionable: Bool = false
     var surfaceStyle: SurfaceStyle = .standard
+    var canReply = false
+    var replyPlaceholder = "Reply to session"
     var onApprove: ((CodexApprovalAction) -> Void)?
     var onAnswer: ((CodexQuestionResponse) -> Void)?
     var onReply: ((String) -> Void)?
-    var onJump: (() -> Void)?
+    var onOpenConversation: (() -> Void)?
+    var onOpenApp: (() -> Void)?
 
     @State private var isHighlighted = false
     @State private var replyText = ""
@@ -159,18 +162,26 @@ struct CodexIslandSessionRow: View {
 
             if isActionable {
                 actionableBody
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 14)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 10)
             }
         }
-        .islandModuleCardSurface(
-            cornerRadius: IslandCardMetrics.moduleCardCornerRadius,
-            fillColor: rowFillColor,
-            strokeColor: borderColor
-        )
-        .contentShape(RoundedRectangle(cornerRadius: IslandCardMetrics.moduleCardCornerRadius, style: .continuous))
+        .background(rowFillColor)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(.white.opacity(0.045))
+                .frame(height: 1)
+        }
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 999, style: .continuous)
+                .fill(statusColor.opacity(isActionable ? 0.95 : 0.70))
+                .frame(width: isActionable ? 3 : 2)
+                .padding(.vertical, isActionable ? 9 : 12)
+                .padding(.leading, 6)
+        }
+        .contentShape(Rectangle())
         .onTapGesture {
-            onJump?()
+            onOpenConversation?()
         }
         .onHover { hovering in
             isHighlighted = hovering
@@ -200,16 +211,18 @@ struct CodexIslandSessionRow: View {
         }
 
         if isHighlighted {
-            return Color.white.opacity(isActionable ? 0.075 : 0.065)
+            return Color.white.opacity(isActionable ? 0.07 : 0.045)
         }
 
-        return isActionable ? Color.white.opacity(0.06) : IslandCardMetrics.moduleCardFillColor
+        return isActionable ? Color.white.opacity(0.052) : Color.white.opacity(0.012)
     }
 
     private var standardHeader: some View {
         HStack(alignment: .top, spacing: headerRowSpacing) {
-            statusDot
-                .padding(.top, statusDotTopPadding)
+            if usesPeekStyle {
+                statusDot
+                    .padding(.top, statusDotTopPadding)
+            }
 
             VStack(alignment: .leading, spacing: headerContentSpacing) {
                 HStack(alignment: .center, spacing: headerContentSpacing) {
@@ -224,9 +237,9 @@ struct CodexIslandSessionRow: View {
 
                     HStack(spacing: badgeSpacing) {
                         CodexWorkspaceBadge(title: workspaceName, prominence: workspaceBadgeProminence)
-                        compactBadge(toolLabel, tone: statusBadgeTone)
-                        compactBadge(CodexIslandSessionPresentation.ageBadge(for: session, now: referenceDate))
-                        appIconAccessory
+                        providerBadge
+                        statusAccessory
+                        openAppButton
                     }
                     .fixedSize(horizontal: true, vertical: false)
                     .layoutPriority(1)
@@ -258,7 +271,7 @@ struct CodexIslandSessionRow: View {
             return workspace
         }
         let raw = URL(fileURLWithPath: session.cwd).lastPathComponent
-        return raw.isEmpty ? "Codex" : raw
+        return raw.isEmpty ? session.provider.displayName : raw
     }
 
     private var displayTitle: String {
@@ -266,20 +279,20 @@ struct CodexIslandSessionRow: View {
         if !trimmed.isEmpty {
             return titleTextWithoutWorkspace(trimmed)
         }
-        return "Codex"
+        return session.provider.displayName
     }
 
     private func titleTextWithoutWorkspace(_ title: String) -> String {
-        let fallbackTitle = "Codex · \(workspaceName)"
+        let fallbackTitle = "\(session.provider.displayName) · \(workspaceName)"
         if title == workspaceName || title == fallbackTitle {
-            return "Codex"
+            return session.provider.displayName
         }
 
         let workspacePrefix = "\(workspaceName) · "
         if title.hasPrefix(workspacePrefix) {
             let cleaned = String(title.dropFirst(workspacePrefix.count))
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            return cleaned.isEmpty ? "Codex" : cleaned
+            return cleaned.isEmpty ? session.provider.displayName : cleaned
         }
 
         return title
@@ -323,8 +336,35 @@ struct CodexIslandSessionRow: View {
     @ViewBuilder
     private var appIconAccessory: some View {
         if let target = session.jumpTarget,
-           !CodexTerminalAppRegistry.isCodexAppTarget(target) {
+           !CodexTerminalAppRegistry.isProviderAppTarget(target) {
             CodexSessionAppIconView(target: target)
+        }
+    }
+
+    private var providerBadge: some View {
+        Text(session.provider.compactName)
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.7))
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3.5)
+            .background(Color.white.opacity(0.075), in: Capsule())
+    }
+
+    @ViewBuilder
+    private var openAppButton: some View {
+        if onOpenApp != nil {
+            Button {
+                onOpenApp?()
+            } label: {
+                Image(systemName: "arrow.up.forward.app")
+                    .font(.system(size: 10, weight: .bold))
+                    .frame(width: 18, height: 18)
+            }
+            .buttonStyle(CodexCompactIconButtonStyle())
+            .help("Open \(session.provider.displayName)")
+            .accessibilityLabel("Open \(session.provider.displayName)")
         }
     }
 
@@ -419,7 +459,7 @@ struct CodexIslandSessionRow: View {
     }
 
     private var headerRowSpacing: CGFloat {
-        usesPeekStyle ? CodexPeekMetrics.rowSpacing : 12
+        usesPeekStyle ? CodexPeekMetrics.rowSpacing : 7
     }
 
     private var statusDotTopPadding: CGFloat {
@@ -427,11 +467,11 @@ struct CodexIslandSessionRow: View {
     }
 
     private var headerContentSpacing: CGFloat {
-        usesPeekStyle ? CodexPeekMetrics.contentSpacing : 7
+        usesPeekStyle ? CodexPeekMetrics.contentSpacing : 4
     }
 
     private var headlineFontSize: CGFloat {
-        usesPeekStyle ? CodexPeekMetrics.titleFontSize : (isActionable ? 15 : 13.5)
+        usesPeekStyle ? CodexPeekMetrics.titleFontSize : 12.2
     }
 
     private var titleTrailingSpacerMinLength: CGFloat {
@@ -455,11 +495,11 @@ struct CodexIslandSessionRow: View {
     }
 
     private var headerHorizontalPadding: CGFloat {
-        usesPeekStyle ? CodexPeekMetrics.cardHorizontalPadding : 16
+        usesPeekStyle ? CodexPeekMetrics.cardHorizontalPadding : 12
     }
 
     private var headerVerticalPadding: CGFloat {
-        usesPeekStyle ? CodexPeekMetrics.cardVerticalPadding : 14
+        usesPeekStyle ? CodexPeekMetrics.cardVerticalPadding : (isActionable ? 7 : 6)
     }
 
     private var statusDotSize: CGFloat {
@@ -478,6 +518,16 @@ struct CodexIslandSessionRow: View {
             return .approval
         case .waitingForAnswer:
             return .question
+        }
+    }
+
+    @ViewBuilder
+    private var statusAccessory: some View {
+        switch session.phase {
+        case .running, .busy:
+            AgentRunningMark(color: statusColor, label: toolLabel)
+        case .completed, .waitingForApproval, .waitingForAnswer:
+            compactBadge(toolLabel, tone: statusBadgeTone)
         }
     }
 
@@ -579,11 +629,11 @@ struct CodexIslandSessionRow: View {
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color(red: 0.11, green: 0.08, blue: 0.03))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(.orange.opacity(0.18))
             )
 
@@ -667,9 +717,9 @@ struct CodexIslandSessionRow: View {
                     .buttonStyle(CodexWideButtonStyle(kind: .warning))
                 }
 
-                if onJump != nil {
+                if onOpenApp != nil {
                     Button(peekContinueButtonTitle) {
-                        onJump?()
+                        onOpenApp?()
                     }
                     .buttonStyle(CodexWideButtonStyle(kind: .secondary))
                 }
@@ -695,9 +745,9 @@ struct CodexIslandSessionRow: View {
                         .disabled(!(session.canAnswerQuestion && onAnswer != nil))
                     }
 
-                    if onJump != nil {
+                    if onOpenApp != nil {
                         Button(peekContinueButtonTitle) {
-                            onJump?()
+                            onOpenApp?()
                         }
                         .buttonStyle(CodexWideButtonStyle(kind: .secondary))
                     }
@@ -716,9 +766,9 @@ struct CodexIslandSessionRow: View {
                     .foregroundStyle(.white.opacity(0.74))
                     .fixedSize(horizontal: false, vertical: true)
 
-                if onJump != nil {
+                if onOpenApp != nil {
                     Button(peekContinueButtonTitle) {
-                        onJump?()
+                        onOpenApp?()
                     }
                     .buttonStyle(CodexWideButtonStyle(kind: .secondary))
                 }
@@ -747,15 +797,12 @@ struct CodexIslandSessionRow: View {
                 .fill(.white.opacity(0.04))
                 .frame(height: 1)
 
-            ScrollView(.vertical, showsIndicators: false) {
-                CodexMarkdownText(value: completionMessageText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-            }
-            .frame(maxHeight: 260)
+            CodexMarkdownText(value: completionMessageText, lineLimit: 5)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
 
-            if onReply != nil && session.canSendText {
+            if onReply != nil && canReply {
                 Rectangle()
                     .fill(.white.opacity(0.04))
                     .frame(height: 1)
@@ -764,11 +811,11 @@ struct CodexIslandSessionRow: View {
             }
         }
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.white.opacity(0.045))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(.white.opacity(0.08))
         )
     }
@@ -796,7 +843,7 @@ struct CodexIslandSessionRow: View {
     private var completionReplyInput: some View {
         HStack(spacing: 8) {
             CodexReplyTextField(
-                placeholder: "Reply to session",
+                placeholder: replyPlaceholder,
                 text: $replyText,
                 onSubmit: { submitReply() }
             )
@@ -868,7 +915,7 @@ struct CodexIslandSessionRow: View {
 
     private var peekContinueButtonTitle: String {
         if session.sessionSurface == .codexApp {
-            return "Continue in Codex"
+            return "Open \(session.provider.compactName)"
         }
         return "Open Session"
     }
@@ -913,6 +960,43 @@ struct CodexIslandSessionRow: View {
                 CodexQuestionResponse(answer: option)
             }
         )
+    }
+}
+
+private struct AgentRunningMark: View {
+    let color: Color
+    let label: String
+    @State private var phase = false
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 2) {
+            ForEach(0..<3, id: \.self) { index in
+                RoundedRectangle(cornerRadius: 1.4, style: .continuous)
+                    .fill(color)
+                    .frame(width: 3, height: phase ? activeHeight(for: index) : idleHeight(for: index))
+                    .opacity(phase ? 0.98 : 0.58)
+                    .animation(
+                        .easeInOut(duration: 0.52)
+                            .repeatForever(autoreverses: true)
+                            .delay(Double(index) * 0.08),
+                        value: phase
+                    )
+            }
+        }
+        .frame(width: 18, height: 18)
+        .accessibilityLabel(label)
+        .help(label)
+        .onAppear {
+            phase = true
+        }
+    }
+
+    private func activeHeight(for index: Int) -> CGFloat {
+        [12, 16, 10][index]
+    }
+
+    private func idleHeight(for index: Int) -> CGFloat {
+        [7, 10, 8][index]
     }
 }
 
@@ -1251,7 +1335,7 @@ private struct CodexWideButtonStyle: ButtonStyle {
             .foregroundStyle(foregroundColor)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
-            .background(backgroundColor(configuration.isPressed), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(backgroundColor(configuration.isPressed), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .opacity(isEnabled ? 1 : 0.42)
     }
 
@@ -1301,9 +1385,9 @@ private struct CodexQuestionChoiceButtonStyle: ButtonStyle {
             .minimumScaleFactor(0.82)
             .frame(maxWidth: .infinity, minHeight: 48)
             .padding(.horizontal, 12)
-            .background(backgroundColor(isPressed: configuration.isPressed), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .background(backgroundColor(isPressed: configuration.isPressed), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(borderColor, lineWidth: isSelected ? 1 : 0.75)
             }
             .opacity(isEnabled ? 1 : 0.46)
@@ -1345,7 +1429,7 @@ private struct CodexQuestionNavigationButtonStyle: ButtonStyle {
             .font(.system(size: 11.5, weight: .semibold))
             .foregroundStyle(foregroundColor)
             .frame(maxWidth: .infinity, minHeight: 38)
-            .background(backgroundColor(isPressed: configuration.isPressed), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(backgroundColor(isPressed: configuration.isPressed), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .opacity(isEnabled ? 1 : 0.38)
     }
 
@@ -1372,17 +1456,20 @@ private struct CodexQuestionNavigationButtonStyle: ButtonStyle {
 
 private struct CodexMarkdownText: View {
     let value: String
+    var lineLimit: Int?
 
     var body: some View {
         if let attributed = try? AttributedString(markdown: value) {
             Text(attributed)
                 .font(.system(size: 12.5, weight: .regular))
                 .foregroundStyle(.white.opacity(0.90))
+                .lineLimit(lineLimit)
                 .textSelection(.enabled)
         } else {
             Text(value)
                 .font(.system(size: 12.5, weight: .regular))
                 .foregroundStyle(.white.opacity(0.90))
+                .lineLimit(lineLimit)
                 .textSelection(.enabled)
         }
     }

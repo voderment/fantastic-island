@@ -44,6 +44,157 @@ private func firstNonEmpty(_ values: [String?]) -> String? {
         .first { !$0.isEmpty }
 }
 
+private enum AgentUsageCacheLoader {
+    private static let appOwnedUsageDirectory = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support/Fantastic Island/Agent Usage", isDirectory: true)
+
+    static func loadClaudeUsage() -> CodexQuotaSnapshot? {
+        loadUsage(
+            from: [
+                appOwnedUsageURL(for: .claudeCode),
+                URL(fileURLWithPath: "/tmp/open-island-rl.json"),
+                URL(fileURLWithPath: "/tmp/vibe-island-rl.json"),
+            ]
+        )
+    }
+
+    static func loadAntigravityUsage() -> CodexQuotaSnapshot? {
+        loadUsage(
+            from: [
+                appOwnedUsageURL(for: .antigravity),
+                URL(fileURLWithPath: "/tmp/fantastic-island-antigravity-rl.json"),
+                URL(fileURLWithPath: "/tmp/open-island-antigravity-rl.json"),
+                URL(fileURLWithPath: "/tmp/antigravity-rl.json"),
+            ]
+        )
+    }
+
+    static func loadCursorUsage() -> CodexQuotaSnapshot? {
+        loadUsage(
+            from: [
+                appOwnedUsageURL(for: .cursor),
+                URL(fileURLWithPath: "/tmp/fantastic-island-cursor-rl.json"),
+                URL(fileURLWithPath: "/tmp/cursor-rl.json"),
+            ]
+        )
+    }
+
+    private static func appOwnedUsageURL(for provider: AgentProvider) -> URL {
+        appOwnedUsageDirectory.appendingPathComponent(provider.rawValue).appendingPathExtension("json")
+    }
+
+    private static func loadUsage(from urls: [URL]) -> CodexQuotaSnapshot? {
+        let candidates = urls
+            .compactMap { url -> (URL, Date)? in
+                guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+                let modifiedAt = (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date) ?? .distantPast
+                return (url, modifiedAt)
+            }
+            .sorted { $0.1 > $1.1 }
+
+        for (url, modifiedAt) in candidates {
+            guard let data = try? Data(contentsOf: url),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                continue
+            }
+
+            let fiveHour = usageWindow(for: "five_hour", in: object)
+                ?? usageWindow(for: "primary", in: object)
+                ?? usageWindow(for: "fiveHour", in: object)
+                ?? (nil, nil)
+            let week = usageWindow(for: "seven_day", in: object)
+                ?? usageWindow(for: "weekly", in: object)
+                ?? usageWindow(for: "secondary", in: object)
+                ?? usageWindow(for: "week", in: object)
+                ?? usageWindow(for: "sevenDay", in: object)
+                ?? (nil, nil)
+
+            guard fiveHour.remainingPercent != nil || week.remainingPercent != nil else {
+                continue
+            }
+
+            return CodexQuotaSnapshot(
+                fiveHourRemainingPercent: fiveHour.remainingPercent,
+                weekRemainingPercent: week.remainingPercent,
+                fiveHourResetAt: fiveHour.resetAt,
+                weekResetAt: week.resetAt,
+                capturedAt: modifiedAt,
+                sourceKind: .preferred
+            )
+        }
+
+        return nil
+    }
+
+    private static func usageWindow(for key: String, in object: [String: Any]) -> (remainingPercent: Int?, resetAt: Date?)? {
+        guard let window = object[key] as? [String: Any] else {
+            return nil
+        }
+
+        let used = number(from: window["used_percentage"])
+            ?? number(from: window["used_percent"])
+            ?? number(from: window["utilization"])
+        let remaining = number(from: window["remaining_percentage"])
+            ?? number(from: window["remaining_percent"])
+            ?? used.map { 100 - $0 }
+        let boundedRemaining = remaining.map { max(0, min(100, Int($0.rounded()))) }
+        let resetAt = date(from: window["resets_at"] ?? window["reset_at"])
+
+        guard boundedRemaining != nil || resetAt != nil else {
+            return nil
+        }
+
+        return (boundedRemaining, resetAt)
+    }
+
+    private static func number(from value: Any?) -> Double? {
+        switch value {
+        case let value as NSNumber:
+            return value.doubleValue
+        case let value as String:
+            return Double(value)
+        default:
+            return nil
+        }
+    }
+
+    private static func date(from value: Any?) -> Date? {
+        switch value {
+        case let value as NSNumber:
+            return Date(timeIntervalSince1970: value.doubleValue)
+        case let value as String:
+            if let seconds = Double(value) {
+                return Date(timeIntervalSince1970: seconds)
+            }
+            let fractional = ISO8601DateFormatter()
+            fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = fractional.date(from: value) {
+                return date
+            }
+            return ISO8601DateFormatter().date(from: value)
+        default:
+            return nil
+        }
+    }
+}
+
+private extension AgentProvider {
+    var quotaShortName: String {
+        switch self {
+        case .codex:
+            return "Cx"
+        case .claudeCode:
+            return "Cl"
+        case .antigravity:
+            return "AG"
+        case .cursor:
+            return "Cu"
+        case .conductor:
+            return "Co"
+        }
+    }
+}
+
 @MainActor
 final class CodexModuleModel: ObservableObject, IslandModule {
     static let moduleID = "codex"
@@ -52,33 +203,34 @@ final class CodexModuleModel: ObservableObject, IslandModule {
         CodexIslandChromeMetrics.preferredTallModuleOpenedContentHeight
     private static let preferredEmptyExpandedContentHeight: CGFloat =
         CodexIslandChromeMetrics.expandedContentTopPadding
-        + CodexIslandChromeMetrics.windDrivePanelHeight
-    private static let estimatedGlobalInfoCardHeight: CGFloat = 58
-    private static let estimatedTokenHeatmapCardHeight: CGFloat = 96
+        + 176
+    private static let estimatedGlobalInfoCardHeight: CGFloat = 36
     private static let tokenUsageHeatmapDayCount = 365
-    private static let estimatedContentSpacing: CGFloat = 12
-    private static let estimatedSessionRowHeight: CGFloat = 88
-    private static let estimatedSessionRowSpacing: CGFloat = 6
-    private static let estimatedActionableSessionHeight: CGFloat = 196
-    private static let estimatedApprovalSessionHeight: CGFloat = 248
-    private static let estimatedQuestionSessionHeight: CGFloat = 304
-    private static let estimatedTransientSessionHeight: CGFloat = 196
+    private static let estimatedContentSpacing: CGFloat = 8
+    private static let estimatedSessionRowHeight: CGFloat = 50
+    private static let estimatedSessionRowSpacing: CGFloat = 0
+    private static let estimatedActionableSessionHeight: CGFloat = 136
+    private static let estimatedApprovalSessionHeight: CGFloat = 176
+    private static let estimatedQuestionSessionHeight: CGFloat = 206
+    private static let estimatedTransientSessionHeight: CGFloat = 136
     private static let estimatedPeekNotificationHeight: CGFloat = 120
     private static let estimatedFooterButtonHeight: CGFloat = 28
+    private static let compactOverviewSessionLimit = 3
     private static let transientNotificationAutoDismissDelay: TimeInterval = 3
 
-    @Published private(set) var activityState = FanActivityState()
+    @Published private(set) var activityState = AgentActivityState()
     @Published private(set) var hooksStatus = HookInstallStatus.notInstalled
     @Published private(set) var bridgeStatusText = "Starting"
     @Published private(set) var appServerStatusText = "Disconnected"
     @Published private(set) var sessionSurface: CodexIslandSurface = .sessionList(actionableSessionID: nil)
     @Published private(set) var isNotificationMode = false
+    @Published private var isShowingAllSessions = false
     @Published private(set) var lastActionMessage: String?
 
     let id = CodexModuleModel.moduleID
-    let title = "Codex"
-    let symbolName = "terminal"
-    let iconAssetName: String? = "codexicon"
+    let title = "Agents"
+    let symbolName = "sparkles"
+    let iconAssetName: String? = nil
 
     private let monitoringEngine = CodexMonitoringEngine()
     private let hookManager = CodexHookManager()
@@ -86,6 +238,8 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     private let appServerCoordinator = CodexAppServerCoordinator()
     private let terminalJumpService = CodexTerminalJumpService()
     private let terminalTextSender = CodexTerminalTextSender()
+    private let cliReplySender = CodexCLIReplySender()
+    private let sessionLauncher = AgentSessionLauncher()
 
     private var pollTimer: Timer?
     private var monitoredSessions: [SessionSnapshot] = []
@@ -102,10 +256,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     private var pendingHookApprovals: [String: PendingHookApprovalDecision] = [:]
 
     init() {
-        hookBridgeServer.onPayload = { [weak self] payload in
-            guard let self else {
-                return nil
-            }
+        hookBridgeServer.onPayload = { [self] payload in
             return self.handleHookBridgePayload(payload)
         }
 
@@ -144,7 +295,49 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     }
 
     var islandListSessions: [SessionSnapshot] {
-        sessionBuckets.primary
+        let primary = sessionBuckets.primary
+        if isNotificationMode, let activeNotificationSession {
+            return [activeNotificationSession]
+        }
+
+        if isShowingAllSessions {
+            return primary
+        }
+
+        return Array(primary.prefix(Self.compactOverviewSessionLimit))
+    }
+
+    var sessionListTotalCount: Int {
+        sessionBuckets.primary.count
+    }
+
+    var closedAgentIndicators: (visible: [CompactAgentIndicator], overflow: Int) {
+        let visibleSessions = monitoredSessions
+            .filter { !$0.isInternalSupportSession && $0.isVisibleInIsland(at: .now) }
+            .sorted { lhs, rhs in
+                let lhsAttention = lhs.phase.requiresAttention ? 1 : 0
+                let rhsAttention = rhs.phase.requiresAttention ? 1 : 0
+                if lhsAttention != rhsAttention {
+                    return lhsAttention > rhsAttention
+                }
+
+                let lhsRunning = (lhs.phase == .running || lhs.phase == .busy) ? 1 : 0
+                let rhsRunning = (rhs.phase == .running || rhs.phase == .busy) ? 1 : 0
+                if lhsRunning != rhsRunning {
+                    return lhsRunning > rhsRunning
+                }
+
+                return lhs.islandActivityDate > rhs.islandActivityDate
+            }
+
+        let visible = visibleSessions.prefix(7).map { session in
+            CompactAgentIndicator(
+                id: session.id,
+                provider: session.provider,
+                state: compactIndicatorState(for: session)
+            )
+        }
+        return (Array(visible), max(0, visibleSessions.count - visible.count))
     }
 
     var activeNotificationSession: SessionSnapshot? {
@@ -156,14 +349,24 @@ final class CodexModuleModel: ObservableObject, IslandModule {
         return monitoredSessions.first { $0.id == actionableSessionID }
     }
 
+    var selectedConversationSession: SessionSnapshot? {
+        guard case let .conversation(sessionID) = sessionSurface else {
+            return nil
+        }
+
+        return monitoredSessions.first { $0.id == sessionID }
+    }
+
     var shouldShowShowAllButton: Bool {
-        isNotificationMode
-            && activeNotificationSession != nil
-            && islandListSessions.count > 1
+        if isNotificationMode {
+            return activeNotificationSession != nil && sessionListTotalCount > islandListSessions.count
+        }
+
+        return !isShowingAllSessions && sessionListTotalCount > islandListSessions.count
     }
 
     var canCollapseSessionList: Bool {
-        !isNotificationMode && sessionSurface.sessionID != nil
+        isShowingAllSessions || (!isNotificationMode && sessionSurface.sessionID != nil)
     }
 
     var compactFiveHourQuotaText: String { compactQuotaText(prefix: "5H", value: quotaSnapshot?.fiveHourRemainingPercent) }
@@ -174,6 +377,14 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     var globalInfoWeekValueText: String { quotaValueText(quotaSnapshot?.weekRemainingPercent) }
     var globalInfoFiveHourResetCompactText: String { quotaResetTimeCompactText(quotaSnapshot?.fiveHourResetAt) }
     var globalInfoWeekResetCompactText: String { quotaResetCompactText(quotaSnapshot?.weekResetAt) }
+    var providerQuotaItems: [AgentProviderQuotaDisplayItem] {
+        [
+            providerQuotaItem(for: .codex, snapshot: quotaSnapshot),
+            providerQuotaItem(for: .claudeCode, snapshot: AgentUsageCacheLoader.loadClaudeUsage()),
+            providerQuotaItem(for: .cursor, snapshot: AgentUsageCacheLoader.loadCursorUsage()),
+            providerQuotaItem(for: .antigravity, snapshot: AgentUsageCacheLoader.loadAntigravityUsage()),
+        ]
+    }
     var tokenUsageHeatmapDays: [CodexTokenUsageDay] { tokenUsageHistory.days(dayCount: Self.tokenUsageHeatmapDayCount) }
     var tokenUsageHeatmapPeriodText: String { "\(Self.tokenUsageHeatmapDayCount)D \(formatTokenCount(tokenUsageHeatmapDays.map(\.totalTokens).reduce(0, +)))" }
     var tokenUsageHeatmapPeakText: String {
@@ -209,20 +420,6 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     var collapsedSummaryItems: [CollapsedSummaryItem] {
         [
             CollapsedSummaryItem(
-                id: "\(id).summary.5h",
-                moduleID: id,
-                title: "5H quota",
-                text: compactFiveHourQuotaText,
-                isEnabledByDefault: true
-            ),
-            CollapsedSummaryItem(
-                id: "\(id).summary.week",
-                moduleID: id,
-                title: "Week quota",
-                text: compactWeekQuotaText,
-                isEnabledByDefault: true
-            ),
-            CollapsedSummaryItem(
                 id: "\(id).summary.live",
                 moduleID: id,
                 title: "Live sessions",
@@ -232,14 +429,23 @@ final class CodexModuleModel: ObservableObject, IslandModule {
         ]
     }
 
+    private func compactIndicatorState(for session: SessionSnapshot) -> CompactAgentIndicatorState {
+        if session.phase.requiresAttention {
+            return .waiting
+        }
+        if session.phase == .running || session.phase == .busy {
+            return .running
+        }
+        return .idle
+    }
+
     var taskActivityContribution: TaskActivityContribution {
         TaskActivityContribution(
             activityScore: activityState.activityScore,
             activeTaskCount: activityState.activeSessionCount,
             inProgressTaskCount: activityState.inProgressSessionCount,
             busyTaskCount: activityState.busySessionCount,
-            lastEventAt: activityState.lastEventAt,
-            supportsIdleSpin: isCodexCurrentlyRunning
+            lastEventAt: activityState.lastEventAt
         )
     }
 
@@ -310,8 +516,6 @@ final class CodexModuleModel: ObservableObject, IslandModule {
 
         let estimatedContentHeight =
             Self.estimatedGlobalInfoCardHeight
-            + Self.estimatedContentSpacing
-            + Self.estimatedTokenHeatmapCardHeight
             + Self.estimatedContentSpacing
             + estimatedSessionSectionHeight
         let estimatedOpenedHeight = CodexIslandChromeMetrics.moduleChromeHeight + estimatedContentHeight
@@ -399,7 +603,9 @@ final class CodexModuleModel: ObservableObject, IslandModule {
             sessionSurface: sessionSurface,
             isNotificationMode: isNotificationMode,
             islandListSessions: islandListSessions,
+            sessionListTotalCount: sessionListTotalCount,
             activeNotificationSession: activeNotificationSession,
+            selectedConversationSession: selectedConversationSession,
             presentedSession: presentedSession,
             shouldShowShowAllButton: shouldShowShowAllButton,
             canCollapseSessionList: canCollapseSessionList,
@@ -408,6 +614,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
             globalInfoWeekValueText: globalInfoWeekValueText,
             globalInfoFiveHourResetCompactText: globalInfoFiveHourResetCompactText,
             globalInfoWeekResetCompactText: globalInfoWeekResetCompactText,
+            providerQuotaItems: providerQuotaItems,
             tokenUsageHeatmapDays: tokenUsageHeatmapDays,
             tokenUsageHeatmapPeriodText: tokenUsageHeatmapPeriodText,
             tokenUsageHeatmapPeakText: tokenUsageHeatmapPeakText,
@@ -421,14 +628,38 @@ final class CodexModuleModel: ObservableObject, IslandModule {
                     self?.answerQuestion(for: sessionID, response: response)
                 }
             },
+            canReplyToSession: { [weak self] session in
+                self?.canReply(to: session) == true
+            },
+            replyPlaceholder: { [weak self] session in
+                self?.replyPlaceholder(for: session) ?? "Open \(session.provider.displayName) to reply"
+            },
             replyToSession: { [weak self] sessionID, text in
                 Task { @MainActor in
                     _ = self?.replyToSession(sessionID, text: text)
                 }
             },
-            jumpToSession: { [weak self] sessionID in
+            transcriptTurnsForSession: { [weak self] session in
+                self?.transcriptTurns(for: session) ?? []
+            },
+            openConversation: { [weak self] sessionID in
                 Task { @MainActor in
-                    self?.jumpToSession(sessionID)
+                    self?.openConversation(sessionID)
+                }
+            },
+            openSessionApp: { [weak self] sessionID in
+                Task { @MainActor in
+                    self?.openSessionApp(sessionID)
+                }
+            },
+            showNewSession: { [weak self] in
+                Task { @MainActor in
+                    self?.showNewSession()
+                }
+            },
+            startNewSession: { [weak self] request in
+                Task { @MainActor in
+                    self?.startNewSession(request)
                 }
             },
             showAllSessions: { [weak self] in
@@ -466,7 +697,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
             ? NSLocalizedString("Reinstall Fantastic Island Hooks?", comment: "")
             : NSLocalizedString("Install Fantastic Island Hooks?", comment: "")
         alert.informativeText = NSLocalizedString(
-            "This will update ~/.codex/config.toml and ~/.codex/hooks.json so the codex module can receive SessionStart, PreToolUse, PermissionRequest, PostToolUse, UserPromptSubmit, and Stop events.",
+            "This will update the local hook settings for Codex, Claude Code, Cursor, and Antigravity so the Agents island can receive session, tool, permission, prompt, and stop events.",
             comment: ""
         )
         alert.alertStyle = .warning
@@ -493,7 +724,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
         let alert = NSAlert()
         alert.messageText = NSLocalizedString("Uninstall Fantastic Island Hooks?", comment: "")
         alert.informativeText = NSLocalizedString(
-            "This removes Fantastic Island managed hook entries and turns off the managed codex_hooks flag.",
+            "This removes Fantastic Island managed hook entries for Codex, Claude Code, Cursor, and Antigravity and turns off the managed Codex hooks flag.",
             comment: ""
         )
         alert.alertStyle = .warning
@@ -530,19 +761,59 @@ final class CodexModuleModel: ObservableObject, IslandModule {
 
     func showAllSessions() {
         isNotificationMode = false
+        isShowingAllSessions = true
+        sessionSurface = .sessionList(actionableSessionID: nil)
     }
 
     func collapseSessionList() {
+        if isShowingAllSessions {
+            isShowingAllSessions = false
+            sessionSurface = .sessionList(actionableSessionID: nil)
+            return
+        }
+
         guard sessionSurface.sessionID != nil else {
             return
         }
         isNotificationMode = true
     }
 
-    func jumpToSession(_ sessionID: String) {
+    func openConversation(_ sessionID: String) {
+        guard let index = monitoredSessions.firstIndex(where: { $0.id == sessionID }) else {
+            return
+        }
+
+        refreshTranscriptTurns(for: &monitoredSessions[index])
+        isNotificationMode = false
+        isShowingAllSessions = false
+        sessionSurface = .conversation(sessionID: sessionID)
+    }
+
+    func showNewSession() {
+        isNotificationMode = false
+        isShowingAllSessions = false
+        sessionSurface = .newSession
+    }
+
+    func startNewSession(_ request: AgentNewSessionRequest) {
+        do {
+            try sessionLauncher.launch(request)
+            lastActionMessage = "Starting \(request.provider.displayName)."
+            sessionSurface = .sessionList(actionableSessionID: nil)
+            isNotificationMode = false
+            isShowingAllSessions = false
+        } catch {
+            presentErrorAlert(title: "Failed to Start Session", message: error.localizedDescription)
+        }
+    }
+
+    func openSessionApp(_ sessionID: String) {
         guard let session = monitoredSessions.first(where: { $0.id == sessionID }),
               let jumpTarget = session.jumpTarget,
               jumpTarget.canActivate else {
+            if let session = monitoredSessions.first(where: { $0.id == sessionID }) {
+                openProviderApp(session.provider)
+            }
             return
         }
 
@@ -551,6 +822,26 @@ final class CodexModuleModel: ObservableObject, IslandModule {
         } catch {
             presentErrorAlert(title: "Failed to Jump Back", message: error.localizedDescription)
         }
+    }
+
+    func jumpToSession(_ sessionID: String) {
+        openSessionApp(sessionID)
+    }
+
+    private func openProviderApp(_ provider: AgentProvider) {
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: provider.appBundleIdentifier) {
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+            return
+        }
+
+        for bundleIdentifier in provider.fallbackAppBundleIdentifiers {
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) {
+                NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+                return
+            }
+        }
+
+        presentErrorAlert(title: "App Not Found", message: "\(provider.displayName) is not installed.")
     }
 
     private static func debugSession(for activity: IslandActivity) -> SessionSnapshot? {
@@ -612,19 +903,44 @@ final class CodexModuleModel: ObservableObject, IslandModule {
             return false
         }
 
-        guard let session = monitoredSessions.first(where: { $0.id == sessionID }),
-              let jumpTarget = session.jumpTarget,
-              jumpTarget.canReply else {
+        guard let session = monitoredSessions.first(where: { $0.id == sessionID }) else {
             return false
         }
 
-        do {
-            try terminalTextSender.send(trimmed, to: jumpTarget)
-            return true
-        } catch {
-            presentErrorAlert(title: "Failed to send text", message: error.localizedDescription)
+        guard isDirectReplySupported(for: session) else {
             return false
         }
+
+        guard cliReplySender.canSend(to: session) else {
+            return false
+        }
+
+        lastActionMessage = "Reply queued through \(session.provider.displayName) CLI."
+        Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                try await self.cliReplySender.send(trimmed, to: session)
+                await MainActor.run {
+                    self.lastActionMessage = nil
+                    self.handleAgentEvent(.activityUpdated(
+                        SessionActivityUpdatedEvent(
+                            sessionID: sessionID,
+                            summary: "Reply sent through \(session.provider.displayName) CLI.",
+                            phase: .busy,
+                            timestamp: .now
+                        )
+                    ))
+                }
+            } catch {
+                await MainActor.run {
+                    self.lastActionMessage = nil
+                    self.presentErrorAlert(title: "Failed to send text", message: error.localizedDescription)
+                }
+            }
+        }
+
+        return true
     }
 
     func approvePermission(for sessionID: String, action: CodexApprovalAction) {
@@ -659,6 +975,56 @@ final class CodexModuleModel: ObservableObject, IslandModule {
         }
     }
 
+    private func canReply(to session: SessionSnapshot) -> Bool {
+        guard !session.phase.requiresAttention else {
+            return false
+        }
+
+        guard isDirectReplySupported(for: session) else {
+            return false
+        }
+
+        return cliReplySender.canSend(to: session)
+    }
+
+    private func isDirectReplySupported(for session: SessionSnapshot) -> Bool {
+        session.provider.supportsDirectIslandReply
+    }
+
+    private func replyPlaceholder(for session: SessionSnapshot) -> String {
+        if session.phase.requiresAttention {
+            return "Resolve the request above first"
+        }
+
+        switch session.provider {
+        case .codex:
+            return cliReplySender.canSend(to: session) ? "Reply through Codex CLI" : "Codex CLI not found"
+        case .claudeCode:
+            return "Open Claude Code to reply"
+        case .cursor, .antigravity, .conductor:
+            return "Open \(session.provider.displayName) to reply"
+        }
+    }
+
+    private func refreshTranscriptTurns(for session: inout SessionSnapshot) {
+        guard let transcriptPath = session.transcriptPath else { return }
+        session.transcriptTurns = AgentTranscriptParser.parseTurns(at: transcriptPath, provider: session.provider)
+        if let latestUser = session.transcriptTurns.last(where: { $0.role == .user })?.text {
+            session.latestUserPrompt = latestUser
+        }
+        if let latestAssistant = session.transcriptTurns.last(where: { $0.role == .assistant })?.text {
+            session.latestAssistantMessage = latestAssistant
+        }
+    }
+
+    func transcriptTurns(for session: SessionSnapshot) -> [AgentTranscriptTurn] {
+        if !session.transcriptTurns.isEmpty {
+            return session.transcriptTurns
+        }
+        guard let transcriptPath = session.transcriptPath else { return [] }
+        return AgentTranscriptParser.parseTurns(at: transcriptPath, provider: session.provider)
+    }
+
     func answerQuestion(for sessionID: String, response: CodexQuestionResponse) {
         guard let session = monitoredSessions.first(where: { $0.id == sessionID }),
               let requestContext = session.pendingRequestContext else {
@@ -687,9 +1053,17 @@ final class CodexModuleModel: ObservableObject, IslandModule {
             }
 
         case .hook:
-            if let rawAnswer = response.rawAnswer {
-                _ = replyToSession(sessionID, text: rawAnswer)
+            guard let rawAnswer = response.rawAnswer?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !rawAnswer.isEmpty else {
+                lastActionMessage = "Open \(session.provider.displayName) to answer this question."
+                return
             }
+
+            guard replyToSession(sessionID, text: rawAnswer) else {
+                lastActionMessage = "Open \(session.provider.displayName) to answer this question."
+                return
+            }
+
             handleAgentEvent(.actionableStateResolved(
                 ActionableStateResolvedEvent(
                     sessionID: sessionID,
@@ -729,16 +1103,14 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     private func refreshActivityState(now: Date) {
         let delta = min(max(now.timeIntervalSince(lastActivityRefreshAt), 0), max(pollInterval * 2, 0.25))
         lastActivityRefreshAt = now
-        let freshState = FanActivityModel.recompute(
+        let freshState = AgentActivityModel.recompute(
             from: monitoredSessions,
             now: now
         )
         let decayFactor = pow(0.92, delta / 0.2)
         displayedScore = max(freshState.activityScore, displayedScore * decayFactor)
-        activityState = FanActivityState(
+        activityState = AgentActivityState(
             activityScore: displayedScore,
-            isSpinning: freshState.isSpinning,
-            rotationPeriod: freshState.rotationPeriod,
             activeSessionCount: freshState.activeSessionCount,
             inProgressSessionCount: freshState.inProgressSessionCount,
             busySessionCount: freshState.busySessionCount,
@@ -794,8 +1166,8 @@ final class CodexModuleModel: ObservableObject, IslandModule {
             )
 
         guard needsInteractiveApproval else {
-            Task { @MainActor [weak self] in
-                self?.handleHookPayload(payload)
+            Task { @MainActor [self] in
+                self.handleHookPayload(payload)
             }
             return nil
         }
@@ -803,14 +1175,14 @@ final class CodexModuleModel: ObservableObject, IslandModule {
         let requestID = "hook:\(UUID().uuidString)"
         let pendingDecision = PendingHookApprovalDecision(eventName: payload.hookEventName)
 
-        Task { @MainActor [weak self] in
-            self?.registerHookApproval(payload: payload, requestID: requestID, decision: pendingDecision)
+        Task { @MainActor [self] in
+            self.registerHookApproval(payload: payload, requestID: requestID, decision: pendingDecision)
         }
 
         let result = pendingDecision.wait(timeout: Self.hookApprovalTimeout)
         if !result.resolved {
-            Task { @MainActor [weak self] in
-                self?.handleHookApprovalTimeout(requestID: requestID)
+            Task { @MainActor [self] in
+                self.handleHookApprovalTimeout(requestID: requestID)
             }
             return nil
         }
@@ -930,6 +1302,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
             }
             sessionSurface = notificationSurface
             isNotificationMode = true
+            isShowingAllSessions = false
         default:
             break
         }
@@ -944,18 +1317,27 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     }
 
     private func reconcileSessionSurface() {
-        guard case let .sessionList(actionableSessionID) = sessionSurface else {
-            return
-        }
-
-        if let actionableSessionID {
-            let session = monitoredSessions.first(where: { $0.id == actionableSessionID })
-            if !sessionSurface.matchesCurrentState(of: session) {
+        switch sessionSurface {
+        case let .conversation(sessionID):
+            if !monitoredSessions.contains(where: { $0.id == sessionID }) {
                 sessionSurface = .sessionList(actionableSessionID: nil)
                 isNotificationMode = false
             }
-        } else if isNotificationMode {
-            isNotificationMode = false
+            return
+        case .newSession:
+            return
+        case let .sessionList(actionableSessionID):
+            if let actionableSessionID {
+                let session = monitoredSessions.first(where: { $0.id == actionableSessionID })
+                if !sessionSurface.matchesCurrentState(of: session) {
+                    sessionSurface = .sessionList(actionableSessionID: nil)
+                    isNotificationMode = false
+                }
+            } else if isNotificationMode {
+                isNotificationMode = false
+            }
+
+            return
         }
     }
 
@@ -989,6 +1371,15 @@ final class CodexModuleModel: ObservableObject, IslandModule {
         }
 
         return "\(value)%"
+    }
+
+    private func providerQuotaItem(for provider: AgentProvider, snapshot: CodexQuotaSnapshot?) -> AgentProviderQuotaDisplayItem {
+        AgentProviderQuotaDisplayItem(
+            id: provider,
+            title: provider.quotaShortName,
+            fiveHourText: quotaValueText(snapshot?.fiveHourRemainingPercent),
+            weekText: quotaValueText(snapshot?.weekRemainingPercent)
+        )
     }
 
     private func quotaResetText(_ date: Date?) -> String {

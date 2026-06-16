@@ -7,15 +7,29 @@ enum IslandExpandShortcut {
     static let displayText = "Option + E"
 }
 
-enum IslandTwitterShortcut {
-    static let keyCode: UInt32 = UInt32(kVK_ANSI_S)
-    static let carbonModifiers: UInt32 = UInt32(cmdKey) | UInt32(shiftKey)
-    static let displayText = "Command + Shift + S"
+enum IslandAgentsShortcut {
+    static let keyCode: UInt32 = UInt32(kVK_ANSI_J)
+    static let carbonModifiers: UInt32 = UInt32(optionKey)
+    static let displayText = "Option + J"
+}
+
+enum IslandPreviousModuleShortcut {
+    static let keyCode: UInt32 = UInt32(kVK_LeftArrow)
+    static let carbonModifiers: UInt32 = UInt32(optionKey)
+    static let displayText = "Option + Left"
+}
+
+enum IslandNextModuleShortcut {
+    static let keyCode: UInt32 = UInt32(kVK_RightArrow)
+    static let carbonModifiers: UInt32 = UInt32(optionKey)
+    static let displayText = "Option + Right"
 }
 
 enum IslandHotKeyAction {
     case toggleExpansion
-    case openTwitterComposer
+    case openAgents
+    case previousModule
+    case nextModule
 }
 
 final class IslandGlobalHotKeyController {
@@ -75,8 +89,18 @@ final class IslandGlobalHotKeyController {
         )
         registerHotKey(
             id: 2,
-            keyCode: IslandTwitterShortcut.keyCode,
-            modifiers: IslandTwitterShortcut.carbonModifiers
+            keyCode: IslandAgentsShortcut.keyCode,
+            modifiers: IslandAgentsShortcut.carbonModifiers
+        )
+        registerHotKey(
+            id: 3,
+            keyCode: IslandPreviousModuleShortcut.keyCode,
+            modifiers: IslandPreviousModuleShortcut.carbonModifiers
+        )
+        registerHotKey(
+            id: 4,
+            keyCode: IslandNextModuleShortcut.keyCode,
+            modifiers: IslandNextModuleShortcut.carbonModifiers
         )
     }
 
@@ -123,7 +147,13 @@ final class IslandGlobalHotKeyController {
             action(.toggleExpansion)
             return noErr
         case 2:
-            action(.openTwitterComposer)
+            action(.openAgents)
+            return noErr
+        case 3:
+            action(.previousModule)
+            return noErr
+        case 4:
+            action(.nextModule)
             return noErr
         default:
             return OSStatus(eventNotHandledErr)

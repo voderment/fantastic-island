@@ -54,19 +54,6 @@
           }
         },
         {
-          "fill" : "automatic",
-          "hidden" : true,
-          "image-name" : "fan@2x.png",
-          "name" : "fan@2x",
-          "position" : {
-            "scale" : 0.8,
-            "translation-in-points" : [
-              -5.4375,
-              15.2421875
-            ]
-          }
-        },
-        {
           "glass" : true,
           "image-name" : "Image 6.png",
           "name" : "Image 6",

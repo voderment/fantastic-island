@@ -2,7 +2,6 @@ import AppKit
 import SwiftUI
 
 struct IslandShellClosedHeaderRenderState {
-    let fanAnimationState: IslandFanAnimationState
     let compactModules: [CompactModuleSummary]
 }
 
@@ -19,10 +18,4 @@ struct IslandShellTabRenderState: Identifiable {
 struct IslandShellExpandedNavigationRenderState {
     let tabs: [IslandShellTabRenderState]
     let openSettings: () -> Void
-}
-
-struct IslandWindDrivePanelRenderState {
-    let animationState: IslandFanAnimationState
-    let logoPreset: WindDriveLogoPreset
-    let customImage: NSImage?
 }
