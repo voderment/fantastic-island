@@ -61,14 +61,7 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
         weak var model: IslandAppModel?
         weak var view: NSView?
         private var monitor: Any?
-        private var accumulatedHorizontal: CGFloat = 0
-        private var accumulatedVertical: CGFloat = 0
-        private var lastSwitchAt = Date.distantPast
-        private var lastScrollEventAt = Date.distantPast
-        private var suppressWheelEventsUntil = Date.distantPast
-        private var hasSwitchedDuringGesture = false
-        private let postSwitchSuppressionDuration: TimeInterval = 0.28
-        private let postSwitchIdleResetDelay: TimeInterval = 0.48
+        private var swipeGate = IslandHorizontalModuleSwipeGate()
 
         init(model: IslandAppModel) {
             self.model = model
@@ -97,67 +90,32 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
                 return false
             }
 
-            if event.phase.contains(.began) {
-                resetGestureState()
-                suppressWheelEventsUntil = .distantPast
-            }
+            let decision = swipeGate.handle(
+                IslandHorizontalModuleSwipeEvent(
+                    horizontalDelta: Double(event.scrollingDeltaX),
+                    verticalDelta: Double(event.scrollingDeltaY),
+                    phaseBegan: event.phase.contains(.began),
+                    phaseEnded: shouldResetAccumulation(for: event),
+                    isMomentum: event.momentumPhase != []
+                ),
+                at: now.timeIntervalSinceReferenceDate
+            )
 
-            guard now >= suppressWheelEventsUntil else {
-                lastScrollEventAt = now
-                return !isVerticalIntent(event)
-            }
-
-            if event.momentumPhase != [] {
-                return hasSwitchedDuringGesture && !isVerticalIntent(event)
-            }
-
-            let idleResetDelay: TimeInterval = hasSwitchedDuringGesture ? postSwitchIdleResetDelay : 0.42
-            if now.timeIntervalSince(lastScrollEventAt) > idleResetDelay {
-                resetGestureState()
-            }
-            lastScrollEventAt = now
-
-            if shouldResetAccumulation(for: event) {
-                resetAccumulation()
-                return hasSwitchedDuringGesture
-            }
-
-            let horizontal = event.scrollingDeltaX
-            let vertical = event.scrollingDeltaY
-            guard abs(horizontal) >= 1.5 else {
+            switch decision {
+            case .passThrough:
                 return false
-            }
-
-            accumulatedHorizontal += horizontal
-            accumulatedVertical += vertical
-
-            let hasHorizontalIntent =
-                abs(accumulatedHorizontal) > 12
-                && abs(accumulatedHorizontal) > abs(accumulatedVertical) * 1.2
-
-            guard hasHorizontalIntent else {
-                return false
-            }
-
-            if hasSwitchedDuringGesture {
+            case .consume:
                 return true
-            }
-
-            if abs(accumulatedHorizontal) > 42,
-               now.timeIntervalSince(lastSwitchAt) > postSwitchSuppressionDuration {
+            case let .switchModule(offset):
                 let didSwitch = model.selectAdjacentModuleFromPointer(
-                    offset: accumulatedHorizontal > 0 ? 1 : -1,
+                    offset: offset,
                     now: now
                 )
                 if didSwitch {
-                    lastSwitchAt = now
-                    suppressWheelEventsUntil = now.addingTimeInterval(postSwitchSuppressionDuration)
-                    hasSwitchedDuringGesture = true
-                    resetAccumulation()
+                    swipeGate.recordSwitch(at: now.timeIntervalSinceReferenceDate)
                 }
+                return true
             }
-
-            return true
         }
 
         private func isEventInsideShellWindow(_ event: NSEvent) -> Bool {
@@ -179,25 +137,8 @@ private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
                 || event.momentumPhase == .cancelled
         }
 
-        private func isVerticalIntent(_ event: NSEvent) -> Bool {
-            let horizontal = abs(event.scrollingDeltaX)
-            let vertical = abs(event.scrollingDeltaY)
-            return vertical > 1.5 && vertical > horizontal * 1.2
-        }
-
-        private func resetAccumulation() {
-            accumulatedHorizontal = 0
-            accumulatedVertical = 0
-        }
-
-        private func resetGestureState() {
-            resetAccumulation()
-            hasSwitchedDuringGesture = false
-        }
-
         func suppressWheelMomentum(after date: Date = .now) {
-            suppressWheelEventsUntil = date.addingTimeInterval(postSwitchSuppressionDuration)
-            resetAccumulation()
+            swipeGate.suppressWheelMomentum(after: date.timeIntervalSinceReferenceDate)
         }
     }
 }

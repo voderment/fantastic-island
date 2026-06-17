@@ -161,6 +161,64 @@ final class IslandLogicTests: XCTestCase {
         XCTAssertFalse(validation.isValid)
     }
 
+    func testHorizontalSwipeGateSwitchesOnlyOnceDuringLockout() {
+        var gate = IslandHorizontalModuleSwipeGate()
+        let firstDecision = gate.handle(
+            IslandHorizontalModuleSwipeEvent(horizontalDelta: 64, verticalDelta: 2, phaseBegan: true),
+            at: 10
+        )
+        XCTAssertEqual(firstDecision, .switchModule(offset: 1))
+        gate.recordSwitch(at: 10)
+
+        let secondDecision = gate.handle(
+            IslandHorizontalModuleSwipeEvent(horizontalDelta: 90, verticalDelta: 0, phaseBegan: true),
+            at: 10.2
+        )
+        XCTAssertEqual(secondDecision, .consume)
+
+        let nextGestureDecision = gate.handle(
+            IslandHorizontalModuleSwipeEvent(horizontalDelta: 64, verticalDelta: 0, phaseBegan: true),
+            at: 10.8
+        )
+        XCTAssertEqual(nextGestureDecision, .switchModule(offset: 1))
+    }
+
+    func testHorizontalSwipeGateLetsVerticalScrollPassDuringLockout() {
+        var gate = IslandHorizontalModuleSwipeGate()
+        XCTAssertEqual(
+            gate.handle(
+                IslandHorizontalModuleSwipeEvent(horizontalDelta: -70, verticalDelta: 0, phaseBegan: true),
+                at: 20
+            ),
+            .switchModule(offset: -1)
+        )
+        gate.recordSwitch(at: 20)
+
+        let verticalDecision = gate.handle(
+            IslandHorizontalModuleSwipeEvent(horizontalDelta: 2, verticalDelta: 24),
+            at: 20.15
+        )
+        XCTAssertEqual(verticalDecision, .passThrough)
+    }
+
+    func testHorizontalSwipeGateConsumesMomentumAfterSwitch() {
+        var gate = IslandHorizontalModuleSwipeGate()
+        XCTAssertEqual(
+            gate.handle(
+                IslandHorizontalModuleSwipeEvent(horizontalDelta: 70, verticalDelta: 0, phaseBegan: true),
+                at: 30
+            ),
+            .switchModule(offset: 1)
+        )
+        gate.recordSwitch(at: 30)
+
+        let momentumDecision = gate.handle(
+            IslandHorizontalModuleSwipeEvent(horizontalDelta: 30, verticalDelta: 1, isMomentum: true),
+            at: 30.7
+        )
+        XCTAssertEqual(momentumDecision, .consume)
+    }
+
     func testAgentProviderMetadataIncludesRequiredNativeTargets() {
         XCTAssertEqual(AgentProvider.codex.launchProfile.bundleIdentifier, "com.openai.codex")
         XCTAssertEqual(AgentProvider.claudeCode.launchProfile.bundleIdentifier, "com.anthropic.claudefordesktop")
