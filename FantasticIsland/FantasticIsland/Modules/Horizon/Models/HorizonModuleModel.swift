@@ -990,21 +990,39 @@ private struct ShelfModuleContentView: View {
     }
 
     private func handleShelfDrop(providers: [NSItemProvider]) -> Bool {
-        let fileProviders = providers.filter { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }
+        let fileProviders = providers.enumerated().compactMap { index, provider in
+            provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) ? (index, provider) : nil
+        }
         guard !fileProviders.isEmpty else {
             return false
         }
 
-        for provider in fileProviders {
+        let group = DispatchGroup()
+        let lock = NSLock()
+        var resolvedDrops: [HorizonShelfResolvedDrop] = []
+
+        for (index, provider) in fileProviders {
+            group.enter()
             provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                defer { group.leave() }
+
                 guard let url = Self.fileURL(from: item) else {
                     return
                 }
 
-                Task { @MainActor in
-                    model.addShelfURLs([url])
-                }
+                lock.lock()
+                resolvedDrops.append(HorizonShelfResolvedDrop(index: index, url: url))
+                lock.unlock()
             }
+        }
+
+        group.notify(queue: .main) {
+            let orderedURLs = HorizonShelfDropOrdering.orderedUniqueURLs(from: resolvedDrops)
+            guard !orderedURLs.isEmpty else {
+                return
+            }
+
+            model.addShelfURLs(orderedURLs)
         }
 
         return true

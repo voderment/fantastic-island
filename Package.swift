@@ -67,6 +67,7 @@ let package = Package(
                 "Modules/Codex/Monitoring/AgentTranscriptParser.swift",
                 "Modules/Codex/Monitoring/CodexTerminalDiscovery.swift",
                 "Modules/Codex/Monitoring/CodexSessionDiscovery.swift",
+                "Modules/Horizon/Models/HorizonShelfDropOrdering.swift",
                 "Modules/Horizon/Models/HorizonTimerState.swift",
                 "Modules/XPost/Models/XPostTextValidation.swift",
                 "Shared/Navigation/IslandHorizontalModuleSwipeGate.swift",

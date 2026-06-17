@@ -423,6 +423,21 @@ final class IslandLogicTests: XCTestCase {
         XCTAssertEqual(HorizonTimerController.islandPresetMinutes, HorizonTimerController.islandPresetMinutes.sorted())
     }
 
+    func testHorizonShelfDropOrderingKeepsProviderOrderAndDeduplicates() {
+        let first = URL(fileURLWithPath: "/tmp/first.txt")
+        let second = URL(fileURLWithPath: "/tmp/second.txt")
+        let third = URL(fileURLWithPath: "/tmp/third.txt")
+
+        let orderedURLs = HorizonShelfDropOrdering.orderedUniqueURLs(from: [
+            HorizonShelfResolvedDrop(index: 2, url: third),
+            HorizonShelfResolvedDrop(index: 0, url: first),
+            HorizonShelfResolvedDrop(index: 1, url: second),
+            HorizonShelfResolvedDrop(index: 0, url: first),
+        ])
+
+        XCTAssertEqual(orderedURLs, [first, second, third])
+    }
+
     func testHookDiagnosticsReportsProviderReadinessAndUsageBridgeState() throws {
         let root = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
