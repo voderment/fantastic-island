@@ -950,8 +950,8 @@ private struct ShelfModuleContentView: View {
                         )
                 }
             } else {
-                HStack(spacing: 7) {
-                    ForEach(Array(model.shelfItems.prefix(4))) { item in
+                HStack(spacing: 5) {
+                    ForEach(Array(model.shelfItems.prefix(5))) { item in
                         HorizonShelfChip(item: item) {
                             model.openShelfItem(item)
                         } quickLook: {
@@ -964,16 +964,8 @@ private struct ShelfModuleContentView: View {
                             model.removeShelfItem(item)
                         }
                     }
-
-                    if model.shelfItems.count > 4 {
-                        Text("+\(model.shelfItems.count - 4)")
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.58))
-                            .frame(width: 30, height: 30)
-                            .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    }
                 }
-                .frame(height: 32)
+                .frame(height: 34)
             }
         }
         .padding(.horizontal, 12)
@@ -1125,27 +1117,53 @@ private struct HorizonShelfChip: View {
     let reveal: () -> Void
     let share: () -> Void
     let remove: () -> Void
+    @State private var isHovering = false
 
     var body: some View {
-        Button(action: open) {
-            HStack(spacing: 7) {
-                Image(nsImage: item.previewImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 20, height: 20)
-                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        ZStack(alignment: .topTrailing) {
+            Button(action: open) {
+                HStack(spacing: 5) {
+                    Image(nsImage: item.previewImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 16, height: 16)
+                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
 
-                Text(item.title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.82))
-                    .lineLimit(1)
+                    Text(item.title)
+                        .font(.system(size: 9.6, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.78))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .padding(.horizontal, 5)
+                .frame(width: 58, height: 34, alignment: .leading)
+                .background(Color.white.opacity(isHovering ? 0.065 : 0.04), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .stroke(Color.white.opacity(isHovering ? 0.09 : 0.045), lineWidth: 0.7)
+                }
             }
-            .padding(.horizontal, 8)
-            .frame(height: 30)
-            .frame(maxWidth: 76, alignment: .leading)
-            .background(Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .buttonStyle(.plain)
+
+            Button(action: remove) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 7.5, weight: .bold))
+                    .frame(width: 14, height: 14)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.white.opacity(0.74))
+            .background(Color.black.opacity(0.74), in: Circle())
+            .opacity(isHovering ? 1 : 0)
+            .allowsHitTesting(isHovering)
+            .accessibilityHidden(!isHovering)
+            .offset(x: 4, y: -4)
+            .help("Remove")
         }
-        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovering = hovering
+        }
+        .animation(.easeOut(duration: 0.12), value: isHovering)
         .contextMenu {
             Button("Quick Look", action: quickLook)
             Button("Reveal in Finder", action: reveal)
