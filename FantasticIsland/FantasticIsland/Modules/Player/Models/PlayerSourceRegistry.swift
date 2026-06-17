@@ -159,7 +159,38 @@ enum PlayerSourceRegistry {
         return icon
     }
 
+    static func runningCandidateBundleIdentifier(preferredDisplayName: String?) -> String? {
+        let runningDescriptors = candidateApps.filter { descriptor in
+            !descriptor.bundleIdentifier.isEmpty
+                && !NSRunningApplication.runningApplications(withBundleIdentifier: descriptor.bundleIdentifier).isEmpty
+        }
+        guard !runningDescriptors.isEmpty else {
+            return nil
+        }
+
+        let normalizedPreferredName = normalizedName(preferredDisplayName)
+        guard !normalizedPreferredName.isEmpty else {
+            return nil
+        }
+
+        return runningDescriptors.first { descriptor in
+            let descriptorName = normalizedName(descriptor.displayName)
+            let descriptorID = normalizedName(descriptor.id)
+            return descriptorName == normalizedPreferredName
+                || descriptorID == normalizedPreferredName
+                || descriptorName.contains(normalizedPreferredName)
+                || normalizedPreferredName.contains(descriptorName)
+        }?.bundleIdentifier
+    }
+
     private static func applicationURL(for bundleIdentifier: String) -> URL? {
         NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
+    }
+
+    private static func normalizedName(_ value: String?) -> String {
+        (value ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .filter { $0.isLetter || $0.isNumber }
     }
 }

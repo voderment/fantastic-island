@@ -317,7 +317,19 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
             return
         }
 
+        if nowPlayingState.source == .nowPlaying,
+           let runningBundleIdentifier = PlayerSourceRegistry.runningCandidateBundleIdentifier(
+               preferredDisplayName: nowPlayingState.sourceDisplayName
+           ),
+           activateApplication(bundleIdentifier: runningBundleIdentifier) {
+            return
+        }
+
         if mediaCoordinator.activateSourceApplication(for: nowPlayingState.source) {
+            return
+        }
+
+        guard defaultSource != .nowPlaying else {
             return
         }
 

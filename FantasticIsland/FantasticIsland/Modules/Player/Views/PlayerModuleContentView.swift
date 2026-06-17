@@ -165,6 +165,9 @@ struct PlayerModuleContentView: View {
             minHeight: PlayerPeekMetrics.minimumHeight,
             alignment: .leading
         )
+        .contentShape(Rectangle())
+        .onTapGesture(perform: state.openNowPlayingApp)
+        .help("Open \(sourceBadgeText)")
     }
 
     private func peekArtworkView(notification: PlayerModuleModel.TrackSwitchNotification) -> some View {
