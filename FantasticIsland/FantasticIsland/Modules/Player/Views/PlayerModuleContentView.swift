@@ -9,9 +9,11 @@ struct PlayerModuleRenderState {
     let automationIssue: PlayerAutomationIssue?
     let canRequestAutomationAccess: Bool
     let isResolvingAutomationAccess: Bool
+    let sourceAppOptions: [PlayerAppDescriptor]
     let sourceOptions: [PlayerSourceKind]
     let selectedSource: PlayerSourceKind
     let selectPlaybackSource: (PlayerSourceKind) -> Void
+    let openSourceApp: (String) -> Void
     let openNowPlayingApp: () -> Void
     let previousTrack: () -> Void
     let togglePlayPause: () -> Void
@@ -256,6 +258,15 @@ struct PlayerModuleContentView: View {
 
     private var sourceMenu: some View {
         Menu {
+            Button {
+                state.openNowPlayingApp()
+            } label: {
+                Label("Open \(sourceBadgeText)", systemImage: "arrow.up.forward.app")
+            }
+            .disabled(!hasOpenableCurrentSource)
+
+            Divider()
+
             ForEach(state.sourceOptions) { source in
                 Button {
                     state.selectPlaybackSource(source)
@@ -268,6 +279,18 @@ struct PlayerModuleContentView: View {
                     }
                 }
             }
+
+            if !openOnlySourceAppOptions.isEmpty {
+                Divider()
+                ForEach(openOnlySourceAppOptions) { app in
+                    Button {
+                        state.openSourceApp(app.bundleIdentifier)
+                    } label: {
+                        Label("Open \(app.displayName)", systemImage: "app")
+                    }
+                }
+            }
+
             Divider()
             Button("Refresh") {
                 state.refresh()
@@ -504,6 +527,19 @@ struct PlayerModuleContentView: View {
         }
 
         return PlayerSourceRegistry.appIcon(for: state.selectedSource)
+    }
+
+    private var hasOpenableCurrentSource: Bool {
+        let bundleIdentifier = state.nowPlayingState.sourceBundleIdentifier?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !bundleIdentifier.isEmpty || state.selectedSource != .nowPlaying
+    }
+
+    private var openOnlySourceAppOptions: [PlayerAppDescriptor] {
+        state.sourceAppOptions.filter { app in
+            !app.bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && app.sourceKind == nil
+        }
     }
 
     private var displayedElapsedText: String {

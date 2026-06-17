@@ -917,7 +917,8 @@ final class PlayerMediaCoordinator {
             )
         }
 
-        if let preferredSourceKind {
+        if let preferredSourceKind,
+           preferredSourceKind != .nowPlaying {
             return await fetchState(for: preferredSourceKind)
         }
 
@@ -959,6 +960,10 @@ final class PlayerMediaCoordinator {
         }
 
         lastPreferredSourceKind = nil
+        if preferredSourceKind == .nowPlaying {
+            return .idleState(source: .nowPlaying)
+        }
+
         return .empty
     }
 

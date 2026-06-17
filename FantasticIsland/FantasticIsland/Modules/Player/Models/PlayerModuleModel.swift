@@ -242,9 +242,15 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
             automationIssue: automationIssue,
             canRequestAutomationAccess: canRequestAutomationAccess,
             isResolvingAutomationAccess: isResolvingAutomationAccess,
+            sourceAppOptions: installedSourceApps,
             sourceOptions: defaultSourceOptions,
             selectedSource: defaultSourceSelection,
             selectPlaybackSource: { [weak self] source in Task { @MainActor in self?.selectPlaybackSource(source) } },
+            openSourceApp: { [weak self] bundleIdentifier in
+                Task { @MainActor in
+                    self?.activateApplication(bundleIdentifier: bundleIdentifier)
+                }
+            },
             openNowPlayingApp: { [weak self] in Task { @MainActor in self?.activateCurrentSource() } },
             previousTrack: { [weak self] in Task { @MainActor in self?.previousTrack() } },
             togglePlayPause: { [weak self] in Task { @MainActor in self?.togglePlayPause() } },
