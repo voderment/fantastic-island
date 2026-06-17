@@ -393,7 +393,9 @@ struct IslandShellView: View {
                     .frame(maxWidth: .infinity, alignment: .top)
 
                 if let overlay = model.hudOverlay, overlay.isVisible {
-                    IslandHUDOverlayView(overlay: overlay)
+                    IslandHUDOverlayView(overlay: overlay) { level in
+                        model.adjustHUDOverlay(to: level)
+                    }
                         .padding(.top, 6)
                         .transition(.opacity)
                 }
@@ -556,10 +558,14 @@ struct IslandShellView: View {
             isHovering = hovering
         }
         .onTapGesture {
-            if !model.islandExpanded {
+            if !model.islandExpanded, !hasVisibleHUDOverlay {
                 model.expandIsland(reason: .manualTap)
             }
         }
+    }
+
+    private var hasVisibleHUDOverlay: Bool {
+        model.hudOverlay?.isVisible == true
     }
 
     private var shellFill: some ShapeStyle {

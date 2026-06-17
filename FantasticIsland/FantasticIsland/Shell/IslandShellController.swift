@@ -41,6 +41,9 @@ final class IslandShellController {
     private static let expandedContentWidthFactor: CGFloat = 0.22
     private static let openedContentBottomPadding: CGFloat = CodexIslandChromeMetrics.openedSurfaceBottomInset
     private static let closedHoverOpenDelay: TimeInterval = 0.18
+    private static let hudHitWidth: CGFloat = 196
+    private static let hudHitHeight: CGFloat = 52
+    private static let hudTopInset: CGFloat = 3
 
     fileprivate weak var model: IslandAppModel?
     private var panel: IslandShellPanel?
@@ -201,7 +204,26 @@ final class IslandShellController {
             )
         }
 
+        if hasInteractiveHUD(for: model) {
+            return centeredShellRect(
+                in: contentRect,
+                width: Self.hudHitWidth,
+                height: Self.hudHitHeight
+            ).offsetBy(dx: 0, dy: -Self.hudTopInset)
+        }
+
         return .zero
+    }
+
+    func refreshInteractivity() {
+        guard let model, let panel, let screen = resolvedPanelScreen(for: panel) else {
+            return
+        }
+
+        let isInteractive = isPanelInteractive(for: model)
+        panel.ignoresMouseEvents = !isInteractive
+        panel.acceptsMouseMovedEvents = isInteractive
+        syncClosedActivationPanel(using: model, on: screen)
     }
 
     func isPointInExpandedArea(_ screenPoint: NSPoint) -> Bool {
@@ -442,14 +464,12 @@ final class IslandShellController {
 
         if model.islandUsesOpenedVisualState {
             cancelPendingCloseResize(resetCollapseState: true)
-            panel.ignoresMouseEvents = !isPanelInteractive(for: model)
-            panel.acceptsMouseMovedEvents = isPanelInteractive(for: model)
+            refreshInteractivity()
             return
         }
 
         cancelPendingCloseResize(resetCollapseState: false)
-        panel.ignoresMouseEvents = true
-        panel.acceptsMouseMovedEvents = false
+        refreshInteractivity()
     }
 
     private func applyPanelMobility(_ panel: IslandShellPanel, using model: IslandAppModel) {
@@ -467,6 +487,7 @@ final class IslandShellController {
 
     private func syncClosedActivationPanel(using model: IslandAppModel, on screen: NSScreen) {
         guard !model.islandUsesOpenedVisualState,
+              !hasInteractiveHUD(for: model),
               let activationRect = closedActivationRect(for: model) else {
             hideClosedActivationPanel()
             return
@@ -507,7 +528,17 @@ final class IslandShellController {
     }
 
     private func isPanelInteractive(for model: IslandAppModel) -> Bool {
-        model.islandExpanded || model.peekCapturesMouseEvents
+        model.islandExpanded || model.peekCapturesMouseEvents || hasInteractiveHUD(for: model)
+    }
+
+    private func hasInteractiveHUD(for model: IslandAppModel) -> Bool {
+        guard !model.islandExpanded,
+              !model.peekCapturesMouseEvents,
+              let overlay = model.hudOverlay else {
+            return false
+        }
+
+        return overlay.isVisible
     }
 
     private func scheduleCloseResize(for panel: IslandShellPanel) {
@@ -577,13 +608,17 @@ final class IslandShellController {
             return
         }
 
+        guard !hasInteractiveHUD(for: model) else {
+            return
+        }
+
         // Gesture recognizers can miss edge taps during rapid state switches;
         // event-monitor fallback keeps first-click expansion reliable.
         model.expandIsland(reason: .manualTap)
     }
 
     fileprivate func handleClosedActivationMouseDown() {
-        guard let model, !model.islandExpanded else {
+        guard let model, !model.islandExpanded, !hasInteractiveHUD(for: model) else {
             return
         }
 

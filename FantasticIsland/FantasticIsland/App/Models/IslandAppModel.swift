@@ -922,6 +922,10 @@ final class IslandAppModel: ObservableObject {
         NSApplication.shared.terminate(nil)
     }
 
+    func adjustHUDOverlay(to level: Float) {
+        volumeHUDMonitor.setOverlayLevel(level)
+    }
+
     private func bindModules() {
         bindModule(agentsModule)
         bindModule(playerModule)
@@ -950,7 +954,12 @@ final class IslandAppModel: ObservableObject {
         volumeHUDMonitor.$overlay
             .receive(on: RunLoop.main)
             .sink { [weak self] overlay in
-                self?.hudOverlay = overlay
+                guard let self else {
+                    return
+                }
+
+                hudOverlay = overlay
+                shellController.refreshInteractivity()
             }
             .store(in: &cancellables)
 
@@ -958,6 +967,7 @@ final class IslandAppModel: ObservableObject {
             Task { @MainActor [weak self] in
                 self?.volumeHUDMonitor.refreshOverlayVisibility()
                 if self?.hudOverlay == nil {
+                    self?.shellController.refreshInteractivity()
                     self?.objectWillChange.send()
                 }
             }

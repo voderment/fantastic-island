@@ -2,6 +2,8 @@
 
 import Combine
 import CoreAudio
+import CoreGraphics
+import Darwin
 import Foundation
 
 enum IslandHUDOverlayKind: Equatable {
@@ -41,6 +43,27 @@ final class IslandVolumeHUDMonitor: NSObject, ObservableObject {
         }
 
         self.overlay = nil
+    }
+
+    func setOverlayLevel(_ level: Float) {
+        let clamped = max(0, min(1, level))
+        guard let overlay else {
+            return
+        }
+
+        switch overlay.kind {
+        case .volume:
+            guard writeAudioVolume(clamped) else {
+                fetchCurrentVolume(touchDate: true)
+                return
+            }
+            publish(volume: clamped, muted: clamped <= 0.001, touchDate: true)
+        case .brightness:
+            guard Self.writeDisplayBrightness(clamped) else {
+                return
+            }
+            publish(brightness: clamped)
+        }
     }
 
     private func publish(volume: Float, muted: Bool, touchDate: Bool) {
@@ -182,6 +205,46 @@ final class IslandVolumeHUDMonitor: NSObject, ObservableObject {
         return muted != 0
     }
 
+    private func writeAudioVolume(_ level: Float) -> Bool {
+        let deviceID = systemOutputDeviceID()
+        guard deviceID != kAudioObjectUnknown else {
+            return false
+        }
+
+        var didWrite = false
+        for element in [kAudioObjectPropertyElementMain, 1, 2] {
+            var address = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyVolumeScalar,
+                mScope: kAudioObjectPropertyScopeOutput,
+                mElement: UInt32(element)
+            )
+            guard AudioObjectHasProperty(deviceID, &address) else {
+                continue
+            }
+
+            var mutableLevel = Float32(level)
+            let size = UInt32(MemoryLayout<Float32>.size)
+            if AudioObjectSetPropertyData(deviceID, &address, 0, nil, size, &mutableLevel) == noErr {
+                didWrite = true
+            }
+        }
+
+        if didWrite, level > 0.001 {
+            var muteAddress = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyMute,
+                mScope: kAudioObjectPropertyScopeOutput,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            if AudioObjectHasProperty(deviceID, &muteAddress) {
+                var muted: UInt32 = 0
+                let size = UInt32(MemoryLayout<UInt32>.size)
+                _ = AudioObjectSetPropertyData(deviceID, &muteAddress, 0, nil, size, &muted)
+            }
+        }
+
+        return didWrite
+    }
+
     private static func brightnessLevel(from userInfo: [AnyHashable: Any]?) -> Float? {
         guard let userInfo else {
             return nil
@@ -200,5 +263,23 @@ final class IslandVolumeHUDMonitor: NSObject, ObservableObject {
         default:
             return nil
         }
+    }
+
+    private static func writeDisplayBrightness(_ level: Float) -> Bool {
+        let frameworkPath = "/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices"
+        guard let handle = dlopen(frameworkPath, RTLD_LAZY) else {
+            return false
+        }
+        defer { dlclose(handle) }
+
+        typealias DisplayServicesSetBrightnessFunction =
+            @convention(c) (CGDirectDisplayID, Float) -> Int32
+
+        guard let symbol = dlsym(handle, "DisplayServicesSetBrightness") else {
+            return false
+        }
+
+        let function = unsafeBitCast(symbol, to: DisplayServicesSetBrightnessFunction.self)
+        return function(CGMainDisplayID(), max(0, min(1, level))) == 0
     }
 }
