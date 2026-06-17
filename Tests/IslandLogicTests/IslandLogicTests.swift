@@ -1021,7 +1021,7 @@ final class IslandLogicTests: XCTestCase {
         XCTAssertEqual(directive, .permissionRequestAllow)
     }
 
-    func testNativeTranscriptWinsOverHookStoreForSameSession() throws {
+    func testNativeTranscriptKeepsHistoryWhileHookStoreFillsLiveState() throws {
         let temp = temporaryDirectory()
         let codexRoot = temp.appendingPathComponent("codex", isDirectory: true)
         try FileManager.default.createDirectory(at: codexRoot, withIntermediateDirectories: true)
@@ -1029,6 +1029,10 @@ final class IslandLogicTests: XCTestCase {
         let codexURL = codexRoot.appendingPathComponent("rollout-native.jsonl")
         let nativeLine = #"{"type":"session_meta","payload":{"id":"same-session","cwd":"/tmp/native","source":"cli"}}"#
         try nativeLine.write(to: codexURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 1_899_999_900)],
+            ofItemAtPath: codexURL.path
+        )
 
         let store = AgentSessionStore(rootURL: temp.appendingPathComponent("store", isDirectory: true))
         let payload = CodexHookPayload(
@@ -1040,11 +1044,14 @@ final class IslandLogicTests: XCTestCase {
             toolInput: CodexHookToolInput(command: "swift test"),
             prompt: "stored prompt"
         )
-        let storedURL = try store.append(payload)
+        let storedURL = try store.append(payload, timestamp: Date(timeIntervalSince1970: 1_900_000_000))
         try FileManager.default.setAttributes(
             [.modificationDate: Date(timeIntervalSince1970: 1_900_000_000)],
             ofItemAtPath: storedURL.path
         )
+        let storedSessions = store.discoverRecentSessions(now: Date(timeIntervalSince1970: 1_900_000_010))
+        XCTAssertEqual(storedSessions.first?.id, "same-session")
+        XCTAssertEqual(storedSessions.first?.phase, .busy)
 
         let discovery = CodexSessionDiscovery(
             rootURL: codexRoot,
@@ -1052,15 +1059,51 @@ final class IslandLogicTests: XCTestCase {
             cursorRootURL: temp.appendingPathComponent("cursor", isDirectory: true),
             sessionStore: store
         )
-        let sessions = discovery.discoverRecentSessions()
+        let sessions = discovery.discoverRecentSessions(now: Date(timeIntervalSince1970: 1_900_000_010))
 
         XCTAssertEqual(sessions.count, 1)
         XCTAssertEqual(sessions.first?.provider, .codex)
         XCTAssertEqual(sessions.first?.cwd, "/tmp/native")
-        XCTAssertNil(sessions.first?.phaseHint)
-        XCTAssertNil(sessions.first?.currentCommandPreview)
-        XCTAssertNil(sessions.first?.latestUserPrompt)
-        XCTAssertEqual(URL(fileURLWithPath: sessions.first?.transcriptPath ?? "").standardizedFileURL.path, codexURL.standardizedFileURL.path)
+        let session = try XCTUnwrap(sessions.first)
+        XCTAssertEqual(session.phaseHint, .busy)
+        XCTAssertEqual(session.currentCommandPreview, "swift test")
+        XCTAssertEqual(session.latestUserPrompt, "stored prompt")
+        XCTAssertEqual(session.modifiedAt, Date(timeIntervalSince1970: 1_900_000_000))
+        XCTAssertEqual(URL(fileURLWithPath: session.transcriptPath).standardizedFileURL.path, codexURL.standardizedFileURL.path)
+
+        let restored = SessionSnapshot(
+            id: session.id,
+            provider: session.provider,
+            cwd: session.cwd,
+            title: session.title,
+            transcriptPath: session.transcriptPath,
+            phase: try XCTUnwrap(session.phaseHint),
+            lastEventAt: session.modifiedAt,
+            currentCommandPreview: session.currentCommandPreview,
+            latestUserPrompt: session.latestUserPrompt,
+            isSessionEnded: session.isSessionEndedHint ?? false
+        )
+        XCTAssertTrue(restored.isVisibleInIsland(at: Date(timeIntervalSince1970: 1_900_000_010)))
+
+        let reducer = CodexSessionReducer()
+        reducer.upsertDiscoveredSession(DiscoveredSession(
+            id: "same-session",
+            provider: .codex,
+            cwd: "/tmp/native",
+            title: "Codex · native",
+            transcriptPath: codexURL.path,
+            modifiedAt: Date(timeIntervalSince1970: 1_899_999_900)
+        ))
+        reducer.upsertDiscoveredSession(session)
+
+        let reduced = try XCTUnwrap(reducer.allSessions.first)
+        XCTAssertEqual(
+            URL(fileURLWithPath: reduced.transcriptPath ?? "").standardizedFileURL.path,
+            codexURL.standardizedFileURL.path
+        )
+        XCTAssertEqual(reduced.phase, .busy)
+        XCTAssertEqual(reduced.lastEventAt, Date(timeIntervalSince1970: 1_900_000_000))
+        XCTAssertTrue(reduced.isVisibleInIsland(at: Date(timeIntervalSince1970: 1_900_000_010)))
     }
 
     func testDiscoveryFindsCodexRolloutTranscript() throws {

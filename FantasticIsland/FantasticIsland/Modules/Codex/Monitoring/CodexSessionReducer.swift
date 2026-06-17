@@ -41,8 +41,7 @@ final class CodexSessionReducer {
             snapshot.isSessionEnded = isSessionEndedHint
         }
         snapshot.sessionSurface = snapshot.sessionSurface.merged(with: session.sessionSurface)
-        if snapshot.lastEventAt == nil,
-           let modifiedAt = session.modifiedAt,
+        if let modifiedAt = session.modifiedAt,
            modifiedAt > (snapshot.lastEventAt ?? .distantPast) {
             snapshot.lastEventAt = modifiedAt
         }

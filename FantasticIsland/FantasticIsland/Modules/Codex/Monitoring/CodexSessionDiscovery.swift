@@ -60,17 +60,30 @@ private extension DiscoveredSession {
             cwd: cwd,
             title: title,
             transcriptPath: transcriptPath,
-            phaseHint: phaseHint,
-            isSessionEndedHint: isSessionEndedHint,
-            currentCommandPreview: currentCommandPreview,
-            latestUserPrompt: latestUserPrompt,
-            latestAssistantMessage: latestAssistantMessage,
-            completionMessageMarkdown: completionMessageMarkdown,
+            phaseHint: phaseHint ?? fallback.phaseHint,
+            isSessionEndedHint: isSessionEndedHint ?? fallback.isSessionEndedHint,
+            currentCommandPreview: currentCommandPreview ?? fallback.currentCommandPreview,
+            latestUserPrompt: latestUserPrompt ?? fallback.latestUserPrompt,
+            latestAssistantMessage: latestAssistantMessage ?? fallback.latestAssistantMessage,
+            completionMessageMarkdown: completionMessageMarkdown ?? fallback.completionMessageMarkdown,
             jumpTarget: jumpTarget ?? fallback.jumpTarget,
             assistantSummary: assistantSummary ?? fallback.assistantSummary,
             sessionSurface: sessionSurface.merged(with: fallback.sessionSurface),
-            modifiedAt: modifiedAt ?? fallback.modifiedAt
+            modifiedAt: Self.newerDate(modifiedAt, fallback.modifiedAt)
         )
+    }
+
+    private static func newerDate(_ lhs: Date?, _ rhs: Date?) -> Date? {
+        switch (lhs, rhs) {
+        case let (lhs?, rhs?):
+            return max(lhs, rhs)
+        case let (lhs?, nil):
+            return lhs
+        case let (nil, rhs?):
+            return rhs
+        case (nil, nil):
+            return nil
+        }
     }
 }
 
@@ -354,7 +367,9 @@ struct CodexSessionDiscovery {
     }
 
     private func isStoredSession(_ session: DiscoveredSession) -> Bool {
-        session.transcriptPath.hasPrefix(sessionStore.rootURL.path)
+        let transcriptPath = URL(fileURLWithPath: session.transcriptPath).standardizedFileURL.path
+        let rootPath = sessionStore.rootURL.standardizedFileURL.path
+        return transcriptPath == rootPath || transcriptPath.hasPrefix(rootPath + "/")
     }
 
     func discoverSession(at url: URL, modifiedAt: Date? = nil) -> DiscoveredSession? {
