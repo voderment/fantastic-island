@@ -72,7 +72,7 @@ struct PlayerModuleContentView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 14)
         .padding(.vertical, 7)
         .contentShape(Rectangle())
     }
@@ -278,11 +278,11 @@ struct PlayerModuleContentView: View {
                     Image(nsImage: sourceIconImage)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 11, height: 11)
-                        .clipShape(.rect(cornerRadius: 2.5))
+                        .frame(width: 9, height: 9)
+                        .clipShape(.rect(cornerRadius: 2))
                 } else {
                     Image(systemName: "speaker.wave.2.fill")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(size: 8.5, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.48))
                 }
 
@@ -297,9 +297,9 @@ struct PlayerModuleContentView: View {
                     .foregroundStyle(.white.opacity(0.42))
             }
             .foregroundStyle(.white.opacity(0.64))
-            .padding(.horizontal, 7)
+            .padding(.horizontal, 6)
             .frame(height: 18)
-            .frame(width: 96, alignment: .trailing)
+            .frame(width: 88, alignment: .trailing)
             .background(Color.white.opacity(0.045), in: Capsule())
             .overlay {
                 Capsule()

@@ -87,16 +87,16 @@ struct IslandDesignTokens: Codable, Equatable {
     }
 
     struct PlayerPeekTokens: Codable, Equatable {
-        var horizontalSpacing: Double = 14
-        var textSpacing: Double = 6
-        var titleFontSize: Double = 17
-        var artistFontSize: Double = 13
-        var contentHorizontalPadding: Double = 2
-        var contentVerticalPadding: Double = 4
-        var minimumHeight: Double = 64
-        var artworkCornerRadius: Double = 16
-        var artworkSize: Double = 52
-        var placeholderSymbolSize: Double = 20
+        var horizontalSpacing: Double = Double(PlayerPeekMetrics.defaultHorizontalSpacing)
+        var textSpacing: Double = Double(PlayerPeekMetrics.defaultTextSpacing)
+        var titleFontSize: Double = Double(PlayerPeekMetrics.defaultTitleFontSize)
+        var artistFontSize: Double = Double(PlayerPeekMetrics.defaultArtistFontSize)
+        var contentHorizontalPadding: Double = Double(PlayerPeekMetrics.defaultContentHorizontalPadding)
+        var contentVerticalPadding: Double = Double(PlayerPeekMetrics.defaultContentVerticalPadding)
+        var minimumHeight: Double = Double(PlayerPeekMetrics.defaultMinimumHeight)
+        var artworkCornerRadius: Double = Double(PlayerPeekMetrics.defaultArtworkCornerRadius)
+        var artworkSize: Double = Double(PlayerPeekMetrics.defaultArtworkSize)
+        var placeholderSymbolSize: Double = Double(PlayerPeekMetrics.defaultPlaceholderSymbolSize)
         var titleOpacity: Double = 0.96
         var artistOpacity: Double = 0.62
         var placeholderOpacity: Double = 0.28
@@ -117,13 +117,13 @@ struct IslandDesignTokens: Codable, Equatable {
     }
 
     struct PlayerExpandedTokens: Codable, Equatable {
-        var outerSpacing: Double = 9
-        var primaryColumnSpacing: Double = 10
-        var titleBlockSpacing: Double = 5
-        var controlsSpacing: Double = 7
-        var artworkCornerRadius: Double = 8
-        var artworkSize: Double = 58
-        var progressSectionSpacing: Double = 5
+        var outerSpacing: Double = Double(PlayerExpandedMetrics.defaultOuterSpacing)
+        var primaryColumnSpacing: Double = Double(PlayerExpandedMetrics.defaultPrimaryColumnSpacing)
+        var titleBlockSpacing: Double = Double(PlayerExpandedMetrics.defaultTitleBlockSpacing)
+        var controlsSpacing: Double = Double(PlayerExpandedMetrics.defaultControlsSpacing)
+        var artworkCornerRadius: Double = Double(PlayerExpandedMetrics.defaultArtworkCornerRadius)
+        var artworkSize: Double = Double(PlayerExpandedMetrics.defaultArtworkSize)
+        var progressSectionSpacing: Double = Double(PlayerExpandedMetrics.defaultProgressSectionSpacing)
         var controlButtonOpacityDisabled: Double = 0.42
     }
 
