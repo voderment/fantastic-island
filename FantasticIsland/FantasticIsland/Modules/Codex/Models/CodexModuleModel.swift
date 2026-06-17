@@ -390,7 +390,6 @@ final class CodexModuleModel: ObservableObject, IslandModule {
         if selectedConversationSession != nil {
             return CodexIslandChromeMetrics.moduleChromeHeight
                 + Self.estimatedConversationDetailHeight
-                + CodexIslandChromeMetrics.expandedContentBottomPadding
         }
 
         guard !islandListSessions.isEmpty else {

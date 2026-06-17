@@ -81,7 +81,7 @@ struct CodexModuleContentView: View {
     @State private var showsAgentHealth = false
 
     private static let estimatedGlobalInfoCardHeight: CGFloat = 58
-    private static let conversationViewportHeight: CGFloat = 224
+    private static let conversationViewportHeight: CGFloat = 248
     private static let conversationBottomPinTolerance: CGFloat = 22
     private static let alignedModuleBodyHeight: CGFloat =
         176
@@ -726,60 +726,66 @@ struct CodexModuleContentView: View {
 
     private func conversationDetail(for session: SessionSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .center, spacing: 8) {
+            HStack(alignment: .center, spacing: 6) {
                 Button {
                     state.showAllSessions()
                 } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 11, weight: .bold))
-                        .frame(width: 22, height: 22)
+                        .frame(width: 20, height: 20)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.white.opacity(0.70))
                 .help("Back to conversations")
 
-                HStack(spacing: 7) {
-                    compactConversationProviderBadge(for: session)
+                compactConversationProviderBadge(for: session)
 
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(conversationTitle(for: session))
-                            .font(.system(size: 11.5, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.94))
-                            .lineLimit(1)
-
-                        Text(conversationWorkspace(for: session))
-                            .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.40))
-                            .lineLimit(1)
-                    }
-                    .layoutPriority(1)
-                }
-
-                Spacer(minLength: 6)
-
-                Text(conversationStatusText(for: session))
-                    .font(.system(size: 8.5, weight: .bold, design: .monospaced))
-                    .foregroundStyle(conversationAccent(for: conversationStatusRole(for: session)).opacity(0.78))
+                Text(conversationTitle(for: session))
+                    .font(.system(size: 11.2, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.94))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .frame(maxWidth: 64)
-                    .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    .layoutPriority(1)
+
+                Text(conversationWorkspace(for: session))
+                    .font(.system(size: 8.3, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.40))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 74)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2.5)
+                    .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(conversationAccent(for: conversationStatusRole(for: session)).opacity(0.82))
+                        .frame(width: 4, height: 4)
+
+                    Text(conversationStatusText(for: session))
+                        .font(.system(size: 8.1, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.58))
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 5)
+                .padding(.vertical, 3)
+                .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+
+                Spacer(minLength: 4)
 
                 Button {
                     state.openSessionApp(session.id)
                 } label: {
                     Label("Open App", systemImage: "arrow.up.forward.app")
                         .labelStyle(.iconOnly)
-                        .frame(width: 22, height: 22)
+                        .frame(width: 20, height: 20)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.white.opacity(0.70))
                 .help("Open \(session.provider.displayName)")
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.vertical, 3)
 
             Rectangle()
                 .fill(.white.opacity(0.04))
@@ -803,7 +809,7 @@ struct CodexModuleContentView: View {
     private func conversationTranscriptViewport(for session: SessionSnapshot) -> some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
                     Spacer(minLength: 0)
 
                     conversationTranscriptRows(for: session)
@@ -818,14 +824,13 @@ struct CodexModuleContentView: View {
 
                     Color.clear
                         .frame(height: 1)
-                        .id("conversation-bottom")
+                        .id(conversationBottomID(for: session))
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 5)
                 .frame(maxWidth: .infinity, minHeight: Self.conversationViewportHeight, alignment: .bottomLeading)
             }
             .scrollClipDisabled(false)
-            .defaultScrollAnchor(.bottom)
             .onScrollGeometryChange(for: Bool.self, of: { geometry in
                 let bottomGap = geometry.contentSize.height - geometry.visibleRect.maxY
                 return bottomGap <= Self.conversationBottomPinTolerance
@@ -836,32 +841,40 @@ struct CodexModuleContentView: View {
             .background(Color.black.opacity(0.035))
             .onAppear {
                 conversationIsPinnedToBottom = true
-                scrollConversationToBottom(proxy)
+                scrollConversationToBottom(proxy, animated: false, session: session)
             }
             .onChange(of: session.id) { _, _ in
                 conversationIsPinnedToBottom = true
-                scrollConversationToBottom(proxy)
+                scrollConversationToBottom(proxy, animated: false, session: session)
             }
             .onChange(of: session.lastEventAt) { _, _ in
-                scrollConversationToBottomIfPinned(proxy)
+                scrollConversationToBottomIfPinned(proxy, session: session)
             }
             .onChange(of: state.transcriptTurnsForSession(session).count) { _, _ in
-                scrollConversationToBottomIfPinned(proxy)
+                scrollConversationToBottomIfPinned(proxy, session: session)
             }
         }
     }
 
-    private func scrollConversationToBottomIfPinned(_ proxy: ScrollViewProxy) {
+    private func scrollConversationToBottomIfPinned(_ proxy: ScrollViewProxy, session: SessionSnapshot) {
         guard conversationIsPinnedToBottom else { return }
-        scrollConversationToBottom(proxy)
+        scrollConversationToBottom(proxy, animated: true, session: session)
     }
 
-    private func scrollConversationToBottom(_ proxy: ScrollViewProxy) {
+    private func scrollConversationToBottom(_ proxy: ScrollViewProxy, animated: Bool, session: SessionSnapshot) {
         DispatchQueue.main.async {
-            withAnimation(.easeOut(duration: 0.16)) {
-                proxy.scrollTo("conversation-bottom", anchor: .bottom)
+            if animated {
+                withAnimation(.easeOut(duration: 0.16)) {
+                    proxy.scrollTo(conversationBottomID(for: session), anchor: .bottom)
+                }
+            } else {
+                proxy.scrollTo(conversationBottomID(for: session), anchor: .bottom)
             }
         }
+    }
+
+    private func conversationBottomID(for session: SessionSnapshot) -> String {
+        "conversation-bottom-\(session.id)"
     }
 
     @ViewBuilder
@@ -1063,18 +1076,18 @@ struct CodexModuleContentView: View {
                 Text(prompt.title)
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(.yellow.opacity(0.96))
-                    .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if !prompt.options.isEmpty {
-                    HStack(spacing: 6) {
-                        ForEach(prompt.options.prefix(3), id: \.self) { option in
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 72), spacing: 5)], alignment: .leading, spacing: 5) {
+                        ForEach(prompt.options, id: \.self) { option in
                             Button(option) {
                                 state.answerQuestion(session.id, CodexQuestionResponse(answer: option))
                             }
                             .buttonStyle(AgentInlineButtonStyle())
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 HStack(spacing: 6) {
@@ -1111,11 +1124,11 @@ struct CodexModuleContentView: View {
         return HStack(spacing: 7) {
             TextField(placeholder, text: $conversationReplyText)
                 .textFieldStyle(.plain)
-                .font(IslandVisualLanguage.islandBody(11, weight: .medium))
+                .font(IslandVisualLanguage.islandBody(10.8, weight: .medium))
                 .foregroundStyle(.white.opacity(0.9))
                 .padding(.horizontal, 9)
-                .padding(.vertical, 5)
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .padding(.vertical, 4.5)
+                .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
 
             Button {
                 let reply = conversationReplyText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1124,14 +1137,14 @@ struct CodexModuleContentView: View {
                 state.replyToSession(session.id, reply)
             } label: {
                 Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 20))
+                    .font(.system(size: 19))
             }
             .buttonStyle(.plain)
             .foregroundStyle(.white.opacity(0.9))
             .disabled(conversationReplyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 5)
+        .padding(.vertical, 4)
         .background(Color.black.opacity(0.44))
     }
 
@@ -1142,7 +1155,7 @@ struct CodexModuleContentView: View {
                 .foregroundStyle(.white.opacity(0.54))
 
             Text(state.replyPlaceholder(session))
-                .font(IslandVisualLanguage.islandBody(11, weight: .medium))
+                .font(IslandVisualLanguage.islandBody(10.8, weight: .medium))
                 .foregroundStyle(.white.opacity(0.58))
                 .lineLimit(1)
 
@@ -1161,7 +1174,7 @@ struct CodexModuleContentView: View {
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.vertical, 5)
         .background(Color.black.opacity(0.30))
     }
 
@@ -1188,13 +1201,12 @@ struct CodexModuleContentView: View {
                 Text(text)
                     .font(.system(size: conversationMessageFontSize(for: role), weight: .medium, design: role == .tool ? .monospaced : .default))
                     .foregroundStyle(conversationTextColor(isUser: isUser, role: role))
-                    .lineLimit(role == .tool ? 3 : nil)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, conversationBubbleHorizontalPadding(for: role))
             .padding(.vertical, conversationBubbleVerticalPadding(for: role))
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: conversationBubbleMaxWidth(for: role), alignment: .leading)
             .background(conversationBubbleFill(isUser: isUser, role: role), in: RoundedRectangle(cornerRadius: conversationBubbleRadius(for: role), style: .continuous))
             .overlay(alignment: .leading) {
                 if role == .tool || role == .system {
@@ -1215,29 +1227,29 @@ struct CodexModuleContentView: View {
     private func conversationMessageFontSize(for role: AgentTranscriptTurn.Role) -> CGFloat {
         switch role {
         case .tool:
-            return 10.5
+            return 10.2
         case .system:
-            return 10.8
+            return 10.4
         case .user, .assistant:
-            return 11.2
+            return 10.8
         }
     }
 
     private func conversationBubbleHorizontalPadding(for role: AgentTranscriptTurn.Role) -> CGFloat {
         switch role {
         case .tool, .system:
-            return 7
+            return 6
         case .user, .assistant:
-            return 8
+            return 7
         }
     }
 
     private func conversationBubbleVerticalPadding(for role: AgentTranscriptTurn.Role) -> CGFloat {
         switch role {
         case .tool, .system:
-            return 5
+            return 4
         case .user, .assistant:
-            return 6
+            return 5
         }
     }
 
@@ -1247,6 +1259,17 @@ struct CodexModuleContentView: View {
             return 6
         case .user, .assistant:
             return 7
+        }
+    }
+
+    private func conversationBubbleMaxWidth(for role: AgentTranscriptTurn.Role) -> CGFloat {
+        switch role {
+        case .tool, .system:
+            return .infinity
+        case .user:
+            return 300
+        case .assistant:
+            return 324
         }
     }
 
