@@ -119,6 +119,8 @@ struct CodexModuleContentView: View {
         if let session = state.presentedSession {
             if activity.kind == .transientNotification, session.phase == .completed {
                 completedActivityCard(for: session)
+            } else if activity.kind == .persistentPresence {
+                livePresenceActivityStrip(for: session)
             } else {
                 CodexIslandSessionRow(
                     session: session,
@@ -136,6 +138,84 @@ struct CodexModuleContentView: View {
             }
         } else {
             emptyStateCard
+        }
+    }
+
+    private func livePresenceActivityStrip(for session: SessionSnapshot) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            AgentPresenceRunningMark(color: conversationAccent(for: conversationStatusRole(for: session)))
+                .frame(width: 18, height: 18)
+
+            Button {
+                state.openConversation(session.id)
+            } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(livePresenceTitle(for: session))
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.94))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .layoutPriority(1)
+
+                        Text(session.provider.quotaShortName)
+                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.62))
+                            .frame(width: 22, height: 18)
+                            .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+
+                        Text(livePresenceStatusText(for: session))
+                            .font(.system(size: 8.3, weight: .bold, design: .monospaced))
+                            .foregroundStyle(conversationAccent(for: conversationStatusRole(for: session)).opacity(0.82))
+                            .lineLimit(1)
+                            .padding(.horizontal, 5)
+                            .frame(height: 18)
+                            .background(Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    }
+
+                    HStack(spacing: 6) {
+                        Text(completedWorkspaceName(for: session))
+                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.40))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .frame(maxWidth: 82, alignment: .leading)
+
+                        Text(livePresenceSummary(for: session))
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.56))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Open conversation")
+
+            Button {
+                state.openSessionApp(session.id)
+            } label: {
+                Image(systemName: "arrow.up.forward.app")
+                    .font(.system(size: 10, weight: .bold))
+                    .frame(width: 20, height: 20)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.white.opacity(0.70))
+            .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .help("Open \(session.provider.displayName)")
+            .accessibilityLabel("Open \(session.provider.displayName)")
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .background(Color.white.opacity(0.026), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 999, style: .continuous)
+                .fill(conversationAccent(for: conversationStatusRole(for: session)).opacity(0.58))
+                .frame(width: 2)
+                .padding(.vertical, 8)
+                .padding(.leading, 4)
         }
     }
 
@@ -1431,6 +1511,41 @@ struct CodexModuleContentView: View {
         completedDisplayTitle(for: session)
     }
 
+    private func livePresenceTitle(for session: SessionSnapshot) -> String {
+        if let prompt = session.latestUserPrompt?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !prompt.isEmpty {
+            return prompt
+        }
+
+        return completedDisplayTitle(for: session)
+    }
+
+    private func livePresenceStatusText(for session: SessionSnapshot) -> String {
+        switch session.phase {
+        case .busy:
+            return "WORKING"
+        case .running:
+            return "RUNNING"
+        case .waitingForApproval:
+            return "APPROVAL"
+        case .waitingForAnswer:
+            return "QUESTION"
+        case .completed:
+            return "DONE"
+        }
+    }
+
+    private func livePresenceSummary(for session: SessionSnapshot) -> String {
+        [
+            session.currentCommandPreview,
+            session.latestAssistantMessage,
+            session.assistantSummary,
+            session.phase.displayName,
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .first { !$0.isEmpty } ?? session.phase.displayName
+    }
+
     private func completedActivityPromptLine(for session: SessionSnapshot) -> String? {
         guard let prompt = session.latestUserPrompt?.trimmingCharacters(in: .whitespacesAndNewlines),
               !prompt.isEmpty else {
@@ -1745,6 +1860,40 @@ private struct CodexTokenHeatmapView: View {
         formatter.numberStyle = .decimal
         let formatted = formatter.string(from: NSNumber(value: value)) ?? "\(value)"
         return "\(formatted) tokens"
+    }
+}
+
+private struct AgentPresenceRunningMark: View {
+    let color: Color
+    @State private var phase = false
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 2) {
+            ForEach(0..<3, id: \.self) { index in
+                RoundedRectangle(cornerRadius: 1.4, style: .continuous)
+                    .fill(color)
+                    .frame(width: 3, height: phase ? activeHeight(for: index) : idleHeight(for: index))
+                    .opacity(phase ? 0.95 : 0.52)
+                    .animation(
+                        .easeInOut(duration: 0.58)
+                            .repeatForever(autoreverses: true)
+                            .delay(Double(index) * 0.08),
+                        value: phase
+                    )
+            }
+        }
+        .accessibilityLabel("Agent running")
+        .onAppear {
+            phase = true
+        }
+    }
+
+    private func activeHeight(for index: Int) -> CGFloat {
+        [12, 16, 10][index]
+    }
+
+    private func idleHeight(for index: Int) -> CGFloat {
+        [7, 10, 8][index]
     }
 }
 
