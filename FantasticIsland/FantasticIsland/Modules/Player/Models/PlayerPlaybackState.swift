@@ -96,6 +96,8 @@ struct PlayerTrackMetadata: Equatable {
 
 struct PlayerNowPlayingState: Equatable {
     var source: PlayerSourceKind?
+    var sourceDisplayName: String?
+    var sourceBundleIdentifier: String?
     var playbackStatus: PlayerPlaybackStatus
     var track: PlayerTrackMetadata?
     var shuffleMode: PlayerShuffleMode
@@ -105,6 +107,8 @@ struct PlayerNowPlayingState: Equatable {
 
     static let empty = PlayerNowPlayingState(
         source: nil,
+        sourceDisplayName: nil,
+        sourceBundleIdentifier: nil,
         playbackStatus: .stopped,
         track: nil,
         shuffleMode: .unsupported,
@@ -116,6 +120,8 @@ struct PlayerNowPlayingState: Equatable {
     static func issueState(_ issue: PlayerAutomationIssue) -> PlayerNowPlayingState {
         PlayerNowPlayingState(
             source: nil,
+            sourceDisplayName: nil,
+            sourceBundleIdentifier: nil,
             playbackStatus: .stopped,
             track: nil,
             shuffleMode: .unsupported,
@@ -128,6 +134,8 @@ struct PlayerNowPlayingState: Equatable {
     static func idleState(source: PlayerSourceKind) -> PlayerNowPlayingState {
         PlayerNowPlayingState(
             source: source,
+            sourceDisplayName: nil,
+            sourceBundleIdentifier: nil,
             playbackStatus: .stopped,
             track: nil,
             shuffleMode: .unsupported,
@@ -139,6 +147,8 @@ struct PlayerNowPlayingState: Equatable {
 
     static func == (lhs: PlayerNowPlayingState, rhs: PlayerNowPlayingState) -> Bool {
         lhs.source == rhs.source
+            && lhs.sourceDisplayName == rhs.sourceDisplayName
+            && lhs.sourceBundleIdentifier == rhs.sourceBundleIdentifier
             && lhs.playbackStatus == rhs.playbackStatus
             && lhs.track == rhs.track
             && lhs.shuffleMode == rhs.shuffleMode
@@ -148,7 +158,7 @@ struct PlayerNowPlayingState: Equatable {
     }
 
     var sourceLabel: String {
-        source?.displayName ?? "Player"
+        sourceDisplayName ?? source?.displayName ?? "Player"
     }
 
     var automationIssueSource: PlayerSourceKind? {
@@ -160,7 +170,7 @@ struct PlayerNowPlayingState: Equatable {
     }
 
     var artistText: String {
-        track?.artist ?? automationIssue?.detailText ?? "No active media source"
+        track?.artist ?? automationIssue?.detailText ?? "Start audio or video in any media app"
     }
 
     var durationText: String {
@@ -192,7 +202,7 @@ struct PlayerNowPlayingState: Equatable {
     }
 
     var supportsSeeking: Bool {
-        automationIssue == nil && source != nil && (track?.duration ?? 0) > 0
+        automationIssue == nil && source != nil && source != .nowPlaying && (track?.duration ?? 0) > 0
     }
 
     var supportsShuffleControl: Bool {
@@ -223,11 +233,13 @@ struct PlayerNowPlayingState: Equatable {
         }
 
         guard let track else {
-            return source?.rawValue
+            return sourceDisplayName ?? source?.rawValue
         }
 
         return [
             source?.rawValue ?? "player",
+            sourceDisplayName ?? "",
+            sourceBundleIdentifier ?? "",
             track.title,
             track.artist,
             track.album ?? "",

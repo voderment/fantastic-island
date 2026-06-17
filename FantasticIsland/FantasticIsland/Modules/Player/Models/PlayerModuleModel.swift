@@ -9,12 +9,13 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
     private static let transientNotificationAutoDismissDelay: TimeInterval = 1.5
     private static let trackSwitchActivityPriority = 240
     private static let minimumRefreshInterval: TimeInterval = 0.18
-    private static let estimatedArtworkBlockHeight: CGFloat = 112
-    private static let estimatedProgressSectionHeight: CGFloat = 30
-    private static let estimatedOuterSpacing: CGFloat = 18
+    private static let estimatedArtworkBlockHeight: CGFloat = 54
+    private static let estimatedProgressSectionHeight: CGFloat = 20
+    private static let estimatedOuterSpacing: CGFloat = 7
 
     private struct TrackIdentity: Equatable {
         let source: PlayerSourceKind
+        let sourceBundleIdentifier: String
         let title: String
         let artist: String
         let album: String
@@ -25,11 +26,12 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
                 return nil
             }
 
-            self.init(source: source, track: track)
+            self.init(source: source, sourceBundleIdentifier: state.sourceBundleIdentifier, track: track)
         }
 
-        init(source: PlayerSourceKind, track: PlayerTrackMetadata) {
+        init(source: PlayerSourceKind, sourceBundleIdentifier: String?, track: PlayerTrackMetadata) {
             self.source = source
+            self.sourceBundleIdentifier = sourceBundleIdentifier ?? ""
             self.title = track.title
             self.artist = track.artist
             self.album = track.album ?? ""
@@ -154,14 +156,10 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
     var preferredOpenedContentHeight: CGFloat {
         let estimatedBodyHeight =
             Self.estimatedArtworkBlockHeight
-            + Self.estimatedOuterSpacing
-            + Self.estimatedProgressSectionHeight
-        let alignedBodyHeight =
-            CodexIslandChromeMetrics.windDrivePanelHeight
-            - CodexIslandChromeMetrics.moduleNavigationRowHeight
-            - CodexIslandChromeMetrics.moduleColumnSpacing
-
-        return CodexIslandChromeMetrics.moduleChromeHeight + max(estimatedBodyHeight, alignedBodyHeight)
+            + (nowPlayingState.track == nil || nowPlayingState.automationIssue != nil
+                ? 0
+                : Self.estimatedOuterSpacing + Self.estimatedProgressSectionHeight)
+        return CodexIslandChromeMetrics.moduleChromeHeight + estimatedBodyHeight
     }
     var allowsInternalScrolling: Bool { false }
 
@@ -170,7 +168,15 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
             return false
         }
 
-        return nowPlayingState.supportsTransportControls || defaultSource != nil
+        if nowPlayingState.supportsTransportControls {
+            return true
+        }
+
+        guard let defaultSource else {
+            return false
+        }
+
+        return defaultSource != .nowPlaying
     }
 
     var automationIssue: PlayerAutomationIssue? {
@@ -228,16 +234,6 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
             resolvedNotification = nil
         }
 
-        let sourceIconImages = Dictionary(
-            uniqueKeysWithValues: defaultSourceOptions.compactMap { sourceKind -> (PlayerSourceKind, NSImage)? in
-                guard let image = PlayerSourceRegistry.appIcon(for: sourceKind) else {
-                    return nil
-                }
-
-                return (sourceKind, image)
-            }
-        )
-
         return PlayerModuleRenderState(
             presentation: presentation,
             nowPlayingState: nowPlayingState,
@@ -246,9 +242,16 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
             automationIssue: automationIssue,
             canRequestAutomationAccess: canRequestAutomationAccess,
             isResolvingAutomationAccess: isResolvingAutomationAccess,
+            sourceAppOptions: installedSourceApps,
             sourceOptions: defaultSourceOptions,
             selectedSource: defaultSourceSelection,
-            sourceIconImages: sourceIconImages,
+            selectPlaybackSource: { [weak self] source in Task { @MainActor in self?.selectPlaybackSource(source) } },
+            openSourceApp: { [weak self] bundleIdentifier in
+                Task { @MainActor in
+                    self?.activateApplication(bundleIdentifier: bundleIdentifier)
+                }
+            },
+            openNowPlayingApp: { [weak self] in Task { @MainActor in self?.activateCurrentSource() } },
             previousTrack: { [weak self] in Task { @MainActor in self?.previousTrack() } },
             togglePlayPause: { [weak self] in Task { @MainActor in self?.togglePlayPause() } },
             nextTrack: { [weak self] in Task { @MainActor in self?.nextTrack() } },
@@ -257,8 +260,7 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
             cycleRepeat: { [weak self] in Task { @MainActor in self?.cycleRepeat() } },
             requestAutomationAccess: { [weak self] in Task { @MainActor in self?.requestAutomationAccess() } },
             openAutomationSettings: { [weak self] in Task { @MainActor in self?.openAutomationSettings() } },
-            refresh: { [weak self] in Task { @MainActor in self?.refresh() } },
-            selectSource: { [weak self] source in Task { @MainActor in self?.selectPlaybackSource(source) } }
+            refresh: { [weak self] in Task { @MainActor in self?.refresh() } }
         )
     }
 
@@ -317,11 +319,27 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
     }
 
     func activateCurrentSource() {
-        guard canActivateCurrentSource else {
+        if activateApplication(bundleIdentifier: nowPlayingState.sourceBundleIdentifier) {
             return
         }
 
-        mediaCoordinator.activateSourceApplication(for: nowPlayingState.source)
+        if nowPlayingState.source == .nowPlaying,
+           let runningBundleIdentifier = PlayerSourceRegistry.runningCandidateBundleIdentifier(
+               preferredDisplayName: nowPlayingState.sourceDisplayName
+           ),
+           activateApplication(bundleIdentifier: runningBundleIdentifier) {
+            return
+        }
+
+        if mediaCoordinator.activateSourceApplication(for: nowPlayingState.source) {
+            return
+        }
+
+        guard defaultSource != .nowPlaying else {
+            return
+        }
+
+        _ = mediaCoordinator.activateSourceApplication(for: defaultSource)
     }
 
     func toggleShuffle() {
@@ -382,6 +400,27 @@ final class PlayerModuleModel: ObservableObject, IslandModule {
                 return
             }
         }
+    }
+
+    @discardableResult
+    private func activateApplication(bundleIdentifier: String?) -> Bool {
+        guard let bundleIdentifier = bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !bundleIdentifier.isEmpty else {
+            return false
+        }
+
+        if let runningApplication = NSRunningApplication
+            .runningApplications(withBundleIdentifier: bundleIdentifier)
+            .first {
+            return runningApplication.activate(options: [.activateAllWindows])
+        }
+
+        guard let applicationURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) else {
+            return false
+        }
+
+        NSWorkspace.shared.openApplication(at: applicationURL, configuration: NSWorkspace.OpenConfiguration())
+        return true
     }
 
     private func refreshSoon(after delay: TimeInterval = 0.25) {

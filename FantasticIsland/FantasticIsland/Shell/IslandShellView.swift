@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 private struct ModuleContentHeightKey: PreferenceKey {
@@ -29,6 +30,115 @@ private struct PeekContentHeightKey: PreferenceKey {
         let next = nextValue()
         if next > 0 {
             value = next
+        }
+    }
+}
+
+private struct ModuleHorizontalScrollMonitor: NSViewRepresentable {
+    @ObservedObject var model: IslandAppModel
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(model: model)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        context.coordinator.view = view
+        context.coordinator.install()
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.model = model
+        context.coordinator.view = nsView
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.remove()
+    }
+
+    final class Coordinator {
+        weak var model: IslandAppModel?
+        weak var view: NSView?
+        private var monitor: Any?
+        private var swipeGate = IslandHorizontalModuleSwipeGate()
+
+        init(model: IslandAppModel) {
+            self.model = model
+        }
+
+        func install() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                self?.handle(event) == true ? nil : event
+            }
+        }
+
+        func remove() {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+            }
+            monitor = nil
+        }
+
+        private func handle(_ event: NSEvent) -> Bool {
+            let now = Date()
+            guard let model,
+                  model.islandExpanded,
+                  !model.islandLayoutTransitionInFlight,
+                  isEventInsideShellWindow(event) else {
+                return false
+            }
+
+            let decision = swipeGate.handle(
+                IslandHorizontalModuleSwipeEvent(
+                    horizontalDelta: Double(event.scrollingDeltaX),
+                    verticalDelta: Double(event.scrollingDeltaY),
+                    phaseBegan: event.phase.contains(.began),
+                    phaseEnded: shouldResetAccumulation(for: event),
+                    isMomentum: event.momentumPhase != []
+                ),
+                at: now.timeIntervalSinceReferenceDate
+            )
+
+            switch decision {
+            case .passThrough:
+                return false
+            case .consume:
+                return true
+            case let .switchModule(offset):
+                let didSwitch = model.selectAdjacentModuleFromPointer(
+                    offset: offset,
+                    now: now
+                )
+                if didSwitch {
+                    swipeGate.recordSwitch(at: now.timeIntervalSinceReferenceDate)
+                }
+                return true
+            }
+        }
+
+        private func isEventInsideShellWindow(_ event: NSEvent) -> Bool {
+            guard let window = view?.window else {
+                return false
+            }
+
+            if event.window === window {
+                return true
+            }
+
+            return window.frame.contains(NSEvent.mouseLocation)
+        }
+
+        private func shouldResetAccumulation(for event: NSEvent) -> Bool {
+            event.phase == .ended
+                || event.phase == .cancelled
+                || event.momentumPhase == .ended
+                || event.momentumPhase == .cancelled
+        }
+
+        func suppressWheelMomentum(after date: Date = .now) {
+            swipeGate.suppressWheelMomentum(after: date.timeIntervalSinceReferenceDate)
         }
     }
 }
@@ -281,8 +391,17 @@ struct IslandShellView: View {
                 Color.clear
                 shellContent(availableSize: geometry.size)
                     .frame(maxWidth: .infinity, alignment: .top)
+
+                if let overlay = model.hudOverlay, overlay.isVisible {
+                    IslandHUDOverlayView(overlay: overlay) { level in
+                        model.adjustHUDOverlay(to: level)
+                    }
+                        .padding(.top, 6)
+                        .transition(.opacity)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(ModuleHorizontalScrollMonitor(model: model))
         }
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
@@ -299,8 +418,7 @@ struct IslandShellView: View {
 
         let closedTotalWidth = closedContentWidth
         let resolvedExpandedContentWidth = CodexIslandChromeMetrics.resolvedExpandedContentWidth(
-            baseContentWidth: expandedContentWidth,
-            showsWindDrivePanel: model.showsExpandedWindDrivePanel
+            baseContentWidth: expandedContentWidth
         )
         let expandedSurfaceWidth = min(
             layoutWidth,
@@ -375,7 +493,7 @@ struct IslandShellView: View {
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
                 surfaceShape
-                    .fill(Color.black)
+                    .fill(shellFill)
                     .frame(width: surfaceWidth, height: surfaceHeight)
 
                 ZStack(alignment: .top) {
@@ -398,7 +516,10 @@ struct IslandShellView: View {
                 }
                 .overlay {
                     surfaceShape
-                        .strokeBorder(Color.white.opacity(usesOpenedVisualState ? 0.07 : 0.04), lineWidth: 1)
+                        .strokeBorder(
+                            shellStroke,
+                            lineWidth: usesOpenedVisualState ? 0.85 : 0.65
+                        )
                 }
 
                 if showsExpandedChrome {
@@ -413,9 +534,14 @@ struct IslandShellView: View {
             .frame(width: stableLayerWidth, height: surfaceHeight, alignment: .top)
         }
         .scaleEffect(usesOpenedVisualState ? 1 : (isClosedHovering ? CodexIslandChromeMetrics.closedHoverScale : 1), anchor: .top)
+        .shadow(
+            color: .clear,
+            radius: 0,
+            y: 0
+        )
         .padding(.horizontal, panelShadowHorizontalInset)
         .padding(.bottom, panelShadowBottomInset)
-        .animation(.spring(response: 0.38, dampingFraction: 0.8), value: isClosedHovering)
+        .animation(.easeOut(duration: 0.22), value: isClosedHovering)
         .overlay(alignment: .topLeading) {
             collapsedModulePremeasurementView(width: premeasuredModuleColumnWidth)
         }
@@ -432,22 +558,36 @@ struct IslandShellView: View {
             isHovering = hovering
         }
         .onTapGesture {
-            if !model.islandExpanded {
+            if !model.islandExpanded, !hasVisibleHUDOverlay {
                 model.expandIsland(reason: .manualTap)
             }
         }
+    }
+
+    private var hasVisibleHUDOverlay: Bool {
+        model.hudOverlay?.isVisible == true
+    }
+
+    private var shellFill: some ShapeStyle {
+        AnyShapeStyle(IslandVisualLanguage.closedShell)
+    }
+
+    private var shellStroke: LinearGradient {
+        usesOpenedVisualState
+            ? IslandVisualLanguage.shellStrokeGradient
+            : IslandVisualLanguage.closedShellStrokeGradient
     }
 
     @ViewBuilder
     private var headerRow: some View {
         IslandClosedHeaderView(
             state: IslandShellClosedHeaderRenderState(
-                fanAnimationState: model.fanAnimationState,
                 compactModules: model.visibleCompactModules
             ),
             notchExclusionWidth: closedContentNotchExclusionWidth
         )
             .opacity(showsClosedHeader ? 1 : 0)
+            .animation(.easeOut(duration: 0.18), value: showsClosedHeader)
             .allowsHitTesting(visualMode == .closed && showsClosedHeader)
             .frame(height: closedHeight)
             .clipped()
@@ -458,8 +598,8 @@ struct IslandShellView: View {
             if let snapshot = outgoingPeekSnapshot {
                 peekContent(snapshot: snapshot)
                     .opacity(outgoingPeekOpacity)
-                    .padding(.horizontal, CodexIslandPeekMetrics.contentHorizontalInset) // peek 内容的左右边距由壳层统一提供
-                    .padding(.bottom, CodexIslandPeekMetrics.contentBottomPadding) // peek 内容的底部留白由容器统一控制
+                    .padding(.horizontal, CodexIslandPeekMetrics.contentHorizontalInset)
+                    .padding(.bottom, CodexIslandPeekMetrics.contentBottomPadding)
             }
 
             if let snapshot = incomingPeekSnapshot {
@@ -475,7 +615,7 @@ struct IslandShellView: View {
             visualMode == .peek
                 ? CodexIslandPeekMetrics.contentTopPadding + expandedContentTopClearance
                 : CodexIslandChromeMetrics.expandedContentTopPadding + expandedContentTopClearance
-        ) // peek 与 expanded 分别使用各自的顶部留白；带硬件刘海时让 opened 内容整体下移
+        )
         .foregroundStyle(.white)
         .allowsHitTesting(model.peekCapturesMouseEvents && transitionPlan == nil && visualMode == .peek)
     }
@@ -529,15 +669,11 @@ struct IslandShellView: View {
     }
 
     private func expandedChromeSection<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        HStack(alignment: .top, spacing: model.showsExpandedWindDrivePanel ? CodexIslandChromeMetrics.moduleColumnSpacing : 0) { // Wind Drive 与右侧内容列的间距
-            if model.showsExpandedWindDrivePanel {
-                fanColumn
-                    .frame(width: CodexIslandChromeMetrics.windDrivePanelWidth, alignment: .top)
-            }
+        HStack(alignment: .top, spacing: 0) {
             rightColumn(content: content)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .padding(.horizontal, CodexIslandChromeMetrics.expandedContentHorizontalInset) // 展开态主容器统一左右边距，模块自己不要再加外层 horizontal padding
+        .padding(.horizontal, CodexIslandChromeMetrics.expandedContentHorizontalInset)
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
@@ -568,22 +704,8 @@ struct IslandShellView: View {
         .clipped()
     }
 
-    private var fanColumn: some View {
-        fanPanel
-    }
-
-    private var fanPanel: some View {
-        IslandWindDrivePanelView(
-            state: IslandWindDrivePanelRenderState(
-                animationState: model.fanAnimationState,
-                logoPreset: model.windDriveLogoPreset,
-                customImage: model.usesCustomWindDriveLogo ? model.windDriveCustomLogoImage : nil
-            )
-        )
-    }
-
     private func rightColumn<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: CodexIslandChromeMetrics.moduleColumnSpacing) { // tab/header 行与模块内容区的纵向间距
+        VStack(alignment: .leading, spacing: CodexIslandChromeMetrics.moduleColumnSpacing) {
             expandedNavigationRow
 
             content()
@@ -727,7 +849,7 @@ struct IslandShellView: View {
                     Color.clear.preference(key: ModuleContentHeightKey.self, value: geometry.size.height)
                 }
             }
-            .padding(.bottom, CodexIslandChromeMetrics.expandedContentBottomPadding) // 模块内容容器自己的底部留白，不再使用假 spacer 撑高度
+            .padding(.bottom, CodexIslandChromeMetrics.expandedContentBottomPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .transaction { transaction in
                 if model.islandLayoutTransitionInFlight {
@@ -769,11 +891,7 @@ struct IslandShellView: View {
 
     private func expandedModuleColumnWidth(for openedWidth: CGFloat) -> CGFloat {
         let expandedBodyWidth = max(0, openedWidth - (CodexIslandChromeMetrics.expandedContentHorizontalInset * 2))
-        let leadingColumnWidth =
-            model.showsExpandedWindDrivePanel
-            ? CodexIslandChromeMetrics.windDrivePanelWidth + CodexIslandChromeMetrics.moduleColumnSpacing
-            : 0
-        return max(0, expandedBodyWidth - leadingColumnWidth)
+        return max(0, expandedBodyWidth)
     }
 
     private var moduleTabRow: some View {

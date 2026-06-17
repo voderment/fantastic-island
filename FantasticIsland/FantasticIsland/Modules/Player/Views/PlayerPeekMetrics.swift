@@ -2,18 +2,18 @@ import CoreGraphics
 
 @MainActor
 enum PlayerPeekMetrics {
-    static let defaultHorizontalSpacing: CGFloat = 14
-    static let defaultTextSpacing: CGFloat = 6
-    static let defaultTitleFontSize: CGFloat = 17
-    static let defaultArtistFontSize: CGFloat = 13
+    static let defaultHorizontalSpacing: CGFloat = 10
+    static let defaultTextSpacing: CGFloat = 3
+    static let defaultTitleFontSize: CGFloat = 14
+    static let defaultArtistFontSize: CGFloat = 11.5
 
-    static let defaultContentHorizontalPadding: CGFloat = 2
-    static let defaultContentVerticalPadding: CGFloat = 4
-    static let defaultMinimumHeight: CGFloat = 64
+    static let defaultContentHorizontalPadding: CGFloat = 8
+    static let defaultContentVerticalPadding: CGFloat = 6
+    static let defaultMinimumHeight: CGFloat = 50
 
-    static let defaultArtworkCornerRadius: CGFloat = 12
-    static let defaultArtworkSize: CGFloat = 52
-    static let defaultPlaceholderSymbolSize: CGFloat = 20
+    static let defaultArtworkCornerRadius: CGFloat = 9
+    static let defaultArtworkSize: CGFloat = 38
+    static let defaultPlaceholderSymbolSize: CGFloat = 15
 
     static let defaultTitleOpacity: CGFloat = 0.96
     static let defaultArtistOpacity: CGFloat = 0.62

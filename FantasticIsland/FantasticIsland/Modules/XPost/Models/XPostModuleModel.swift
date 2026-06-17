@@ -54,10 +54,10 @@ final class XPostModuleModel: ObservableObject, IslandModule {
     static let moduleID = "xpost"
 
     private static let preferredExpandedContentHeight: CGFloat =
-        CodexIslandChromeMetrics.moduleChromeHeight + 236
+        CodexIslandChromeMetrics.moduleChromeHeight + 204
 
     let id = XPostModuleModel.moduleID
-    let title = "Twitter"
+    let title = "X Post"
     let symbolName = "square.and.pencil"
     let iconAssetName: String? = "Xicon"
 

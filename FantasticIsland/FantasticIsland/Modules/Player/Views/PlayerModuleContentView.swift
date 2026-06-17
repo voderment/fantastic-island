@@ -9,9 +9,12 @@ struct PlayerModuleRenderState {
     let automationIssue: PlayerAutomationIssue?
     let canRequestAutomationAccess: Bool
     let isResolvingAutomationAccess: Bool
+    let sourceAppOptions: [PlayerAppDescriptor]
     let sourceOptions: [PlayerSourceKind]
     let selectedSource: PlayerSourceKind
-    let sourceIconImages: [PlayerSourceKind: NSImage]
+    let selectPlaybackSource: (PlayerSourceKind) -> Void
+    let openSourceApp: (String) -> Void
+    let openNowPlayingApp: () -> Void
     let previousTrack: () -> Void
     let togglePlayPause: () -> Void
     let nextTrack: () -> Void
@@ -21,7 +24,6 @@ struct PlayerModuleRenderState {
     let requestAutomationAccess: () -> Void
     let openAutomationSettings: () -> Void
     let refresh: () -> Void
-    let selectSource: (PlayerSourceKind) -> Void
 }
 
 struct PlayerModuleLiveContentView: View {
@@ -55,25 +57,89 @@ struct PlayerModuleContentView: View {
     }
 
     private var standardContent: some View {
-        VStack(alignment: .leading, spacing: PlayerExpandedMetrics.outerSpacing) {
-            HStack(alignment: .top, spacing: PlayerExpandedMetrics.primaryColumnSpacing) {
-                VStack(alignment: .leading, spacing: PlayerExpandedMetrics.controlsSpacing + 4) {
-                    titleBlock
+        HStack(alignment: .center, spacing: PlayerExpandedMetrics.primaryColumnSpacing) {
+            artworkView
 
-                    if showsAutomationIssue {
-                        automationIssueActionRow
-                    } else {
-                        controlsRow
+            if showsAutomationIssue {
+                VStack(alignment: .leading, spacing: 5) {
+                    titleBlock
+                    automationIssueActionRow
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                VStack(alignment: .leading, spacing: 5) {
+                    playerTitleRow
+                    playerControlStrip
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .contentShape(Rectangle())
+    }
+
+    private var playerTitleRow: some View {
+        HStack(alignment: .center, spacing: 9) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    PlayerAnimatedTitleText(
+                        title: state.nowPlayingState.titleText,
+                        lineLimit: 1
+                    )
+                    .layoutPriority(1)
+
+                    if state.nowPlayingState.playbackStatus.isPlaying {
+                        PlayerVisualizerView(isPlaying: true)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .topLeading)
 
-                artworkView
+                Text(state.nowPlayingState.artistText)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.52))
+                    .lineLimit(1)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: state.openNowPlayingApp)
+            .help("Open \(sourceBadgeText)")
 
-            if !showsAutomationIssue {
-                progressSection
+            sourceMenu
+        }
+    }
+
+    private var playerControlStrip: some View {
+        HStack(alignment: .center, spacing: 7) {
+            controlsRow
+                .fixedSize(horizontal: true, vertical: false)
+
+            VStack(alignment: .leading, spacing: 2) {
+                PlayerProgressBar(
+                    progress: displayedProgress,
+                    isEnabled: state.nowPlayingState.supportsSeeking,
+                    onChanged: { progress in
+                        scrubProgress = progress
+                    },
+                    onEnded: { progress in
+                        scrubProgress = nil
+                        state.seek(progress)
+                    }
+                )
+                .frame(height: 8)
+
+                HStack(spacing: 0) {
+                    Text(displayedElapsedText)
+                    Spacer(minLength: 0)
+                    Text(displayedRemainingText)
+                }
+                .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.46))
             }
+            .frame(maxWidth: .infinity)
+            .layoutPriority(1)
+
+            playbackModeControls
+                .fixedSize(horizontal: true, vertical: false)
         }
     }
 
@@ -101,6 +167,9 @@ struct PlayerModuleContentView: View {
             minHeight: PlayerPeekMetrics.minimumHeight,
             alignment: .leading
         )
+        .contentShape(Rectangle())
+        .onTapGesture(perform: state.openNowPlayingApp)
+        .help("Open \(sourceBadgeText)")
     }
 
     private func peekArtworkView(notification: PlayerModuleModel.TrackSwitchNotification) -> some View {
@@ -133,21 +202,13 @@ struct PlayerModuleContentView: View {
 
     private var artworkView: some View {
         artworkBody
-            .help("Switch playback source")
+            .contentShape(RoundedRectangle(cornerRadius: PlayerExpandedMetrics.artworkCornerRadius, style: .continuous))
+            .onTapGesture(perform: state.openNowPlayingApp)
+            .help("Open \(sourceBadgeText)")
     }
 
     private var artworkBody: some View {
         artworkThumbnail
-            .overlay(alignment: .bottom) {
-                PlayerSourceSelectorView(
-                    selectedSource: state.selectedSource,
-                    options: state.sourceOptions,
-                    iconImages: state.sourceIconImages,
-                    selectSource: state.selectSource
-                )
-                .frame(width: PlayerExpandedMetrics.artworkSize - 8)
-                .padding(.bottom, 7)
-            }
     }
 
     private var artworkThumbnail: some View {
@@ -162,8 +223,18 @@ struct PlayerModuleContentView: View {
     }
 
     private var titleBlock: some View {
-        VStack(alignment: .leading, spacing: PlayerExpandedMetrics.titleBlockSpacing) {
-            HStack(alignment: .center, spacing: 16) {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                if !showsAutomationIssue, state.nowPlayingState.playbackStatus.isPlaying {
+                    PlayerVisualizerView(isPlaying: true)
+                }
+
+                Spacer(minLength: 0)
+
+                sourceMenu
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 PlayerAnimatedTitleText(
                     title: state.nowPlayingState.titleText,
                     lineLimit: showsAutomationIssue ? 2 : 1
@@ -178,11 +249,89 @@ struct PlayerModuleContentView: View {
             }
 
             Text(state.nowPlayingState.artistText)
-                .font(.system(size: 15, weight: .medium))
+                .font(.system(size: 13.5, weight: .medium))
                 .foregroundStyle(.white.opacity(0.56))
                 .lineLimit(showsAutomationIssue ? 2 : 1)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private var sourceMenu: some View {
+        Menu {
+            Button {
+                state.openNowPlayingApp()
+            } label: {
+                Label("Open \(sourceBadgeText)", systemImage: "arrow.up.forward.app")
+            }
+            .disabled(!hasOpenableCurrentSource)
+
+            Divider()
+
+            ForEach(state.sourceOptions) { source in
+                Button {
+                    state.selectPlaybackSource(source)
+                } label: {
+                    HStack {
+                        Text(source.displayName)
+                        if source == state.selectedSource {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+
+            if !openOnlySourceAppOptions.isEmpty {
+                Divider()
+                ForEach(openOnlySourceAppOptions) { app in
+                    Button {
+                        state.openSourceApp(app.bundleIdentifier)
+                    } label: {
+                        Label("Open \(app.displayName)", systemImage: "app")
+                    }
+                }
+            }
+
+            Divider()
+            Button("Refresh") {
+                state.refresh()
+            }
+        } label: {
+            HStack(spacing: 5) {
+                if let sourceIconImage {
+                    Image(nsImage: sourceIconImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 9, height: 9)
+                        .clipShape(.rect(cornerRadius: 2))
+                } else {
+                    Image(systemName: "speaker.wave.2.fill")
+                        .font(.system(size: 8.5, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.48))
+                }
+
+                Text(sourceBadgeText)
+                    .font(.system(size: 9, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .minimumScaleFactor(0.72)
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 6.5, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.42))
+            }
+            .foregroundStyle(.white.opacity(0.64))
+            .padding(.horizontal, 6)
+            .frame(height: 18)
+            .frame(width: 88, alignment: .trailing)
+            .background(Color.white.opacity(0.045), in: Capsule())
+            .overlay {
+                Capsule()
+                    .strokeBorder(Color.white.opacity(0.07), lineWidth: 0.7)
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize(horizontal: true, vertical: false)
+        .help("Now Playing follows the current media app")
     }
 
     private var automationIssueActionRow: some View {
@@ -201,7 +350,7 @@ struct PlayerModuleContentView: View {
     }
 
     private var playbackModeControls: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 3) {
             modeButton(
                 systemName: state.nowPlayingState.shuffleMode.symbolName,
                 isActive: state.nowPlayingState.shuffleMode == .on,
@@ -218,7 +367,7 @@ struct PlayerModuleContentView: View {
                 action: state.cycleRepeat
             )
         }
-        .frame(height: 24)
+        .frame(height: 20)
     }
 
     private var progressSection: some View {
@@ -234,7 +383,7 @@ struct PlayerModuleContentView: View {
                     state.seek(progress)
                 }
             )
-            .frame(height: 12)
+            .frame(height: 8)
 
             HStack {
                 Text(displayedElapsedText)
@@ -247,20 +396,20 @@ struct PlayerModuleContentView: View {
     }
 
     private var controlsRow: some View {
-        HStack(spacing: PlayerExpandedMetrics.controlsSpacing) {
-            controlButton(systemName: "backward.fill", iconSize: 24, frameWidth: 42, frameHeight: 32, action: state.previousTrack)
+        HStack(spacing: 2) {
+            controlButton(systemName: "backward.fill", iconSize: 13, frameWidth: 24, frameHeight: 22, action: state.previousTrack)
                 .disabled(!state.supportsTransportControls)
 
             controlButton(
                 systemName: state.nowPlayingState.playbackStatus.isPlaying ? "pause.fill" : "play.fill",
-                iconSize: 28,
-                frameWidth: 36,
-                frameHeight: 36,
+                iconSize: 16,
+                frameWidth: 28,
+                frameHeight: 24,
                 action: state.togglePlayPause
             )
             .disabled(!state.supportsTransportControls)
 
-            controlButton(systemName: "forward.fill", iconSize: 24, frameWidth: 42, frameHeight: 32, action: state.nextTrack)
+            controlButton(systemName: "forward.fill", iconSize: 13, frameWidth: 24, frameHeight: 22, action: state.nextTrack)
                 .disabled(!state.supportsTransportControls)
         }
         .opacity(state.supportsTransportControls ? 1 : PlayerExpandedMetrics.controlButtonOpacityDisabled)
@@ -306,10 +455,10 @@ struct PlayerModuleContentView: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(modeButtonForegroundColor(isActive: isActive, isEnabled: isEnabled))
-                .frame(width: 30, height: 26)
-                .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .frame(width: 20, height: 20)
+                .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
         .buttonStyle(PlayerModeButtonStyle(isActive: isActive, isEnabled: isEnabled))
         .disabled(!isEnabled)
@@ -346,6 +495,7 @@ struct PlayerModuleContentView: View {
 
         return [
             state.nowPlayingState.source?.rawValue ?? "player",
+            state.nowPlayingState.sourceBundleIdentifier ?? "",
             track.title,
             track.artist,
             track.album ?? "",
@@ -354,6 +504,42 @@ struct PlayerModuleContentView: View {
 
     private var showsAutomationIssue: Bool {
         state.automationIssue != nil
+    }
+
+    private var sourceBadgeText: String {
+        let label = state.nowPlayingState.sourceLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !label.isEmpty, label != "Player" else {
+            return "Now Playing"
+        }
+
+        if label == PlayerSourceKind.nowPlaying.displayName {
+            return "Now Playing"
+        }
+
+        return label
+    }
+
+    private var sourceIconImage: NSImage? {
+        if let bundleIdentifier = state.nowPlayingState.sourceBundleIdentifier,
+           !bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           let icon = PlayerSourceRegistry.appIcon(bundleIdentifier: bundleIdentifier) {
+            return icon
+        }
+
+        return PlayerSourceRegistry.appIcon(for: state.selectedSource)
+    }
+
+    private var hasOpenableCurrentSource: Bool {
+        let bundleIdentifier = state.nowPlayingState.sourceBundleIdentifier?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !bundleIdentifier.isEmpty || state.selectedSource != .nowPlaying
+    }
+
+    private var openOnlySourceAppOptions: [PlayerAppDescriptor] {
+        state.sourceAppOptions.filter { app in
+            !app.bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && app.sourceKind == nil
+        }
     }
 
     private var displayedElapsedText: String {
@@ -407,7 +593,7 @@ private struct PlayerAnimatedTitleText: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: 20, weight: .bold))
+            .font(.system(size: 14.5, weight: .bold))
             .foregroundStyle(.white.opacity(0.96))
             .lineLimit(lineLimit)
             .contentTransition(.numericText())
@@ -431,16 +617,11 @@ private struct PlayerArtworkThumbnailView: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.08),
-                            Color.white.opacity(0.03),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .fill(Color.white.opacity(0.055))
+                .overlay {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.8)
+                }
 
             if let displayedArtworkImage {
                 Image(nsImage: displayedArtworkImage)
@@ -450,7 +631,7 @@ private struct PlayerArtworkThumbnailView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.985)))
             } else {
                 Image(systemName: "music.note")
-                    .font(.system(size: 28, weight: .medium))
+                    .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(.white.opacity(0.28))
                     .transition(.opacity)
             }
@@ -514,59 +695,11 @@ private struct PlayerArtworkThumbnailView: View {
     }
 }
 
-private struct PlayerSourceSelectorView: View {
-    let selectedSource: PlayerSourceKind
-    let options: [PlayerSourceKind]
-    let iconImages: [PlayerSourceKind: NSImage]
-    let selectSource: (PlayerSourceKind) -> Void
-
-    var body: some View {
-        CapsuleMenuPicker(
-            selection: Binding(
-                get: { selectedSource },
-                set: { selectSource($0) }
-            ),
-            options: options,
-            title: \.displayName,
-            labelTitle: { sourceLabel(for: $0) },
-            isEnabled: options.count > 1,
-            localizeLabel: false,
-            localizeMenuItems: false,
-            maxLabelWidth: 42,
-            icon: { iconImages[$0] },
-            iconSize: 13,
-            itemSpacing: 4,
-            horizontalPadding: 7,
-            verticalPadding: 6,
-            backgroundColor: .black,
-            backgroundOpacity: 0.72,
-            disabledBackgroundOpacity: 0.62,
-            strokeColor: .white,
-            strokeOpacity: 0.16,
-            strokeLineWidth: 0.8
-        )
-        .frame(width: PlayerExpandedMetrics.artworkSize - 8, height: 34)
-        .clipShape(Capsule())
-        .help("Switch playback source")
-    }
-
-    private func sourceLabel(for source: PlayerSourceKind) -> String {
-        switch source {
-        case .music:
-            return "Music"
-        case .podcasts:
-            return "Podcasts"
-        case .spotify:
-            return "Spotify"
-        }
-    }
-}
-
 private struct PlayerTransportButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.white.opacity(configuration.isPressed ? 0.12 : 0.001))
             )
             .scaleEffect(configuration.isPressed ? 0.94 : 1)
@@ -581,12 +714,12 @@ private struct PlayerModeButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(
                         backgroundFill(isPressed: configuration.isPressed)
                     )
             )
-            .shadow(color: shadowColor(isPressed: configuration.isPressed), radius: isActive ? 10 : 4, x: 0, y: 3)
+            .shadow(color: shadowColor(isPressed: configuration.isPressed), radius: isActive ? 3 : 0, x: 0, y: 1)
             .scaleEffect(configuration.isPressed ? 0.94 : 1)
             .animation(.smooth(duration: 0.14), value: configuration.isPressed)
     }
@@ -627,10 +760,10 @@ private struct PlayerModeButtonStyle: ButtonStyle {
         }
 
         if isActive {
-            return .black.opacity(isPressed ? 0.20 : 0.30)
+            return .black.opacity(isPressed ? 0.12 : 0.18)
         }
 
-        return .black.opacity(isPressed ? 0.10 : 0.16)
+        return .clear
     }
 }
 
@@ -638,11 +771,11 @@ private struct PlayerIssueActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.white.opacity(configuration.isPressed ? 0.16 : 0.08))
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(Color.white.opacity(configuration.isPressed ? 0.22 : 0.10), lineWidth: 0.8)
             }
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
@@ -663,21 +796,21 @@ private struct PlayerProgressBar: View {
 
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(Color.white.opacity(0.22))
-                    .frame(height: 8)
+                    .fill(Color.white.opacity(0.13))
+                    .frame(height: 5)
 
                 Capsule()
                     .fill(
                         LinearGradient(
                             colors: [
-                                Color.white.opacity(0.98),
-                                Color.white.opacity(0.82),
+                                Color.white.opacity(0.62),
+                                Color.white.opacity(0.48),
                             ],
                             startPoint: .leading,
                             endPoint: .trailing
                         )
                     )
-                    .frame(width: fillWidth, height: 8)
+                    .frame(width: fillWidth, height: 5)
             }
             .frame(maxHeight: .infinity, alignment: .center)
             .contentShape(Rectangle())

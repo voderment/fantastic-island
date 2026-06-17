@@ -5,10 +5,10 @@ struct XPostModuleContentView: View {
     @ObservedObject var model: XPostModuleModel
     @State private var isComposerFocused = false
 
-    private let composerTextInset = EdgeInsets(top: 16, leading: 18, bottom: 16, trailing: 18)
+    private let composerTextInset = EdgeInsets(top: 13, leading: 14, bottom: 13, trailing: 14)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 8) {
             if !model.configuredClientID.isEmpty, model.isAuthenticated {
                 composer
             } else {
@@ -21,27 +21,38 @@ struct XPostModuleContentView: View {
     }
 
     private var setupState: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(LocalizedStringKey(setupTitle))
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(.white.opacity(0.92))
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: model.configuredClientID.isEmpty ? "key.horizontal.fill" : "person.crop.circle.badge.plus")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.76))
+                .frame(width: 28, height: 28)
+                .background(Color.white.opacity(0.07), in: Circle())
 
-            Text(LocalizedStringKey(setupDetail))
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white.opacity(0.55))
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(LocalizedStringKey(setupTitle))
+                    .font(IslandVisualLanguage.islandTitle(13.5, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.92))
+                    .lineLimit(1)
+
+                Text(LocalizedStringKey(setupDetail))
+                    .font(IslandVisualLanguage.islandBody(11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.48))
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
 
             if !model.configuredClientID.isEmpty {
                 Button {
                     model.signIn()
                 } label: {
                     Text(LocalizedStringKey(model.isSigningIn ? "Signing in..." : "Sign in with X"))
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(Color.black.opacity(0.9))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 7)
                         .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            Capsule()
                                 .fill(Color.white.opacity(model.canSignIn ? 0.92 : 0.44))
                         )
                 }
@@ -49,15 +60,12 @@ struct XPostModuleContentView: View {
                 .disabled(!model.canSignIn)
             }
         }
-        .padding(16)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.045))
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 1)
+        .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(alignment: .top) {
+            Rectangle().fill(.white.opacity(0.05)).frame(height: 1)
         }
     }
 
@@ -83,13 +91,13 @@ struct XPostModuleContentView: View {
                         .allowsHitTesting(false)
                 }
             }
-            .frame(minHeight: 116, maxHeight: 116)
+            .frame(minHeight: 104, maxHeight: 104)
             .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.white.opacity(isComposerFocused ? 0.072 : 0.055))
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(composerStrokeColor, lineWidth: isComposerFocused ? 1.8 : 1)
             }
             .shadow(color: composerGlowColor, radius: isComposerFocused ? 7 : 0)
@@ -115,7 +123,7 @@ struct XPostModuleContentView: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 9)
                         .background(
-                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
                                 .fill(Color.white.opacity(model.canPost ? 0.92 : 0.36))
                         )
                 }
@@ -129,14 +137,14 @@ struct XPostModuleContentView: View {
     private var feedback: some View {
         if let errorMessage = model.errorMessage, !errorMessage.isEmpty {
             Text(LocalizedStringKey(errorMessage))
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(Color.red.opacity(0.9))
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(2)
         } else if let statusMessage = model.statusMessage, !statusMessage.isEmpty {
             Text(LocalizedStringKey(statusMessage))
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(Color.green.opacity(0.82))
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(2)
         }
     }
 
@@ -146,8 +154,8 @@ struct XPostModuleContentView: View {
 
     private var setupDetail: String {
         model.configuredClientID.isEmpty
-            ? "Configure your own X OAuth 2.0 Client ID in settings. Fantastic Island never uses maintainer API credits."
-            : "Sign in once with X to allow Fantastic Island to publish text posts from the island."
+            ? "Add OAuth in Settings"
+            : "Ready to connect"
     }
 
     private var validationMessage: String {

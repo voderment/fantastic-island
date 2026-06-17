@@ -12,6 +12,8 @@ struct CodexIslandSessionBuckets {
 }
 
 enum CodexIslandSessionPresentation {
+    static let compactOverviewSessionLimit = 5
+
     private static let inactivityThreshold: TimeInterval = 20 * 60
 
     static func computeBuckets(
@@ -56,6 +58,10 @@ enum CodexIslandSessionPresentation {
             return .running
         }
 
+        if session.isInProgressSession {
+            return .active
+        }
+
         if session.phase.requiresAttention {
             return .active
         }
@@ -82,6 +88,42 @@ enum CodexIslandSessionPresentation {
             return "\(max(1, age / 3_600))h"
         }
         return "\(max(1, age / 86_400))d"
+    }
+
+    static func overviewSessions(
+        from primarySessions: [SessionSnapshot],
+        activeNotificationSession: SessionSnapshot?,
+        isNotificationMode: Bool,
+        isShowingAllSessions: Bool,
+        limit: Int = compactOverviewSessionLimit
+    ) -> [SessionSnapshot] {
+        if isNotificationMode, let activeNotificationSession {
+            let remainingSessions = primarySessions.filter { $0.id != activeNotificationSession.id }
+            if isShowingAllSessions {
+                return [activeNotificationSession] + remainingSessions
+            }
+
+            let resolvedLimit = max(1, limit)
+            return [activeNotificationSession]
+                + compactSessions(from: remainingSessions, limit: resolvedLimit - 1)
+        }
+
+        if isShowingAllSessions {
+            return primarySessions
+        }
+
+        return compactSessions(from: primarySessions, limit: limit)
+    }
+
+    private static func compactSessions(from sessions: [SessionSnapshot], limit: Int) -> [SessionSnapshot] {
+        let requiredSessions = sessions.filter { session in
+            session.phase.requiresAttention || session.isInProgressSession
+        }
+        let optionalSessions = sessions.filter { session in
+            !(session.phase.requiresAttention || session.isInProgressSession)
+        }
+        let optionalLimit = max(0, limit - requiredSessions.count)
+        return requiredSessions + optionalSessions.prefix(optionalLimit)
     }
 
     private static func displayPriority(for session: SessionSnapshot, now: Date) -> Int {

@@ -74,8 +74,8 @@ struct CodexNotchShape: InsettableShape {
 }
 
 extension CodexNotchShape {
-    static let closedTopRadius: CGFloat = 6
-    static let closedBottomRadius: CGFloat = 20
-    static let openedTopRadius: CGFloat = 22
-    static let openedBottomRadius: CGFloat = 36
+    static let closedTopRadius: CGFloat = 0
+    static let closedBottomRadius: CGFloat = 22
+    static let openedTopRadius: CGFloat = 24
+    static let openedBottomRadius: CGFloat = 40
 }

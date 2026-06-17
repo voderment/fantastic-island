@@ -6,9 +6,9 @@ enum CodexExpandedMetrics {
     static let defaultSectionRowSpacing: CGFloat = 6
     static let defaultGlobalInfoBadgeSpacing: CGFloat = 8
     static let defaultEmptyStateMinimumHeight: CGFloat = 72
-    static let defaultCardCornerRadius: CGFloat = 18
-    static let defaultCardBackgroundOpacity: CGFloat = 0.045
-    static let defaultCardBorderOpacity: CGFloat = 0.08
+    static let defaultCardCornerRadius: CGFloat = 8
+    static let defaultCardBackgroundOpacity: CGFloat = 0.04
+    static let defaultCardBorderOpacity: CGFloat = 0.10
     static let defaultTitleFontSize: CGFloat = 15
     static let defaultSummaryFontSize: CGFloat = 13
 

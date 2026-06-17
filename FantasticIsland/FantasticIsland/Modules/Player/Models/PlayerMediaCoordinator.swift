@@ -24,6 +24,8 @@ private nonisolated final class PlayerMediaRemoteBridge: @unchecked Sendable {
         let playbackStatus: PlayerPlaybackStatus
         let track: PlayerTrackMetadata?
         let artworkImage: NSImage?
+        let sourceDisplayName: String?
+        let sourceBundleIdentifier: String?
     }
 
     private struct HelperPayload: Decodable {
@@ -483,11 +485,7 @@ private nonisolated final class PlayerMediaRemoteBridge: @unchecked Sendable {
         artworkURLKey = Self.loadStringConstant("kMRMediaRemoteNowPlayingInfoArtworkURL", from: handle)
     }
 
-    func snapshot(for sourceKind: PlayerSourceKind) async -> Snapshot? {
-        guard sourceKind == .podcasts else {
-            return nil
-        }
-
+    func snapshot(for sourceKind: PlayerSourceKind? = nil) async -> Snapshot? {
         if let directSnapshot = await directSnapshot(for: sourceKind) {
             return directSnapshot
         }
@@ -503,13 +501,19 @@ private nonisolated final class PlayerMediaRemoteBridge: @unchecked Sendable {
         sendCommand?(command.rawValue, nil)
     }
 
-    private func directSnapshot(for sourceKind: PlayerSourceKind) async -> Snapshot? {
+    private func directSnapshot(for sourceKind: PlayerSourceKind?) async -> Snapshot? {
         async let displayID = nowPlayingApplicationDisplayID()
         async let info = nowPlayingInfo()
 
         let resolvedDisplayID = await displayID
-        guard resolvedDisplayID == nil || resolvedDisplayID == sourceKind.bundleIdentifier,
-              let info = await info else {
+        guard let info = await info else {
+            return nil
+        }
+
+        if let sourceKind,
+           sourceKind != .nowPlaying,
+           resolvedDisplayID != nil,
+           resolvedDisplayID != sourceKind.bundleIdentifier {
             return nil
         }
 
@@ -523,7 +527,7 @@ private nonisolated final class PlayerMediaRemoteBridge: @unchecked Sendable {
         }
 
         return Self.makeSnapshot(
-            sourceKind: sourceKind,
+            sourceKind: sourceKind ?? .nowPlaying,
             displayID: resolvedDisplayID,
             title: stringValue(for: titleKey, in: info),
             artist: stringValue(for: artistKey, in: info),
@@ -537,7 +541,7 @@ private nonisolated final class PlayerMediaRemoteBridge: @unchecked Sendable {
         )
     }
 
-    private static func snapshot(fromHelperLine line: String, sourceKind: PlayerSourceKind) -> Snapshot? {
+    private static func snapshot(fromHelperLine line: String, sourceKind: PlayerSourceKind?) -> Snapshot? {
         guard let data = line.data(using: .utf8),
               let payload = try? JSONDecoder().decode(HelperPayload.self, from: data) else {
             return nil
@@ -548,7 +552,7 @@ private nonisolated final class PlayerMediaRemoteBridge: @unchecked Sendable {
             .flatMap(NSImage.init(data:))
 
         return makeSnapshot(
-            sourceKind: sourceKind,
+            sourceKind: sourceKind ?? .nowPlaying,
             displayID: payload.displayID,
             title: payload.title,
             artist: payload.artist,
@@ -575,7 +579,8 @@ private nonisolated final class PlayerMediaRemoteBridge: @unchecked Sendable {
         artworkURL: URL?,
         artworkImage: NSImage?
     ) -> Snapshot? {
-        if let displayID,
+        if sourceKind != .nowPlaying,
+           let displayID,
            displayID != sourceKind.bundleIdentifier {
             return nil
         }
@@ -611,8 +616,36 @@ private nonisolated final class PlayerMediaRemoteBridge: @unchecked Sendable {
         return Snapshot(
             playbackStatus: playbackStatus,
             track: track,
-            artworkImage: artworkImage
+            artworkImage: artworkImage,
+            sourceDisplayName: sourceDisplayName(for: displayID),
+            sourceBundleIdentifier: nilIfEmpty(displayID)
         )
+    }
+
+    private static func sourceDisplayName(for displayID: String?) -> String? {
+        guard let displayID,
+              !displayID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+
+        if let applicationURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: displayID),
+           let bundle = Bundle(url: applicationURL) {
+            let displayName = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            let bundleName = bundle.object(forInfoDictionaryKey: kCFBundleNameKey as String) as? String
+            if let name = [displayName, bundleName].compactMap({ $0 }).first(where: { !$0.isEmpty }) {
+                return name
+            }
+
+            let fileName = applicationURL.deletingPathExtension().lastPathComponent
+            if !fileName.isEmpty {
+                return fileName
+            }
+        }
+
+        return displayID
+            .split(separator: ".")
+            .last
+            .map(String.init)
     }
 
     private func nowPlayingApplicationDisplayID() async -> String? {
@@ -784,6 +817,17 @@ final class PlayerMediaCoordinator {
                 source.nextTrack()
             }
         }
+
+        func performWithMediaRemote() {
+            switch self {
+            case .previousTrack:
+                PlayerMediaRemoteBridge.shared.send(.previousTrack)
+            case .togglePlayPause:
+                PlayerMediaRemoteBridge.shared.send(.togglePlayPause)
+            case .nextTrack:
+                PlayerMediaRemoteBridge.shared.send(.nextTrack)
+            }
+        }
     }
 
     private struct PlayerSnapshot {
@@ -856,7 +900,25 @@ final class PlayerMediaCoordinator {
     private let podcastsSnapshotGraceInterval: TimeInterval = 6
 
     func fetchCurrentState(preferredSourceKind: PlayerSourceKind?) async -> PlayerNowPlayingState {
-        if let preferredSourceKind {
+        if preferredSourceKind == nil || preferredSourceKind == .nowPlaying,
+           let snapshot = await PlayerMediaRemoteBridge.shared.snapshot(),
+           snapshot.playbackStatus == .playing || snapshot.track != nil {
+            lastPreferredSourceKind = .nowPlaying
+            return PlayerNowPlayingState(
+                source: .nowPlaying,
+                sourceDisplayName: snapshot.sourceDisplayName,
+                sourceBundleIdentifier: snapshot.sourceBundleIdentifier,
+                playbackStatus: snapshot.playbackStatus,
+                track: snapshot.track,
+                shuffleMode: .unsupported,
+                repeatMode: .unsupported,
+                artworkImage: snapshot.artworkImage,
+                automationIssue: nil
+            )
+        }
+
+        if let preferredSourceKind,
+           preferredSourceKind != .nowPlaying {
             return await fetchState(for: preferredSourceKind)
         }
 
@@ -898,11 +960,31 @@ final class PlayerMediaCoordinator {
         }
 
         lastPreferredSourceKind = nil
+        if preferredSourceKind == .nowPlaying {
+            return .idleState(source: .nowPlaying)
+        }
+
         return .empty
     }
 
     private func fetchState(for sourceKind: PlayerSourceKind) async -> PlayerNowPlayingState {
         guard let source = resolvedSource(for: sourceKind) else {
+            if sourceKind == .nowPlaying,
+               let snapshot = await PlayerMediaRemoteBridge.shared.snapshot() {
+                lastPreferredSourceKind = .nowPlaying
+                return PlayerNowPlayingState(
+                    source: .nowPlaying,
+                    sourceDisplayName: snapshot.sourceDisplayName,
+                    sourceBundleIdentifier: snapshot.sourceBundleIdentifier,
+                    playbackStatus: snapshot.playbackStatus,
+                    track: snapshot.track,
+                    shuffleMode: .unsupported,
+                    repeatMode: .unsupported,
+                    artworkImage: snapshot.artworkImage,
+                    automationIssue: nil
+                )
+            }
+
             lastPreferredSourceKind = nil
             return .idleState(source: sourceKind)
         }
@@ -933,14 +1015,26 @@ final class PlayerMediaCoordinator {
     }
 
     func seek(to elapsed: TimeInterval, for sourceKind: PlayerSourceKind?) {
+        guard sourceKind != .nowPlaying else {
+            return
+        }
+
         resolvedSource(for: sourceKind)?.seek(elapsed)
     }
 
     func toggleShuffle(for sourceKind: PlayerSourceKind?) {
+        guard sourceKind != .nowPlaying else {
+            return
+        }
+
         resolvedSource(for: sourceKind)?.toggleShuffle()
     }
 
     func cycleRepeat(for sourceKind: PlayerSourceKind?) {
+        guard sourceKind != .nowPlaying else {
+            return
+        }
+
         resolvedSource(for: sourceKind)?.cycleRepeat()
     }
 
@@ -955,6 +1049,13 @@ final class PlayerMediaCoordinator {
         let remoteArtworkURL: URL?
 
         switch source {
+        case .nowPlaying:
+            cacheKey = nowPlayingArtworkCacheKey(
+                for: track,
+                artworkURL: track.artworkURL,
+                sourceBundleIdentifier: state.sourceBundleIdentifier
+            )
+            remoteArtworkURL = track.artworkURL
         case .music:
             cacheKey = musicArtworkCacheKey(for: track)
             remoteArtworkURL = musicArtworkURLCache[cacheKey]
@@ -972,6 +1073,8 @@ final class PlayerMediaCoordinator {
 
         let resolvedArtworkURL: URL?
         switch source {
+        case .nowPlaying:
+            resolvedArtworkURL = remoteArtworkURL
         case .music:
             if let remoteArtworkURL {
                 resolvedArtworkURL = remoteArtworkURL
@@ -1072,7 +1175,8 @@ final class PlayerMediaCoordinator {
 
     @discardableResult
     func activateSourceApplication(for sourceKind: PlayerSourceKind?) -> Bool {
-        guard let sourceKind else {
+        guard let sourceKind,
+              sourceKind != .nowPlaying else {
             return false
         }
 
@@ -1094,6 +1198,10 @@ final class PlayerMediaCoordinator {
     }
 
     private func resolvedTransportSource(for activeSourceKind: PlayerSourceKind?) -> ScriptSource? {
+        if activeSourceKind == .nowPlaying {
+            return nil
+        }
+
         if let activeSource = resolvedSource(for: activeSourceKind) {
             return activeSource
         }
@@ -1112,6 +1220,11 @@ final class PlayerMediaCoordinator {
         _ command: TransportCommand,
         for activeSourceKind: PlayerSourceKind?
     ) -> TimeInterval? {
+        if activeSourceKind == .nowPlaying {
+            command.performWithMediaRemote()
+            return immediateRefreshDelay
+        }
+
         guard let targetSource = resolvedTransportSource(for: activeSourceKind) else {
             return nil
         }
@@ -1135,6 +1248,8 @@ final class PlayerMediaCoordinator {
     private func toState(_ snapshot: PlayerSnapshot) -> PlayerNowPlayingState {
         PlayerNowPlayingState(
             source: snapshot.source,
+            sourceDisplayName: nil,
+            sourceBundleIdentifier: snapshot.source.bundleIdentifier,
             playbackStatus: snapshot.playbackStatus,
             track: snapshot.track,
             shuffleMode: snapshot.shuffleMode,
@@ -1551,6 +1666,24 @@ final class PlayerMediaCoordinator {
     private func musicArtworkCacheKey(for track: PlayerTrackMetadata) -> String {
         [
             "music",
+            track.title,
+            track.artist,
+            track.album ?? "",
+        ].joined(separator: "\u{1F}")
+    }
+
+    private func nowPlayingArtworkCacheKey(
+        for track: PlayerTrackMetadata,
+        artworkURL: URL?,
+        sourceBundleIdentifier: String?
+    ) -> String {
+        if let artworkURL {
+            return "now-playing:\(sourceBundleIdentifier ?? ""):\(artworkURL.absoluteString)"
+        }
+
+        return [
+            "now-playing",
+            sourceBundleIdentifier ?? "",
             track.title,
             track.artist,
             track.album ?? "",

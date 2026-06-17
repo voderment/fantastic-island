@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 
 enum PlayerSourceKind: String, CaseIterable, Equatable, Hashable, Identifiable {
+    case nowPlaying
     case music
     case podcasts
     case spotify
@@ -28,6 +29,13 @@ struct PlayerAppDescriptor: Identifiable, Equatable {
 enum PlayerSourceRegistry {
     nonisolated private static let candidateApps: [PlayerAppDescriptor] = [
         PlayerAppDescriptor(
+            id: PlayerSourceKind.nowPlaying.rawValue,
+            displayName: "Now Playing",
+            bundleIdentifier: "",
+            supportsTransportControls: true,
+            sourceKind: .nowPlaying
+        ),
+        PlayerAppDescriptor(
             id: PlayerSourceKind.music.rawValue,
             displayName: "Apple Music",
             bundleIdentifier: "com.apple.Music",
@@ -50,7 +58,7 @@ enum PlayerSourceRegistry {
         ),
         PlayerAppDescriptor(
             id: "netease_music",
-            displayName: "网易云音乐",
+            displayName: "NetEase Cloud Music",
             bundleIdentifier: "com.netease.163music",
             supportsTransportControls: false,
             sourceKind: nil
@@ -59,6 +67,34 @@ enum PlayerSourceRegistry {
             id: "qq_music",
             displayName: "QQMusic",
             bundleIdentifier: "com.tencent.QQMusicMac",
+            supportsTransportControls: false,
+            sourceKind: nil
+        ),
+        PlayerAppDescriptor(
+            id: "youtube_music",
+            displayName: "YouTube Music",
+            bundleIdentifier: "com.google.Chrome.app.kbnhkkgcjpjdkpdekfomdphmmdfmdhkc",
+            supportsTransportControls: false,
+            sourceKind: nil
+        ),
+        PlayerAppDescriptor(
+            id: "safari",
+            displayName: "Safari",
+            bundleIdentifier: "com.apple.Safari",
+            supportsTransportControls: false,
+            sourceKind: nil
+        ),
+        PlayerAppDescriptor(
+            id: "chrome",
+            displayName: "Chrome",
+            bundleIdentifier: "com.google.Chrome",
+            supportsTransportControls: false,
+            sourceKind: nil
+        ),
+        PlayerAppDescriptor(
+            id: "arc",
+            displayName: "Arc",
+            bundleIdentifier: "company.thebrowser.Browser",
             supportsTransportControls: false,
             sourceKind: nil
         ),
@@ -73,18 +109,12 @@ enum PlayerSourceRegistry {
     }
 
     static func installedControllableSources() -> [PlayerSourceKind] {
-        installedDescriptors().compactMap(\.sourceKind)
+        let installed = installedDescriptors().compactMap(\.sourceKind)
+        return [.nowPlaying] + installed.filter { $0 != .nowPlaying }
     }
 
     static func installedApplePlaybackSources() -> [PlayerSourceKind] {
-        installedControllableSources().filter { sourceKind in
-            switch sourceKind {
-            case .music, .podcasts:
-                return true
-            case .spotify:
-                return false
-            }
-        }
+        installedControllableSources()
     }
 
     static func runningControllableSources() -> [PlayerSourceKind] {
@@ -103,12 +133,24 @@ enum PlayerSourceRegistry {
     }
 
     static func isInstalled(bundleIdentifier: String) -> Bool {
-        applicationURL(for: bundleIdentifier) != nil
+        guard !bundleIdentifier.isEmpty else {
+            return true
+        }
+
+        return applicationURL(for: bundleIdentifier) != nil
             || !NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).isEmpty
     }
 
     static func appIcon(for sourceKind: PlayerSourceKind) -> NSImage? {
-        guard let applicationURL = applicationURL(for: sourceKind.bundleIdentifier) else {
+        guard !sourceKind.bundleIdentifier.isEmpty else {
+            return nil
+        }
+
+        return appIcon(bundleIdentifier: sourceKind.bundleIdentifier)
+    }
+
+    static func appIcon(bundleIdentifier: String) -> NSImage? {
+        guard let applicationURL = applicationURL(for: bundleIdentifier) else {
             return nil
         }
 
@@ -117,7 +159,38 @@ enum PlayerSourceRegistry {
         return icon
     }
 
+    static func runningCandidateBundleIdentifier(preferredDisplayName: String?) -> String? {
+        let runningDescriptors = candidateApps.filter { descriptor in
+            !descriptor.bundleIdentifier.isEmpty
+                && !NSRunningApplication.runningApplications(withBundleIdentifier: descriptor.bundleIdentifier).isEmpty
+        }
+        guard !runningDescriptors.isEmpty else {
+            return nil
+        }
+
+        let normalizedPreferredName = normalizedName(preferredDisplayName)
+        guard !normalizedPreferredName.isEmpty else {
+            return nil
+        }
+
+        return runningDescriptors.first { descriptor in
+            let descriptorName = normalizedName(descriptor.displayName)
+            let descriptorID = normalizedName(descriptor.id)
+            return descriptorName == normalizedPreferredName
+                || descriptorID == normalizedPreferredName
+                || descriptorName.contains(normalizedPreferredName)
+                || normalizedPreferredName.contains(descriptorName)
+        }?.bundleIdentifier
+    }
+
     private static func applicationURL(for bundleIdentifier: String) -> URL? {
         NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
+    }
+
+    private static func normalizedName(_ value: String?) -> String {
+        (value ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .filter { $0.isLetter || $0.isNumber }
     }
 }

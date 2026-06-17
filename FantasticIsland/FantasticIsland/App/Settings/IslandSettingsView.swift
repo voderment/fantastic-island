@@ -5,13 +5,6 @@ struct IslandSettingsView: View {
     @ObservedObject var model: IslandAppModel
 
     @State private var selection: IslandSettingsDestination = .general
-    @State private var clashShowsSubscriptionForm = false
-    @State private var clashPendingSubscriptionURL = ""
-    @State private var clashPendingSubscriptionName = ""
-    @State private var clashPresentedSheet: ClashSettingsSheet?
-    @State private var clashManagedHTTPPort = ""
-    @State private var clashManagedSocksPort = ""
-    @State private var clashManagedMixedPort = ""
 
     var body: some View {
         HStack(spacing: 0) {
@@ -27,12 +20,8 @@ struct IslandSettingsView: View {
         .background(
             ZStack {
                 Color.black
-
                 LinearGradient(
-                    colors: [
-                        Color.white.opacity(0.02),
-                        Color.clear,
-                    ],
+                    colors: [Color.white.opacity(0.025), Color.clear],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
@@ -40,27 +29,15 @@ struct IslandSettingsView: View {
         )
         .ignoresSafeArea(.container, edges: .top)
         .preferredColorScheme(.dark)
-        .onAppear {
-            normalizeSelection()
-            syncClashManagedPortDrafts()
-        }
+        .environment(\.locale, model.resolvedLocale)
+        .onAppear(perform: normalizeSelection)
         .onChange(of: model.enabledModuleIDs) { _, _ in
             normalizeSelection()
-        }
-        .onChange(of: model.clashModule.moduleMode) { _, _ in
-            syncClashManagedPortDrafts()
-        }
-        .onChange(of: model.clashModule.resolvedPortSnapshot) { _, _ in
-            syncClashManagedPortDrafts()
-        }
-        .environment(\.locale, model.resolvedLocale)
-        .sheet(item: $clashPresentedSheet) { sheet in
-            clashSheetView(for: sheet)
         }
     }
 
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 28) {
+        VStack(alignment: .leading, spacing: 26) {
             sidebarHeader
             topLevelNavigation
             moduleNavigation
@@ -90,7 +67,7 @@ struct IslandSettingsView: View {
         VStack(alignment: .leading, spacing: 6) {
             SidebarItemButton(
                 title: "General",
-                subtitle: "Startup, shortcut, language",
+                subtitle: "Startup and shortcuts",
                 symbolName: "slider.horizontal.3",
                 isSelected: selection == .general
             ) {
@@ -98,17 +75,8 @@ struct IslandSettingsView: View {
             }
 
             SidebarItemButton(
-                title: "Wind Drive",
-                subtitle: "Logo and sound",
-                symbolName: "wind",
-                isSelected: selection == .windDrive
-            ) {
-                selection = .windDrive
-            }
-
-            SidebarItemButton(
                 title: "About",
-                subtitle: "Product, version, credits",
+                subtitle: "Product and credits",
                 symbolName: "info.circle",
                 isSelected: selection == .about
             ) {
@@ -118,7 +86,7 @@ struct IslandSettingsView: View {
 #if DEBUG
             SidebarItemButton(
                 title: "Design Tokens",
-                subtitle: "Open the runtime token editor",
+                subtitle: "Runtime styling",
                 symbolName: "dial.high",
                 isSelected: false
             ) {
@@ -130,7 +98,7 @@ struct IslandSettingsView: View {
 
     private var moduleNavigation: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Module Configuration")
+            Text("Modules")
                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.4))
                 .padding(.horizontal, 12)
@@ -155,8 +123,6 @@ struct IslandSettingsView: View {
                 switch selection {
                 case .general:
                     generalPage
-                case .windDrive:
-                    windDrivePage
                 case .about:
                     IslandAboutPage()
                 case let .module(moduleID):
@@ -176,7 +142,7 @@ struct IslandSettingsView: View {
         VStack(alignment: .leading, spacing: 22) {
             pageHeader(
                 title: "General",
-                caption: "Keep app-level behavior here. Nothing module-specific belongs on this page."
+                caption: "Startup, shortcuts, and the small defaults that make the island stay out of the way."
             )
 
             SettingsCard(title: "Startup") {
@@ -190,136 +156,68 @@ struct IslandSettingsView: View {
                 )
             }
 
-            SettingsCard(title: "Keyboard Shortcut") {
+            SettingsCard(title: "Keyboard") {
                 VStack(alignment: .leading, spacing: 12) {
                     ShortcutRow(
-                        title: "Expand Notch Area",
-                        detail: "Expands the notch surface from anywhere.",
+                        title: "Expand Island",
+                        detail: "Open or close the island from anywhere.",
                         shortcut: model.expandShortcutDisplayText
                     )
-
                     ShortcutRow(
-                        title: "Open Twitter Composer",
-                        detail: "Opens Twitter and focuses the post box.",
-                        shortcut: model.twitterShortcutDisplayText
+                        title: "Open Agents",
+                        detail: "Jump straight to the Agents module.",
+                        shortcut: model.agentsShortcutDisplayText
+                    )
+                    ShortcutRow(
+                        title: "Previous Module",
+                        detail: "Move left through enabled modules.",
+                        shortcut: model.previousModuleShortcutDisplayText
+                    )
+                    ShortcutRow(
+                        title: "Next Module",
+                        detail: "Move right through enabled modules.",
+                        shortcut: model.nextModuleShortcutDisplayText
+                    )
+                    ShortcutRow(
+                        title: "Detached Island",
+                        detail: "Turn the movable expanded surface on or off.",
+                        shortcut: model.detachedModeShortcutDisplayText
                     )
                 }
             }
 
-            SettingsCard(title: "Interface Language") {
-                SettingsControlRow(
-                    title: "Interface Language",
-                    detail: "Supports following system language, English, Simplified Chinese, and Traditional Chinese."
-                ) {
-                    CapsuleMenuPicker(
-                        selection: Binding(
-                            get: { model.interfaceLanguage },
-                            set: { model.setInterfaceLanguage($0) }
-                        ),
-                        options: IslandInterfaceLanguage.allCases,
-                        title: \.title
+            SettingsCard(title: "Display") {
+                VStack(alignment: .leading, spacing: 12) {
+                    ToggleRow(
+                        title: "Hide in Fullscreen",
+                        detail: "Hide the island while another app is fullscreen, like Alcove and Boring Notch.",
+                        isOn: Binding(
+                            get: { model.hideInFullscreen },
+                            set: { model.setHideInFullscreen($0) }
+                        )
+                    )
+
+                    ToggleRow(
+                        title: "Detached Island",
+                        detail: "Let the expanded island move like a small buddy window while collapsed state stays anchored to the notch.",
+                        isOn: Binding(
+                            get: { model.detachedModeEnabled },
+                            set: { model.setDetachedModeEnabled($0) }
+                        )
                     )
                 }
             }
-        }
-    }
 
-    private var windDrivePage: some View {
-        let iconTileSize: CGFloat = 74
-        let iconGridSpacing: CGFloat = 12
-        let previewSide = iconTileSize * 2 + iconGridSpacing
-        let previewIconSize: CGFloat = 68
-        let iconGridColumns = Array(
-            repeating: GridItem(.fixed(iconTileSize), spacing: iconGridSpacing),
-            count: 4
-        )
-
-        return VStack(alignment: .leading, spacing: 22) {
-            pageHeader(
-                title: "Wind Drive",
-                caption: "Own the fan center mark here. The settings window itself stays static."
-            )
-
-            SettingsCard(title: "Expanded Notch Area") {
+            SettingsCard(title: "Audio") {
                 ToggleRow(
-                    title: "Show Wind Drive Panel",
-                    detail: "Hides only the large Wind Drive panel while expanded. The collapsed fan icon stays visible.",
-                    isOn: Binding(
-                        get: { model.showsExpandedWindDrivePanel },
-                        set: { model.setShowsExpandedWindDrivePanel($0) }
-                    )
-                )
-            }
-
-            SettingsCard(title: "Sound Effects") {
-                ToggleRow(
-                    title: "Enable Sound Effects",
-                    detail: "Play fan start and stop cues based on activity.",
+                    title: "Agent Notification Sounds",
+                    detail: "Play short system sounds when approvals arrive or sessions complete.",
                     isOn: Binding(
                         get: { !model.isAudioMuted },
-                        set: { enabled in
-                            if enabled == model.isAudioMuted {
-                                model.toggleAudioMuted()
-                            }
-                        }
+                        set: { model.setAgentSoundsEnabled($0) }
                     )
                 )
             }
-
-            SettingsCard(title: "Drive Logo") {
-                VStack(alignment: .leading, spacing: 14) {
-                    Text("Choose a preset icon or upload a custom square image for the logo in the middle of the fan.")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.5))
-
-                    HStack(alignment: .top, spacing: iconGridSpacing) {
-                        VStack(alignment: .leading, spacing: 14) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                    .fill(Color.white.opacity(0.05))
-
-                                WindDriveMarkView(
-                                    preset: model.windDriveLogoPreset,
-                                    customImage: model.usesCustomWindDriveLogo ? model.windDriveCustomLogoImage : nil,
-                                    size: previewIconSize,
-                                    presetForegroundStyle: AnyShapeStyle(.white.opacity(0.96))
-                                )
-                            }
-                            .frame(width: previewSide, height: previewSide)
-
-                            VStack(alignment: .leading, spacing: 10) {
-                                SecondaryActionButton(title: "Upload Square Image", fillsWidth: true) {
-                                    model.selectCustomWindDriveLogo()
-                                }
-
-                                if model.usesCustomWindDriveLogo {
-                                    SecondaryActionButton(title: "Use Preset Again", fillsWidth: true) {
-                                        model.clearCustomWindDriveLogo()
-                                    }
-                                }
-                            }
-                        }
-                        .frame(width: previewSide, alignment: .topLeading)
-
-                        LazyVGrid(
-                            columns: iconGridColumns,
-                            alignment: .leading,
-                            spacing: iconGridSpacing
-                        ) {
-                            ForEach(WindDriveLogoPreset.allCases) { preset in
-                                WindDrivePresetIconButton(
-                                    preset: preset,
-                                    isSelected: !model.usesCustomWindDriveLogo && model.windDriveLogoPreset == preset
-                                ) {
-                                    model.setWindDriveLogoPreset(preset)
-                                }
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-            }
-
         }
     }
 
@@ -332,11 +230,11 @@ struct IslandSettingsView: View {
                     caption: modulePageCaption(for: module.id)
                 )
 
-                SettingsCard {
+                SettingsCard(title: "Availability") {
                     VStack(alignment: .leading, spacing: 12) {
                         ToggleRow(
                             title: "Enable Module",
-                            detail: "Turning this off removes the module from the notch area, but keeps its saved configuration.",
+                            detail: "Turning this off removes the module from the island while keeping its saved configuration.",
                             isOn: Binding(
                                 get: { model.isModuleEnabled(module.id) },
                                 set: { model.setModuleEnabled($0, for: module.id) }
@@ -354,18 +252,44 @@ struct IslandSettingsView: View {
 
                 switch module.id {
                 case CodexModuleModel.moduleID:
-                    codexFanModulePage
-                case ClashModuleModel.moduleID:
-                    clashModulePage
+                    agentsModulePage
                 case PlayerModuleModel.moduleID:
                     playerModulePage
-                case XPostModuleModel.moduleID:
-                    twitterModulePage
-                default:
-                    SettingsCard(title: "Module Specific") {
+                case HorizonModuleModel.moduleID:
+                    horizonModulePage
+                case TimerModuleModel.moduleID:
+                    SettingsCard(title: "Timer") {
                         PlaceholderRow(
-                            title: "No module-specific controls yet",
-                            detail: "This module can add its own configuration later."
+                            title: "Compact timer",
+                            detail: "Timer controls live directly in the island for quick starts, pause, resume, and reset."
+                        )
+                    }
+                case ShelfModuleModel.moduleID:
+                    SettingsCard(title: "Shelf") {
+                        PlaceholderRow(
+                            title: "File drop shelf",
+                            detail: "Drop files onto the island and keep compact open, reveal, share, and remove actions close by."
+                        )
+                    }
+                case SystemModuleModel.moduleID:
+                    SettingsCard(title: "System") {
+                        PlaceholderRow(
+                            title: "Battery, volume, and brightness",
+                            detail: "A compact static module for the hardware status that should be glanceable without turning Horizon into a dashboard."
+                        )
+                    }
+                case DiagnosticsModuleModel.moduleID:
+                    SettingsCard(title: "Diagnostics") {
+                        PlaceholderRow(
+                            title: "Agent runtime health",
+                            detail: "Shows provider hook readiness, quota bridge status, app-server status, and compact repair actions directly in the island."
+                        )
+                    }
+                default:
+                    SettingsCard(title: "Details") {
+                        PlaceholderRow(
+                            title: "No module-specific controls",
+                            detail: "This module can add its own native settings later."
                         )
                     }
                 }
@@ -375,70 +299,73 @@ struct IslandSettingsView: View {
         }
     }
 
-    private var codexFanModulePage: some View {
+    private var agentsModulePage: some View {
         VStack(alignment: .leading, spacing: 22) {
-            SettingsCard {
+            SettingsCard(title: "Hooks") {
                 VStack(alignment: .leading, spacing: 16) {
                     SettingsSectionHeader(
-                        title: "Hooks",
-                        detail: "Install the managed hook bundle in ~/.codex so Fantastic Island can mirror CLI sessions, approvals, and tool activity."
+                        title: "Agent Bridge",
+                        detail: "Install native hook entries for Codex, Claude Code, Cursor, and Antigravity so sessions can appear in the island."
                     )
 
                     CodexStatusPanel(
-                        title: "Current Status",
+                        title: "Hook Status",
                         detail: codexHooksStatusDetailText,
-                        badgeText: model.codexFanModule.hooksMenuStatusText,
+                        badgeText: model.agentsModule.hooksMenuStatusText,
                         badgeTint: hooksStatusTint
                     )
 
+                    agentHookDiagnosticsRows
+
                     AdaptiveActionGroup {
-                        ProminentActionButton(title: model.codexFanModule.hooksActionTitle) {
-                            model.codexFanModule.installOrReinstallHooks()
+                        ProminentActionButton(title: model.agentsModule.hooksActionTitle) {
+                            model.agentsModule.installOrReinstallHooks()
                         }
 
                         SecondaryActionButton(title: "Open ~/.codex") {
-                            model.codexFanModule.openCodexDirectory()
+                            model.agentsModule.openCodexDirectory()
                         }
 
-                        if model.codexFanModule.hooksStatus.isInstalled {
+                        SecondaryActionButton(title: "Repair Quota Bridge") {
+                            model.agentsModule.installUsageBridges()
+                        }
+
+                        SecondaryActionButton(title: "SSH Setup") {
+                            model.agentsModule.revealRemoteSSHSetupScript()
+                        }
+
+                        if model.agentsModule.hooksStatus.isInstalled {
                             SecondaryActionButton(title: "Uninstall", tint: Color.red.opacity(0.22)) {
-                                model.codexFanModule.uninstallHooks()
+                                model.agentsModule.uninstallHooks()
                             }
                         }
                     }
                 }
             }
 
-            SettingsCard {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(alignment: .top, spacing: 16) {
-                        SettingsSectionHeader(
-                            title: "Connection Health",
-                            detail: "Bridge receives CLI hook payloads. App Server mirrors live Codex.app threads and approval requests."
-                        )
-
-                        Spacer(minLength: 0)
-
-                        SecondaryActionButton(title: "Refresh Status") {
-                            model.codexFanModule.refreshModuleStatus()
-                        }
-                    }
-
+            SettingsCard(title: "Connection") {
+                VStack(alignment: .leading, spacing: 14) {
                     CodexStatusPanel(
-                        title: "Bridge",
+                        title: "Local Bridge",
                         detail: codexBridgeStatusDetailText,
-                        badgeText: model.codexFanModule.bridgeStatusText,
+                        badgeText: model.agentsModule.bridgeStatusText,
                         badgeTint: bridgeStatusTint
                     )
 
                     CodexStatusPanel(
-                        title: "App Server",
+                        title: "Codex App",
                         detail: codexAppServerStatusDetailText,
                         badgeText: localizedCodexAppServerStatusText,
                         badgeTint: appServerStatusTint
                     )
 
-                    if let lastActionMessage = model.codexFanModule.lastActionMessage,
+                    AdaptiveActionGroup {
+                        SecondaryActionButton(title: "Refresh") {
+                            model.agentsModule.refreshModuleStatus()
+                        }
+                    }
+
+                    if let lastActionMessage = model.agentsModule.lastActionMessage,
                        !lastActionMessage.isEmpty {
                         Text(LocalizedStringKey(lastActionMessage))
                             .font(.system(size: 12, weight: .medium))
@@ -450,445 +377,34 @@ struct IslandSettingsView: View {
         }
     }
 
-    private var clashModulePage: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            SettingsCard {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(alignment: .center, spacing: 18) {
-                        Text("Connection Mode")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(.white)
-
-                        Spacer(minLength: 0)
-
-                        CapsuleMenuPicker(
-                            selection: Binding(
-                                get: { model.clashModule.moduleMode },
-                                set: { model.clashModule.updateModuleMode($0) }
-                            ),
-                            options: ClashModuleMode.allCases,
-                            title: \.title,
-                            localizeLabel: false,
-                            localizeMenuItems: false,
-                            maxLabelWidth: 118
-                        )
-                    }
-
-                    Rectangle()
-                        .fill(Color.white.opacity(0.08))
-                        .frame(height: 1)
-
-                    HStack(spacing: 20) {
-                        CompactStatusLine(title: clashStatusLineTitle, value: model.clashModule.statusDescription)
-                        CompactStatusLine(title: "API", value: model.clashModule.environment.apiBaseURLText)
-                        CompactStatusLine(title: clashReferenceLineTitle, value: clashReferenceLineValue)
-                        if model.clashModule.moduleMode == .managed {
-                            CompactStatusLine(title: "Capture", value: model.clashModule.managedCaptureModeTitle)
-                            CompactStatusLine(title: "Providers", value: "\(model.clashModule.proxyProviderCountText)/\(model.clashModule.ruleProviderCountText)")
-                        }
-                    }
-
-                    if let runtimeStatusDetailText = model.clashModule.runtimeStatusDetailText {
-                        SettingsInfoBlock(
-                            title: "Runtime Details",
-                            value: runtimeStatusDetailText,
-                            monospaced: false,
-                            valueColor: model.clashModule.runtimeStatusHasError
-                                ? Color.red.opacity(0.9)
-                                : Color.white.opacity(0.72)
-                        )
-                    }
-
-                    Text(LocalizedStringKey(clashModeHintText))
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            SettingsCard {
-                VStack(alignment: .leading, spacing: 14) {
-                    SettingsSectionHeader(
-                        title: clashConfigurationSectionTitle,
-                        detail: clashConfigurationSectionDetail
-                    )
-
-                    if model.clashModule.moduleMode == .attach {
-                        SettingsField(
-                            title: "API Base URL",
-                            prompt: "http://127.0.0.1:9090",
-                            text: Binding(
-                                get: { model.clashModule.configuredAttachAPIBaseURL },
-                                set: { model.clashModule.updateConfiguredAttachAPIBaseURL($0) }
-                            )
-                        )
-
-                        SettingsField(
-                            title: "API Secret",
-                            prompt: "Bearer secret",
-                            text: Binding(
-                                get: { model.clashModule.configuredAttachAPISecret },
-                                set: { model.clashModule.updateConfiguredAttachAPISecret($0) }
-                            ),
-                            isSecure: true
-                        )
-
-                        SettingsField(
-                            title: "Config File",
-                            prompt: "~/.config/mihomo/config.yaml",
-                            text: Binding(
-                                get: { model.clashModule.configuredAttachConfigFilePath },
-                                set: { model.clashModule.updateConfiguredAttachConfigFilePath($0) }
-                            )
-                        )
-
-                        if let resolvedConfigFilePath = model.clashModule.environment.configFilePath {
-                            SettingsInfoBlock(
-                                title: "Resolved Config File",
-                                value: resolvedConfigFilePath,
-                                monospaced: true,
-                                valueColor: .white.opacity(0.76)
-                            )
-                        } else {
-                            Text("Leave Config File empty if you want Fantastic Island to try to discover a local Mihomo or Clash YAML file automatically.")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.5))
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    } else {
-                        AdaptiveActionGroup {
-                            SecondaryActionButton(title: "Add Subscription") {
-                                openClashSubscriptionForm()
-                            }
-
-                            SecondaryActionButton(title: "Import YAML") {
-                                model.clashModule.importBuiltInProfile()
-                            }
-                        }
-
-                        if clashShowsSubscriptionForm {
-                            BuiltInSubscriptionComposer(
-                                urlText: $clashPendingSubscriptionURL,
-                                nameText: $clashPendingSubscriptionName,
-                                onCancel: closeClashSubscriptionForm,
-                                onSubmit: submitClashSubscriptionForm
-                            )
-                        }
-
-                        if model.clashModule.builtInProfiles.isEmpty {
-                            SettingsEmptyState(
-                                title: "No Profile Yet",
-                                detail: "Add a subscription or import a YAML file first. Fantastic Island will use the profile you mark as current."
-                            )
-                        } else {
-                            VStack(alignment: .leading, spacing: 10) {
-                                ForEach(model.clashModule.builtInProfiles) { profile in
-                                    BuiltInProfileRow(
-                                        name: profile.displayName,
-                                        detail: builtInProfileRowDetail(for: profile),
-                                        sourceKind: profile.isStarterProfile
-                                            ? NSLocalizedString("Default", comment: "")
-                                            : profile.sourceKind.title,
-                                        isActive: profile.isActive,
-                                        primaryActionTitle: builtInProfilePrimaryActionTitle(for: profile),
-                                        canDelete: model.clashModule.canDeleteBuiltInProfiles
-                                    ) {
-                                        handleBuiltInProfilePrimaryAction(profile)
-                                    } onRename: {
-                                        model.clashModule.showRenameBuiltInProfilePrompt(id: profile.id)
-                                    } onDelete: {
-                                        model.clashModule.confirmDeleteBuiltInProfile(id: profile.id)
-                                    }
-                                }
-                            }
-
-                            if model.clashModule.activeBuiltInProfileSupportsUpdateOnActivate {
-                                ToggleRow(
-                                    title: "Update on Activate",
-                                    detail: "Refresh the remote YAML before Fantastic Island switches to this subscription.",
-                                    isOn: Binding(
-                                        get: { model.clashModule.activeBuiltInProfileUpdateOnActivate },
-                                        set: { model.clashModule.updateActiveBuiltInProfileUpdateOnActivate($0) }
-                                    )
-                                )
-                            }
-
-                            Text(model.clashModule.builtInProfileStatusDetailText)
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(subscriptionStatusTint)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
-            }
-
-            if model.clashModule.moduleMode == .managed {
-                SettingsCard {
-                    VStack(alignment: .leading, spacing: 14) {
-                        SettingsSectionHeader(
-                            title: "Managed Runtime",
-                            detail: "Start, stop, reload, and inspect Fantastic Island's managed Mihomo runtime directly from settings."
-                        )
-
-                        SettingsInfoBlock(
-                            title: "Runtime Binary",
-                            value: model.clashModule.environment.coreDisplayPath,
-                            monospaced: true,
-                            valueColor: .white.opacity(0.76)
-                        )
-
-                        SettingsInfoBlock(
-                            title: "Dashboard",
-                            value: model.clashModule.environment.uiBaseURLText,
-                            monospaced: true,
-                            valueColor: .white.opacity(0.76)
-                        )
-
-                        AdaptiveActionGroup {
-                            ProminentActionButton(title: "Start Runtime") {
-                                model.clashModule.startOrAttach()
-                            }
-                            .opacity(model.clashModule.canStartOwnedRuntime ? 1 : 0.6)
-                            .disabled(!model.clashModule.canStartOwnedRuntime)
-
-                            SecondaryActionButton(title: "Stop Runtime") {
-                                model.clashModule.stopOwnedRuntime()
-                            }
-                            .opacity(model.clashModule.canStopOwnedRuntime ? 1 : 0.6)
-                            .disabled(!model.clashModule.canStopOwnedRuntime)
-
-                            SecondaryActionButton(title: "Reload Runtime") {
-                                model.clashModule.reloadConfig()
-                            }
-                            .opacity(model.clashModule.canReloadManagedRuntime ? 1 : 0.6)
-                            .disabled(!model.clashModule.canReloadManagedRuntime)
-                        }
-
-                        SettingsInfoBlock(
-                            title: "Capture",
-                            value: "\(model.clashModule.managedCaptureModeTitle) · \(model.clashModule.managedCapturePhaseTitle)",
-                            monospaced: false,
-                            valueColor: .white.opacity(0.76)
-                        )
-
-                        Text("Managed mode should be independently operable here: profile sync feeds the generated runtime config, capture mode controls how Fantastic Island takes over traffic, and runtime actions only affect Fantastic Island's own Mihomo instance.")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.5))
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-
-                SettingsCard {
-                    VStack(alignment: .leading, spacing: 14) {
-                        SettingsSectionHeader(
-                            title: "Capture",
-                            detail: "Managed mode currently exposes system proxy capture only. TUN stays hidden until Fantastic Island's own path is production-ready."
-                        )
-
-                        ToggleRow(
-                            title: "System Proxy",
-                            detail: model.clashModule.runtimeStatusDetailText
-                                ?? "Route traffic through Fantastic Island's local managed proxy ports using macOS networksetup.",
-                            isOn: Binding(
-                                get: { model.clashModule.managedSystemProxyEnabled },
-                                set: { model.clashModule.updateManagedSystemProxyEnabled($0) }
-                            )
-                        )
-                    }
-                }
-            }
-
-            SettingsCard {
-                VStack(alignment: .leading, spacing: 14) {
-                    SettingsSectionHeader(
-                        title: "Network Ports",
-                        detail: clashNetworkPortsDetail
-                    )
-
-                    if model.clashModule.moduleMode == .managed {
-                        portEditorCard
-                    } else {
-                        portReadOnlyCard
-                    }
-                }
-            }
-
-            if model.clashModule.moduleMode == .managed {
-                SettingsCard {
-                    VStack(alignment: .leading, spacing: 14) {
-                        SettingsSectionHeader(
-                            title: "Providers",
-                            detail: "Refresh proxy and rule providers directly from Fantastic Island. No external dashboard is required for routine provider maintenance."
-                        )
-
-                        AdaptiveActionGroup {
-                            SecondaryActionButton(title: "Refresh Providers") {
-                                model.clashModule.refreshProviders()
-                            }
-                        }
-
-                        if let providerLoadError = model.clashModule.providerLoadError, !providerLoadError.isEmpty {
-                            SettingsEmptyState(
-                                title: "Providers unavailable",
-                                detail: providerLoadError
-                            )
-                        } else if model.clashModule.proxyProviders.isEmpty && model.clashModule.ruleProviders.isEmpty {
-                            SettingsEmptyState(
-                                title: "No providers exposed yet",
-                                detail: "Fantastic Island will show provider controls here when the active Clash profile defines proxy-providers or rule-providers."
-                            )
-                        } else {
-                            if !model.clashModule.proxyProviders.isEmpty {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    ActionGroupHeader(title: "Proxy Providers")
-
-                                    ForEach(model.clashModule.proxyProviders) { provider in
-                                        ProviderManagementRow(
-                                            title: provider.name,
-                                            detail: provider.detailText,
-                                            primaryTitle: "Update",
-                                            secondaryTitle: "Healthcheck"
-                                        ) {
-                                            model.clashModule.updateProxyProvider(named: provider.name)
-                                        } onSecondaryAction: {
-                                            model.clashModule.healthcheckProxyProvider(named: provider.name)
-                                        }
-                                    }
-                                }
-                            }
-
-                            if !model.clashModule.ruleProviders.isEmpty {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    ActionGroupHeader(title: "Rule Providers")
-
-                                    ForEach(model.clashModule.ruleProviders) { provider in
-                                        ProviderManagementRow(
-                                            title: provider.name,
-                                            detail: provider.detailText,
-                                            primaryTitle: "Update",
-                                            secondaryTitle: nil
-                                        ) {
-                                            model.clashModule.updateRuleProvider(named: provider.name)
-                                        } onSecondaryAction: {}
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                SettingsCard {
-                    VStack(alignment: .leading, spacing: 14) {
-                        SettingsSectionHeader(
-                            title: "Diagnostics",
-                            detail: "Keep the managed runtime, capture state, and provider inventory observable from Fantastic Island itself."
-                        )
-
-                        SettingsInfoBlock(
-                            title: "Runtime Phase",
-                            value: model.clashModule.managedDiagnostics.runtimePhase.title,
-                            monospaced: false,
-                            valueColor: .white.opacity(0.76)
-                        )
-
-                        SettingsInfoBlock(
-                            title: "Capture State",
-                            value: "\(model.clashModule.managedDiagnostics.captureMode.title) · \(model.clashModule.managedDiagnostics.capturePhase.title)",
-                            monospaced: false,
-                            valueColor: .white.opacity(0.76)
-                        )
-
-                        SettingsInfoBlock(
-                            title: "Last Healthy Profile",
-                            value: model.clashModule.managedDiagnostics.activeProfileName ?? NSLocalizedString("Not recorded", comment: ""),
-                            monospaced: false,
-                            valueColor: .white.opacity(0.76)
-                        )
-
-                        if let lastFailureMessage = model.clashModule.managedDiagnostics.lastFailureMessage, !lastFailureMessage.isEmpty {
-                            SettingsInfoBlock(
-                                title: "Last Failure",
-                                value: lastFailureMessage,
-                                monospaced: false,
-                                valueColor: Color.red.opacity(0.9)
-                            )
-                        }
-                    }
-                }
-            }
-
-            SettingsCard {
-                VStack(alignment: .leading, spacing: 14) {
-                    SettingsSectionHeader(
-                        title: "Advanced Capabilities",
-                        detail: clashAdvancedCapabilitiesDetail
-                    )
-
-                    AdaptiveActionGroup {
-                        SecondaryActionButton(title: "Logs") {
-                            clashPresentedSheet = .logs
-                        }
-
-                        SecondaryActionButton(title: "Rules") {
-                            clashPresentedSheet = .rules
-                        }
-
-                        SecondaryActionButton(title: "Connections") {
-                            clashPresentedSheet = .connections
-                        }
-                    }
-
-                    DividerLine()
-
-                    AdaptiveActionGroup {
-                        SecondaryActionButton(title: "Refresh") {
-                            model.clashModule.refreshEnvironment()
-                            model.clashModule.refreshAction()
-                        }
-
-                        SecondaryActionButton(title: "Open Config") {
-                            model.clashModule.openConfigFile()
-                        }
-
-                        SecondaryActionButton(title: "Open Folder") {
-                            model.clashModule.openConfigDirectory()
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     private var playerModulePage: some View {
         VStack(alignment: .leading, spacing: 22) {
             SettingsCard(title: "Playback Source") {
-                VStack(alignment: .leading, spacing: 14) {
-                    SettingsControlRow(
-                        title: "Default Source",
-                        detail: "When no media source is active, player will open and control this app."
-                    ) {
-                        if model.playerModule.defaultSourceOptions.isEmpty {
-                            settingsValueCapsule("No supported app found")
-                                .opacity(0.6)
-                        } else {
-                            CapsuleMenuPicker(
-                                selection: Binding(
-                                    get: { model.playerModule.defaultSourceSelection },
-                                    set: { model.playerModule.setDefaultSource($0) }
-                                ),
-                                options: model.playerModule.defaultSourceOptions,
-                                title: \.displayName,
-                                localizeLabel: false,
-                                localizeMenuItems: false,
-                                maxLabelWidth: 170
-                            )
-                        }
+                SettingsControlRow(
+                    title: "Default Source",
+                    detail: "When no source is active, Player opens and controls this app."
+                ) {
+                    if model.playerModule.defaultSourceOptions.isEmpty {
+                        settingsValueCapsule("No supported app found")
+                            .opacity(0.6)
+                    } else {
+                        CapsuleMenuPicker(
+                            selection: Binding(
+                                get: { model.playerModule.defaultSourceSelection },
+                                set: { model.playerModule.setDefaultSource($0) }
+                            ),
+                            options: model.playerModule.defaultSourceOptions,
+                            title: \.displayName,
+                            localizeLabel: false,
+                            localizeMenuItems: false,
+                            maxLabelWidth: 170
+                        )
                     }
                 }
             }
 
             SettingsCard(title: "Actions") {
-                HStack(spacing: 10) {
+                AdaptiveActionGroup {
                     SecondaryActionButton(title: "Refresh") {
                         model.playerModule.refresh()
                     }
@@ -901,75 +417,29 @@ struct IslandSettingsView: View {
         }
     }
 
-    private var twitterModulePage: some View {
+    private var horizonModulePage: some View {
         VStack(alignment: .leading, spacing: 22) {
-            SettingsCard {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("X Developer App")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(.white)
-
-                    SettingsField(
-                        title: "Client ID",
-                        prompt: "OAuth 2.0 Client ID",
-                        text: Binding(
-                            get: { model.xPostModule.configuredClientID },
-                            set: { model.xPostModule.updateConfiguredClientID($0) }
-                        )
-                    )
-
-                    SettingsInfoBlock(
-                        title: "Callback URL",
-                        value: XPostModuleSettings.callbackURL.absoluteString,
-                        monospaced: true,
-                        valueColor: .white.opacity(0.76)
-                    )
-
-                    Text("Create an X Developer project, enable OAuth 2.0, choose a Native/Public client, add this callback URL, and enable tweet.read, tweet.write, users.read, and offline.access scopes.")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            SettingsCard {
-                VStack(alignment: .leading, spacing: 16) {
-                    SettingsSectionHeader(
-                        title: "Account",
-                        detail: "Sign in once with X after adding your Client ID. Tokens stay in the local Keychain."
-                    )
-
-                    SettingsInfoBlock(
-                        title: "Status",
-                        value: model.xPostModule.accountStatusText,
-                        monospaced: false,
-                        valueColor: model.xPostModule.isAuthenticated ? Color.green.opacity(0.86) : .white.opacity(0.72)
-                    )
-
-                    AdaptiveActionGroup {
-                        ProminentActionButton(title: model.xPostModule.isSigningIn ? "Signing in..." : "Sign in with X") {
-                            model.xPostModule.signIn()
-                        }
-                        .opacity(model.xPostModule.canSignIn ? 1 : 0.5)
-                        .disabled(!model.xPostModule.canSignIn)
-
-                        if model.xPostModule.isAuthenticated {
-                            SecondaryActionButton(title: "Disconnect", tint: Color.red.opacity(0.22)) {
-                                model.xPostModule.disconnect()
-                            }
-                        }
+            SettingsCard(title: "Native Access") {
+                VStack(alignment: .leading, spacing: 12) {
+                    SettingsControlRow(
+                        title: "Calendar and Reminders",
+                        detail: "Horizon uses native EventKit permissions for glanceable schedule and reminder cards."
+                    ) {
+                        StatusBadge(text: "Native", tint: Color(nsColor: .systemBlue))
                     }
 
-                    if let errorMessage = model.xPostModule.errorMessage, !errorMessage.isEmpty {
-                        Text(LocalizedStringKey(errorMessage))
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.red.opacity(0.9))
-                            .fixedSize(horizontal: false, vertical: true)
-                    } else if let statusMessage = model.xPostModule.statusMessage, !statusMessage.isEmpty {
-                        Text(LocalizedStringKey(statusMessage))
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.green.opacity(0.82))
-                            .fixedSize(horizontal: false, vertical: true)
+                    SettingsControlRow(
+                        title: "Weather",
+                        detail: "Uses location once to fetch Open-Meteo forecast data."
+                    ) {
+                        StatusBadge(text: "Network", tint: Color(nsColor: .systemTeal))
+                    }
+
+                    SettingsControlRow(
+                        title: "Battery, Timer, and Shelf",
+                        detail: "Battery reads local power state. Shelf supports AirDrop/share, open, and reveal."
+                    ) {
+                        StatusBadge(text: "Local", tint: Color(nsColor: .systemGreen))
                     }
                 }
             }
@@ -980,6 +450,7 @@ struct IslandSettingsView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(LocalizedStringKey(title))
                 .font(.system(size: 30, weight: .bold))
+                .foregroundStyle(.white)
 
             if let caption {
                 Text(LocalizedStringKey(caption))
@@ -990,23 +461,17 @@ struct IslandSettingsView: View {
         }
     }
 
-    private func settingsValueCapsule(_ text: String, localize: Bool = true) -> some View {
-        Group {
-            if localize {
-                Text(LocalizedStringKey(text))
-            } else {
-                Text(verbatim: text)
-            }
-        }
-        .font(.system(size: 11, weight: .bold, design: .monospaced))
-        .foregroundStyle(.white.opacity(0.66))
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color.white.opacity(0.08), in: Capsule())
+    private func settingsValueCapsule(_ text: String) -> some View {
+        Text(LocalizedStringKey(text))
+            .font(.system(size: 11, weight: .bold, design: .monospaced))
+            .foregroundStyle(.white.opacity(0.66))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.white.opacity(0.08), in: Capsule())
     }
 
     private var hooksStatusTint: Color {
-        switch model.codexFanModule.hooksStatus {
+        switch model.agentsModule.hooksStatus {
         case .installed:
             return Color(nsColor: .systemGreen)
         case .notInstalled:
@@ -1016,8 +481,87 @@ struct IslandSettingsView: View {
         }
     }
 
+    private var agentHookDiagnosticsRows: some View {
+        VStack(spacing: 0) {
+            ForEach(model.agentsModule.hookDiagnosticItems) { item in
+                HStack(alignment: .center, spacing: 12) {
+                    Circle()
+                        .fill(agentHookDiagnosticTint(item))
+                        .frame(width: 8, height: 8)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 7) {
+                            Text(item.provider.displayName)
+                                .font(.system(size: 12.5, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.88))
+
+                            Text(item.statusText.uppercased())
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .foregroundStyle(agentHookDiagnosticTint(item).opacity(0.9))
+                        }
+
+                        Text(agentHookDiagnosticDetail(item))
+                            .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.38))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Text("\(item.installedEventCount)/\(item.expectedEventCount)")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(item.hooksInstalled ? 0.7 : 0.42))
+                        .frame(width: 42, alignment: .trailing)
+                }
+                .padding(.vertical, 9)
+
+                if item.id != model.agentsModule.hookDiagnosticItems.last?.id {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.06))
+                        .frame(height: 1)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .background(Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func agentHookDiagnosticTint(_ item: AgentHookProviderDiagnostic) -> Color {
+        switch (item.hookState, item.usageBridgeState) {
+        case (.installed, .managed), (.installed, .unsupported):
+            return Color(nsColor: .systemGreen)
+        case (.installed, .custom):
+            return Color(nsColor: .systemYellow)
+        case (.installed, .missing):
+            return Color(nsColor: .systemOrange)
+        case (.missing, _):
+            return .white.opacity(0.44)
+        case (.invalidConfig, _), (_, .invalidConfig):
+            return Color(nsColor: .systemRed)
+        }
+    }
+
+    private func agentHookDiagnosticDetail(_ item: AgentHookProviderDiagnostic) -> String {
+        let bridgeText: String
+        switch item.usageBridgeState {
+        case .managed:
+            bridgeText = "quota bridge managed"
+        case .missing:
+            bridgeText = "quota bridge missing"
+        case .custom:
+            bridgeText = "custom quota line preserved"
+        case .invalidConfig:
+            bridgeText = "quota bridge unreadable"
+        case .unsupported:
+            bridgeText = "quota bridge not needed"
+        }
+
+        return "\(bridgeText) · \(item.configPath)"
+    }
+
     private var bridgeStatusTint: Color {
-        switch model.codexFanModule.bridgeStatusText.lowercased() {
+        switch model.agentsModule.bridgeStatusText.lowercased() {
         case "ready":
             return Color(nsColor: .systemGreen)
         case "starting":
@@ -1028,7 +572,7 @@ struct IslandSettingsView: View {
     }
 
     private var appServerStatusTint: Color {
-        let status = model.codexFanModule.appServerStatusText.lowercased()
+        let status = model.agentsModule.appServerStatusText.lowercased()
 
         if status.hasPrefix("connected") {
             return Color(nsColor: .systemBlue)
@@ -1036,7 +580,7 @@ struct IslandSettingsView: View {
 
         switch status {
         case "disconnected":
-            return Color.white.opacity(0.62)
+            return .white.opacity(0.62)
         case "unavailable":
             return Color(nsColor: .systemRed)
         default:
@@ -1044,98 +588,10 @@ struct IslandSettingsView: View {
         }
     }
 
-    private var subscriptionStatusTint: Color {
-        switch model.clashModule.builtInProfileSyncStatus {
-        case .idle:
-            return .white.opacity(0.5)
-        case .updating:
-            return Color(nsColor: .systemOrange)
-        case .ready:
-            return Color(nsColor: .systemGreen)
-        case .failed:
-            return Color(nsColor: .systemRed)
-        }
-    }
-
-    private var clashStatusLineTitle: String {
-        model.clashModule.moduleMode == .attach ? "Connection" : "Runtime"
-    }
-
-    private var clashReferenceLineTitle: String {
-        model.clashModule.moduleMode == .attach ? "Config" : "Profile"
-    }
-
-    private var clashReferenceLineValue: String {
-        if model.clashModule.moduleMode == .attach {
-            guard let configFilePath = model.clashModule.environment.configFilePath else {
-                return NSLocalizedString("Not set", comment: "")
-            }
-
-            return URL(fileURLWithPath: configFilePath).lastPathComponent
-        }
-
-        return model.clashModule.activeBuiltInProfile?.displayName ?? NSLocalizedString("No profile", comment: "")
-    }
-
-    private var clashModeHintText: String {
-        if model.clashModule.moduleMode == .attach {
-            return "Detection mode never starts Fantastic Island's managed Mihomo workflow. Use it when you already have another Clash client running and only want Fantastic Island to inspect or control that client."
-        }
-
-        return "Managed mode uses Fantastic Island's profile library and managed Mihomo workflow. Use it when you want Fantastic Island to manage subscriptions and runtime behavior itself."
-    }
-
-    private var clashConfigurationSectionTitle: String {
-        model.clashModule.moduleMode == .attach ? "Detection Settings" : "Managed Profiles"
-    }
-
-    private var clashConfigurationSectionDetail: String {
-        if model.clashModule.moduleMode == .attach {
-            return "Point Fantastic Island at the Clash API and optional config file from the client you already use. Fantastic Island only reads and controls that existing runtime."
-        }
-
-        return "Add, rename, delete, and switch the YAML profiles that Fantastic Island can run in managed mode."
-    }
-
-    private var clashNetworkPortsDetail: String {
-        if model.clashModule.moduleMode == .attach {
-            return "Fantastic Island only reads the current HTTP, Socks5, and mixed proxy ports from the Clash client you already use."
-        }
-
-        return "Managed mode keeps the proxy ports inside Fantastic Island's runtime config so you can align Mihomo with the rest of your network setup."
-    }
-
-    private var clashAdvancedCapabilitiesDetail: String {
-        if model.clashModule.moduleMode == .attach {
-            return "Inspect logs, rules, and connection overview from the detected client without leaving Fantastic Island."
-        }
-
-        return "Inspect runtime logs, current rules, and connection overview for Fantastic Island's managed Mihomo client. Provider refresh and diagnostics now stay in this settings page."
-    }
-
-    private func builtInProfileRowDetail(for profile: ClashBuiltInProfile) -> String {
-        if profile.isStarterProfile {
-            return NSLocalizedString("Created inside Fantastic Island as the default local profile.", comment: "")
-        }
-
-        switch profile.sourceKind {
-        case .remoteSubscription:
-            if let host = profile.remoteSubscriptionURL?.host, !host.isEmpty {
-                return host
-            }
-            return profile.sourceSummaryText
-        case .importedFile:
-            if let path = profile.importedFilePath {
-                return URL(fileURLWithPath: path).lastPathComponent
-            }
-            return profile.sourceSummaryText
-        }
-    }
-
     private var codexHooksStatusDetailText: String {
-        switch model.codexFanModule.hooksStatus {
+        switch model.agentsModule.hooksStatus {
         case .installed:
-            return "Managed entries are present and Fantastic Island can receive CLI lifecycle callbacks."
+            return "Managed entries are present and Fantastic Island can receive lifecycle callbacks."
         case .notInstalled:
             return "No managed hooks were found yet. Install once to enable session and approval syncing."
         case .error:
@@ -1144,9 +600,9 @@ struct IslandSettingsView: View {
     }
 
     private var codexBridgeStatusDetailText: String {
-        switch model.codexFanModule.bridgeStatusText.lowercased() {
+        switch model.agentsModule.bridgeStatusText.lowercased() {
         case "ready":
-            return "The local bridge is listening for hook events from the Codex CLI."
+            return "The local bridge is listening for agent hook events."
         case "starting":
             return "Bridge startup is still in progress."
         default:
@@ -1155,7 +611,7 @@ struct IslandSettingsView: View {
     }
 
     private var codexAppServerStatusDetailText: String {
-        let status = model.codexFanModule.appServerStatusText.lowercased()
+        let status = model.agentsModule.appServerStatusText.lowercased()
 
         if status.hasPrefix("connected") {
             return "Codex.app is connected and can stream live thread state into this module."
@@ -1172,77 +628,21 @@ struct IslandSettingsView: View {
     }
 
     private var localizedCodexAppServerStatusText: String {
-        let status = model.codexFanModule.appServerStatusText
+        let status = model.agentsModule.appServerStatusText
+        let prefix = "Connected · "
+        let suffix = " threads"
 
-        switch status {
-        case "Connected":
-            return NSLocalizedString("Connected", comment: "")
-        case "Unavailable":
-            return NSLocalizedString("Unavailable", comment: "")
-        case "Disconnected":
-            return NSLocalizedString("Disconnected", comment: "")
-        case "Connected · resolve failed":
-            return NSLocalizedString("Connected · resolve failed", comment: "")
-        default:
-            let prefix = "Connected · "
-            let suffix = " threads"
-
-            if status.hasPrefix(prefix), status.hasSuffix(suffix) {
-                let countText = String(status.dropFirst(prefix.count).dropLast(suffix.count))
-                if let count = Int(countText) {
-                    return String.localizedStringWithFormat(
-                        NSLocalizedString("Connected · %d threads", comment: ""),
-                        count
-                    )
-                }
+        if status.hasPrefix(prefix), status.hasSuffix(suffix) {
+            let countText = String(status.dropFirst(prefix.count).dropLast(suffix.count))
+            if let count = Int(countText) {
+                return String.localizedStringWithFormat(
+                    NSLocalizedString("Connected · %d threads", comment: ""),
+                    count
+                )
             }
-
-            return status
-        }
-    }
-
-    private func openClashSubscriptionForm() {
-        clashPendingSubscriptionURL = ""
-        clashPendingSubscriptionName = ""
-        clashShowsSubscriptionForm = true
-    }
-
-    private func closeClashSubscriptionForm() {
-        clashShowsSubscriptionForm = false
-    }
-
-    private func submitClashSubscriptionForm() {
-        if clashPendingSubscriptionURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            model.clashModule.addBuiltInSubscription(
-                named: clashPendingSubscriptionName,
-                urlString: clashPendingSubscriptionURL
-            )
-            return
         }
 
-        model.clashModule.addBuiltInSubscription(
-            named: clashPendingSubscriptionName,
-            urlString: clashPendingSubscriptionURL
-        )
-        closeClashSubscriptionForm()
-    }
-
-    private func builtInProfilePrimaryActionTitle(for profile: ClashBuiltInProfile) -> String? {
-        if profile.isActive {
-            return model.clashModule.canRefreshActiveBuiltInProfile
-                ? model.clashModule.currentBuiltInProfileActionTitle
-                : nil
-        }
-
-        return "Use"
-    }
-
-    private func handleBuiltInProfilePrimaryAction(_ profile: ClashBuiltInProfile) {
-        if profile.isActive {
-            model.clashModule.updateCurrentBuiltInProfile()
-        } else {
-            model.clashModule.selectBuiltInProfile(id: profile.id)
-        }
+        return NSLocalizedString(status, comment: "")
     }
 
     private func normalizeSelection() {
@@ -1251,183 +651,37 @@ struct IslandSettingsView: View {
         }
     }
 
-    private func syncClashManagedPortDrafts() {
-        let ports = model.clashModule.resolvedPortSnapshot
-        clashManagedHTTPPort = ports.httpPort.map(String.init) ?? ""
-        clashManagedSocksPort = ports.socksPort.map(String.init) ?? ""
-        clashManagedMixedPort = ports.mixedPort.map(String.init) ?? ""
-    }
-
-    private func validatedPortValue(from text: String) -> Int? {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            return nil
-        }
-        guard let port = Int(trimmed), (1...65535).contains(port) else {
-            return nil
-        }
-        return port
-    }
-
-    private func isValidPortDraft(_ text: String) -> Bool {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty || validatedPortValue(from: trimmed) != nil
-    }
-
-    private var canApplyManagedPortDrafts: Bool {
-        guard isValidPortDraft(clashManagedHTTPPort),
-              isValidPortDraft(clashManagedSocksPort),
-              isValidPortDraft(clashManagedMixedPort) else {
-            return false
-        }
-
-        let snapshot = model.clashModule.resolvedPortSnapshot
-        return validatedPortValue(from: clashManagedHTTPPort) != snapshot.httpPort
-            || validatedPortValue(from: clashManagedSocksPort) != snapshot.socksPort
-            || validatedPortValue(from: clashManagedMixedPort) != snapshot.mixedPort
-    }
-
-    @ViewBuilder
-    private func clashSheetView(for sheet: ClashSettingsSheet) -> some View {
-        switch sheet {
-        case .logs:
-            ClashLogsSheet(module: model.clashModule)
-        case .rules:
-            ClashRulesSheet(module: model.clashModule)
-        case .connections:
-            ClashConnectionsSheet(module: model.clashModule)
-        }
-    }
-
     private func modulePageCaption(for moduleID: String) -> String? {
         switch moduleID {
         case CodexModuleModel.moduleID:
-            return "Manage Codex hooks, bridge health, and the local runtime actions that feed this module."
-        case ClashModuleModel.moduleID:
-            return "Switch between detection mode and managed mode, then focus on the settings and actions relevant to the mode you picked."
+            return "Manage agent hooks, bridge health, and the local session surfaces that feed the island."
         case PlayerModuleModel.moduleID:
             return "Review the current media integration state and keep transport controls close at hand."
-        case XPostModuleModel.moduleID:
-            return "Configure your own X API credentials, sign in, and publish text-only posts from the island."
+        case HorizonModuleModel.moduleID:
+            return "Keep calendar, reminders, weather, and battery native and glanceable."
+        case TimerModuleModel.moduleID:
+            return "Run short timers without turning Horizon into a crowded dashboard."
+        case ShelfModuleModel.moduleID:
+            return "Drop files into a compact island shelf with quick open, reveal, share, and remove actions."
+        case DiagnosticsModuleModel.moduleID:
+            return "Keep hooks, quota bridges, and agent routing trustworthy without digging through Settings."
         default:
             return nil
-        }
-    }
-
-    private var portReadOnlyCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            portValueRow(
-                title: "HTTP Proxy Port",
-                value: model.clashModule.resolvedHTTPPortText
-            )
-
-            portValueRow(
-                title: "Socks5 Proxy Port",
-                value: model.clashModule.resolvedSocksPortText
-            )
-
-            portValueRow(
-                title: "Mixed Proxy Port",
-                value: model.clashModule.resolvedMixedPortText
-            )
-
-            Text("Detection mode does not rewrite ports. Change them in the Clash client you already run, then let Fantastic Island read the updated values.")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white.opacity(0.5))
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private var portEditorCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            SettingsField(
-                title: "HTTP Proxy Port",
-                prompt: "7890",
-                text: $clashManagedHTTPPort
-            )
-
-            SettingsField(
-                title: "Socks5 Proxy Port",
-                prompt: "7891",
-                text: $clashManagedSocksPort
-            )
-
-            SettingsField(
-                title: "Mixed Proxy Port",
-                prompt: "7892",
-                text: $clashManagedMixedPort
-            )
-
-            if !isValidPortDraft(clashManagedHTTPPort)
-                || !isValidPortDraft(clashManagedSocksPort)
-                || !isValidPortDraft(clashManagedMixedPort) {
-                Text("Ports must be empty or use a value between 1 and 65535.")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color.red.opacity(0.88))
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Text("Leave a field empty if you want Fantastic Island to fall back to the generated runtime defaults for that port.")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.5))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            AdaptiveActionGroup {
-                ProminentActionButton(title: "Apply Ports") {
-                    model.clashModule.applyManagedPorts(
-                        httpPort: validatedPortValue(from: clashManagedHTTPPort),
-                        socksPort: validatedPortValue(from: clashManagedSocksPort),
-                        mixedPort: validatedPortValue(from: clashManagedMixedPort)
-                    )
-                }
-                .opacity(canApplyManagedPortDrafts ? 1 : 0.6)
-                .disabled(!canApplyManagedPortDrafts)
-
-                SecondaryActionButton(title: "Reset") {
-                    syncClashManagedPortDrafts()
-                }
-            }
-        }
-    }
-
-    private func portValueRow(title: String, value: String) -> some View {
-        HStack(alignment: .center, spacing: 18) {
-            Text(LocalizedStringKey(title))
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.white)
-
-            Spacer(minLength: 0)
-
-            Text(verbatim: value)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.82))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color.white.opacity(0.06), in: Capsule())
         }
     }
 }
 
 private enum IslandSettingsDestination: Hashable {
     case general
-    case windDrive
     case about
     case module(String)
 }
 
-private enum ClashSettingsSheet: String, Identifiable {
-    case logs
-    case rules
-    case connections
-
-    var id: String { rawValue }
-}
-
 private struct SidebarItemButton: View {
     let title: String
-    var subtitle: String? = nil
-    var assetName: String? = nil
-    var symbolName: String? = nil
+    var subtitle: String?
+    var assetName: String?
+    var symbolName: String?
     let isSelected: Bool
     let action: () -> Void
 
@@ -1452,11 +706,17 @@ private struct SidebarItemButton: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 11)
+            .padding(.vertical, 9)
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(isSelected ? Color.white.opacity(0.94) : Color.white.opacity(0.04))
             )
+            .overlay {
+                if !isSelected {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.white.opacity(0.07), lineWidth: 0.75)
+                }
+            }
         }
         .buttonStyle(.plain)
     }
@@ -1464,9 +724,9 @@ private struct SidebarItemButton: View {
     @ViewBuilder
     private var icon: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(isSelected ? Color.black.opacity(0.08) : Color.white.opacity(0.06))
-                .frame(width: 34, height: 34)
+                .frame(width: 30, height: 30)
 
             if let assetName {
                 Image(assetName)
@@ -1484,26 +744,28 @@ private struct SidebarItemButton: View {
 }
 
 private struct SettingsCard<Content: View>: View {
+    let title: String?
     let content: Content
 
     init(title: String? = nil, @ViewBuilder content: () -> Content) {
+        self.title = title
         self.content = content()
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
+            if let title {
+                Text(LocalizedStringKey(title))
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.46))
+                    .textCase(.uppercase)
+            }
+
             content
         }
-        .padding(20)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Color.white.opacity(0.04))
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.white.opacity(0.05), lineWidth: 1)
-        }
+        .islandGlassPanel(cornerRadius: 12)
     }
 }
 
@@ -1547,7 +809,7 @@ private struct SettingsControlRow<Accessory: View>: View {
 
 private struct ToggleRow: View {
     let title: String
-    var detail: String? = nil
+    var detail: String?
     @Binding var isOn: Bool
 
     var body: some View {
@@ -1557,7 +819,6 @@ private struct ToggleRow: View {
                 .toggleStyle(.switch)
                 .controlSize(.small)
                 .fixedSize()
-                .foregroundStyle(.primary)
         }
     }
 }
@@ -1637,12 +898,12 @@ private struct SettingsField: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.white.opacity(0.05))
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
             }
         }
     }
@@ -1671,35 +932,14 @@ private struct CodexStatusPanel: View {
 
             StatusBadge(text: badgeText, tint: badgeTint)
         }
-        .padding(16)
+        .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.white.opacity(0.035))
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.05), lineWidth: 1)
-        }
-    }
-}
-
-private struct CompactStatusLine: View {
-    let title: String
-    let value: String
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Text(LocalizedStringKey(title))
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.42))
-                .textCase(.uppercase)
-
-            Text(verbatim: value)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.82))
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .textSelection(.enabled)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
         }
     }
 }
@@ -1707,7 +947,7 @@ private struct CompactStatusLine: View {
 private struct SettingsInfoBlock: View {
     let title: String
     let value: String
-    var monospaced: Bool = false
+    var monospaced = false
     var valueColor: Color = .white
 
     var body: some View {
@@ -1717,226 +957,13 @@ private struct SettingsInfoBlock: View {
                 .foregroundStyle(.white.opacity(0.42))
                 .textCase(.uppercase)
 
-            if monospaced {
-                Text(verbatim: value)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundStyle(valueColor)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Text(verbatim: value)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(valueColor)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-private struct BuiltInProfileRow: View {
-    let name: String
-    let detail: String
-    let sourceKind: String
-    let isActive: Bool
-    let primaryActionTitle: String?
-    let canDelete: Bool
-    let onPrimaryAction: () -> Void
-    let onRename: () -> Void
-    let onDelete: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(verbatim: name)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
-
-                    Text(verbatim: detail)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.56))
-                        .fixedSize(horizontal: false, vertical: true)
-                        .lineLimit(2)
-                }
-
-                Spacer(minLength: 0)
-
-                HStack(spacing: 8) {
-                    Text(verbatim: sourceKind)
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.65))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(Color.white.opacity(0.08), in: Capsule())
-
-                    if isActive {
-                        StatusBadge(text: "Current", tint: Color(nsColor: .systemGreen))
-                    }
-                }
-            }
-
-            AdaptiveActionGroup {
-                if let primaryActionTitle {
-                    SecondaryActionButton(title: primaryActionTitle) {
-                        onPrimaryAction()
-                    }
-                }
-
-                SecondaryActionButton(title: "Rename") {
-                    onRename()
-                }
-
-                SecondaryActionButton(
-                    title: "Delete",
-                    tint: canDelete ? Color.red.opacity(0.18) : Color.white.opacity(0.06)
-                ) {
-                    onDelete()
-                }
-                .disabled(!canDelete)
-            }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(isActive ? Color.white.opacity(0.08) : Color.white.opacity(0.035))
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(isActive ? Color.white.opacity(0.09) : Color.white.opacity(0.05), lineWidth: 1)
-        }
-    }
-}
-
-private struct ProviderManagementRow: View {
-    let title: String
-    let detail: String
-    let primaryTitle: String
-    let secondaryTitle: String?
-    let onPrimaryAction: () -> Void
-    let onSecondaryAction: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(verbatim: title)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white)
-
-                Text(verbatim: detail)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.56))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            AdaptiveActionGroup {
-                SecondaryActionButton(title: primaryTitle) {
-                    onPrimaryAction()
-                }
-
-                if let secondaryTitle {
-                    SecondaryActionButton(title: secondaryTitle) {
-                        onSecondaryAction()
-                    }
-                }
-            }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.035))
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.05), lineWidth: 1)
-        }
-    }
-}
-
-private struct SettingsEmptyState: View {
-    let title: String
-    let detail: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(LocalizedStringKey(title))
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.white)
-
-            Text(LocalizedStringKey(detail))
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white.opacity(0.52))
+            Text(verbatim: value)
+                .font(.system(size: 12, weight: .medium, design: monospaced ? .monospaced : .default))
+                .foregroundStyle(valueColor)
+                .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.035))
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.05), lineWidth: 1)
-        }
-    }
-}
-
-private struct BuiltInSubscriptionComposer: View {
-    @Binding var urlText: String
-    @Binding var nameText: String
-    let onCancel: () -> Void
-    let onSubmit: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            SettingsSectionHeader(
-                title: "Add Subscription",
-                detail: "Paste a Clash or Mihomo YAML subscription link using http:// or https://. The name is optional."
-            )
-
-            SettingsField(
-                title: "Subscription URL",
-                prompt: "http://example.com/clash.yaml",
-                text: $urlText
-            )
-
-            SettingsField(
-                title: "Profile name",
-                prompt: "Optional display name",
-                text: $nameText
-            )
-
-            AdaptiveActionGroup {
-                SecondaryActionButton(title: "Cancel") {
-                    onCancel()
-                }
-
-                ProminentActionButton(title: "Add Subscription") {
-                    onSubmit()
-                }
-            }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.035))
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.05), lineWidth: 1)
-        }
-    }
-}
-
-private struct ActionGroupHeader: View {
-    let title: String
-
-    var body: some View {
-        Text(LocalizedStringKey(title))
-            .font(.system(size: 11, weight: .bold, design: .monospaced))
-            .foregroundStyle(.white.opacity(0.42))
-            .textCase(.uppercase)
     }
 }
 
@@ -1972,7 +999,7 @@ private struct ProminentActionButton: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(Color.white.opacity(0.92))
                 )
         }
@@ -1983,7 +1010,6 @@ private struct ProminentActionButton: View {
 private struct SecondaryActionButton: View {
     let title: String
     var tint: Color = Color.white.opacity(0.08)
-    var fillsWidth = false
     let action: () -> Void
 
     var body: some View {
@@ -1991,16 +1017,14 @@ private struct SecondaryActionButton: View {
             Text(LocalizedStringKey(title))
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.92))
-                .frame(maxWidth: fillsWidth ? .infinity : nil)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(tint)
                 )
         }
         .buttonStyle(.plain)
-        .frame(maxWidth: fillsWidth ? .infinity : nil, alignment: .leading)
     }
 }
 
@@ -2015,384 +1039,5 @@ private struct StatusBadge: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(tint.opacity(0.16), in: Capsule())
-    }
-}
-
-private struct DividerLine: View {
-    var body: some View {
-        Rectangle()
-            .fill(Color.white.opacity(0.06))
-            .frame(height: 1)
-    }
-}
-
-private struct ClashSettingsSheetContainer<Content: View>: View {
-    @Environment(\.dismiss) private var dismiss
-
-    let title: String
-    let detail: String
-    let width: CGFloat
-    let height: CGFloat
-    let content: Content
-
-    init(
-        title: String,
-        detail: String,
-        width: CGFloat,
-        height: CGFloat,
-        @ViewBuilder content: () -> Content
-    ) {
-        self.title = title
-        self.detail = detail
-        self.width = width
-        self.height = height
-        self.content = content()
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(LocalizedStringKey(title))
-                        .font(.system(size: 24, weight: .bold))
-                        .foregroundStyle(.white)
-
-                    Text(LocalizedStringKey(detail))
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer(minLength: 0)
-
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.86))
-                        .frame(width: 30, height: 30)
-                        .background(Color.white.opacity(0.08), in: Circle())
-                }
-                .buttonStyle(.plain)
-            }
-
-            content
-        }
-        .padding(24)
-        .frame(width: width, height: height, alignment: .topLeading)
-        .background(
-            ZStack {
-                Color.black
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(Color.white.opacity(0.04))
-            }
-        )
-        .preferredColorScheme(.dark)
-    }
-}
-
-private struct ClashLogsSheet: View {
-    @ObservedObject var module: ClashModuleModel
-    @State private var selectedFilter: ClashLogLevelFilter = .all
-
-    private var filteredEntries: [ClashLogEntry] {
-        module.logEntries.filter { entry in
-            selectedFilter == .all || entry.level == selectedFilter
-        }
-    }
-
-    var body: some View {
-        ClashSettingsSheetContainer(
-            title: "Logs",
-            detail: "Stream Mihomo logs directly inside Fantastic Island. Filtering stays local to this sheet."
-            ,
-            width: 760,
-            height: 540
-        ) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 10) {
-                    CapsuleMenuPicker(
-                        selection: $selectedFilter,
-                        options: ClashLogLevelFilter.allCases,
-                        title: \.title,
-                        localizeLabel: false,
-                        localizeMenuItems: false,
-                        maxLabelWidth: 96
-                    )
-
-                    Spacer(minLength: 0)
-
-                    SecondaryActionButton(title: "Copy Visible Logs") {
-                        let joined = filteredEntries.map(\.rawLine).joined(separator: "\n")
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(joined, forType: .string)
-                    }
-                }
-
-                if let error = module.logStreamError, !error.isEmpty {
-                    SettingsEmptyState(
-                        title: "Log stream unavailable",
-                        detail: error
-                    )
-                } else if filteredEntries.isEmpty {
-                    SettingsEmptyState(
-                        title: module.isStreamingLogs ? "Waiting for log output" : "No log entries yet",
-                        detail: "Fantastic Island will start showing lines here as soon as the current Clash runtime emits them."
-                    )
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(filteredEntries.reversed()) { entry in
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(verbatim: entry.level.title)
-                                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                        .foregroundStyle(logTint(for: entry.level))
-
-                                    Text(verbatim: entry.message)
-                                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                        .foregroundStyle(.white.opacity(0.82))
-                                        .textSelection(.enabled)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(12)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .fill(Color.white.opacity(0.035))
-                                )
-                            }
-                        }
-                    }
-                    .scrollIndicators(.hidden)
-                }
-            }
-        }
-        .onAppear {
-            module.startLogStreaming()
-        }
-        .onDisappear {
-            module.stopLogStreaming()
-        }
-    }
-
-    private func logTint(for level: ClashLogLevelFilter) -> Color {
-        switch level {
-        case .debug:
-            return .white.opacity(0.56)
-        case .info, .all:
-            return Color(nsColor: .systemBlue)
-        case .warning:
-            return Color(nsColor: .systemOrange)
-        case .error:
-            return Color(nsColor: .systemRed)
-        }
-    }
-}
-
-private struct ClashRulesSheet: View {
-    @ObservedObject var module: ClashModuleModel
-    @State private var searchText = ""
-
-    private var filteredRules: [ClashRuleEntry] {
-        let keyword = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !keyword.isEmpty else {
-            return module.ruleEntries
-        }
-
-        return module.ruleEntries.filter { rule in
-            rule.type.localizedStandardContains(keyword)
-                || rule.payload.localizedStandardContains(keyword)
-                || rule.target.localizedStandardContains(keyword)
-                || (rule.source?.localizedStandardContains(keyword) ?? false)
-        }
-    }
-
-    var body: some View {
-        ClashSettingsSheetContainer(
-            title: "Rules",
-            detail: "Read the current Clash rule list without leaving Fantastic Island."
-            ,
-            width: 760,
-            height: 560
-        ) {
-            VStack(alignment: .leading, spacing: 14) {
-                SettingsField(
-                    title: "Search Rules",
-                    prompt: "DOMAIN-SUFFIX, MATCH, Proxy, ...",
-                    text: $searchText
-                )
-
-                if module.isLoadingRules {
-                    SettingsEmptyState(
-                        title: "Loading rules",
-                        detail: "Fantastic Island is reading the active rule set from the current Clash API."
-                    )
-                } else if let error = module.rulesLoadError, !error.isEmpty {
-                    SettingsEmptyState(
-                        title: "Rules unavailable",
-                        detail: error
-                    )
-                } else if filteredRules.isEmpty {
-                    SettingsEmptyState(
-                        title: "No matching rules",
-                        detail: searchText.isEmpty
-                            ? "The current API did not return a readable rule list."
-                            : "Try a different keyword or clear the search field."
-                    )
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 10) {
-                            ForEach(filteredRules) { rule in
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack(spacing: 8) {
-                                        Text(verbatim: rule.type)
-                                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                            .foregroundStyle(.white.opacity(0.72))
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 5)
-                                            .background(Color.white.opacity(0.08), in: Capsule())
-
-                                        Spacer(minLength: 0)
-
-                                        Text(verbatim: rule.target)
-                                            .font(.system(size: 11, weight: .semibold))
-                                            .foregroundStyle(.white.opacity(0.84))
-                                    }
-
-                                    Text(verbatim: rule.payload)
-                                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                        .foregroundStyle(.white.opacity(0.82))
-                                        .textSelection(.enabled)
-                                        .fixedSize(horizontal: false, vertical: true)
-
-                                    if let source = rule.source, !source.isEmpty {
-                                        Text(verbatim: source)
-                                            .font(.system(size: 11, weight: .medium))
-                                            .foregroundStyle(.white.opacity(0.5))
-                                    }
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(14)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .fill(Color.white.opacity(0.035))
-                                )
-                            }
-                        }
-                    }
-                    .scrollIndicators(.hidden)
-                }
-            }
-        }
-        .task {
-            module.loadRules()
-        }
-    }
-}
-
-private struct ClashConnectionsSheet: View {
-    @ObservedObject var module: ClashModuleModel
-
-    var body: some View {
-        ClashSettingsSheetContainer(
-            title: "Connections",
-            detail: "Keep a lightweight overview of live connection pressure, throughput, and memory."
-            ,
-            width: 680,
-            height: 420
-        ) {
-            VStack(alignment: .leading, spacing: 14) {
-                AdaptiveActionGroup {
-                    connectionMetricCard(title: "Active Connections", value: module.connectionCountText)
-                    connectionMetricCard(title: "Upload Rate", value: module.uploadRateText)
-                    connectionMetricCard(title: "Download Rate", value: module.downloadRateText)
-                }
-
-                AdaptiveActionGroup {
-                    connectionMetricCard(title: "Total Upload", value: module.uploadTotalText)
-                    connectionMetricCard(title: "Total Download", value: module.downloadTotalText)
-                    connectionMetricCard(title: "Memory Usage", value: module.memoryUsageText)
-                }
-
-                if module.isLoadingConnectionOverview {
-                    SettingsEmptyState(
-                        title: "Refreshing connection overview",
-                        detail: "Fantastic Island is reading the latest connection summary from the current Clash API."
-                    )
-                } else if let error = module.connectionOverviewError, !error.isEmpty {
-                    SettingsEmptyState(
-                        title: "Connection overview unavailable",
-                        detail: error
-                    )
-                } else {
-                    Text("Upload and download rate continue to come from Fantastic Island's regular Clash poller. This sheet keeps the heavier totals and memory summary in one place.")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-        .task {
-            await refreshLoop()
-        }
-    }
-
-    private func refreshLoop() async {
-        while !Task.isCancelled {
-            module.refreshConnectionsOverview()
-            try? await Task.sleep(for: .seconds(4))
-        }
-    }
-
-    private func connectionMetricCard(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(LocalizedStringKey(title))
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.42))
-                .textCase(.uppercase)
-
-            Text(verbatim: value)
-                .font(.system(size: 18, weight: .bold, design: .monospaced))
-                .foregroundStyle(.white)
-                .textSelection(.enabled)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.035))
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.05), lineWidth: 1)
-        }
-    }
-}
-
-private struct WindDrivePresetIconButton: View {
-    let preset: WindDriveLogoPreset
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(isSelected ? Color.white.opacity(0.14) : Color.white.opacity(0.05))
-
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(isSelected ? Color.white.opacity(0.24) : Color.white.opacity(0.0), lineWidth: 1)
-
-                WindDriveMarkView(
-                    preset: preset,
-                    customImage: nil,
-                    size: 34,
-                    presetForegroundStyle: AnyShapeStyle(.white.opacity(0.96))
-                )
-            }
-            .frame(width: 74, height: 74)
-        }
-        .buttonStyle(.plain)
     }
 }

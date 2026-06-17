@@ -2,18 +2,24 @@ import Foundation
 
 enum PlayerModuleSettings {
     private static let defaultSourceKey = "player.module.defaultSource"
+    private static let migratedNowPlayingDefaultKey = "player.module.defaultSource.migratedNowPlayingV3"
 
     static var storedDefaultSource: PlayerSourceKind? {
         PlayerSourceKind(rawValue: UserDefaults.standard.string(forKey: defaultSourceKey) ?? "")
     }
 
     static func resolvedDefaultSource(installedControllableSources: [PlayerSourceKind]) -> PlayerSourceKind? {
+        if !UserDefaults.standard.bool(forKey: migratedNowPlayingDefaultKey),
+           installedControllableSources.contains(.nowPlaying) {
+            return .nowPlaying
+        }
+
         if let storedDefaultSource, installedControllableSources.contains(storedDefaultSource) {
             return storedDefaultSource
         }
 
-        if installedControllableSources.contains(.music) {
-            return .music
+        if installedControllableSources.contains(.nowPlaying) {
+            return .nowPlaying
         }
 
         return installedControllableSources.first
@@ -40,6 +46,8 @@ enum PlayerModuleSettings {
     }
 
     private static func persistDefaultSource(_ sourceKind: PlayerSourceKind?) {
+        UserDefaults.standard.set(true, forKey: migratedNowPlayingDefaultKey)
+
         if let sourceKind {
             UserDefaults.standard.set(sourceKind.rawValue, forKey: defaultSourceKey)
         } else {

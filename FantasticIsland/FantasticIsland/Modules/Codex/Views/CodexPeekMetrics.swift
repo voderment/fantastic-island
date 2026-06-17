@@ -6,7 +6,7 @@ enum CodexPeekMetrics {
     static let defaultRowSpacing: CGFloat = 12
     static let defaultContentSpacing: CGFloat = 8
     static let defaultBadgeSpacing: CGFloat = 6
-    static let defaultTitleTrailingSpacerMinLength: CGFloat = 8 // 标题和 badge 组之间的最小缓冲
+    static let defaultTitleTrailingSpacerMinLength: CGFloat = 8
 
     static let defaultCardHorizontalPadding: CGFloat = 16
     static let defaultCardVerticalPadding: CGFloat = 14

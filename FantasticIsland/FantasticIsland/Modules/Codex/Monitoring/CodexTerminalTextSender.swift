@@ -39,6 +39,21 @@ final class CodexTerminalTextSender {
             return
         }
 
+        let app = target.terminalApp.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if app == "terminal" || app == "apple_terminal" {
+            guard sendViaTerminal(trimmed, target: target, submit: submit) else {
+                throw CodexTerminalTextSenderError.injectionFailed("Failed to send the reply through Terminal.")
+            }
+            return
+        }
+
+        if app == "iterm" || app == "iterm2" {
+            guard sendViaITerm(trimmed, target: target, submit: submit) else {
+                throw CodexTerminalTextSenderError.injectionFailed("Failed to send the reply through iTerm.")
+            }
+            return
+        }
+
         throw CodexTerminalTextSenderError.unsupportedTarget
     }
 
@@ -121,6 +136,79 @@ final class CodexTerminalTextSender {
             if targetTerminal is missing value then return "error"
             input text "\(escapedText)" to targetTerminal
             \(enterScript)
+            return "ok"
+        end tell
+        """
+
+        return runAppleScript(script)
+    }
+
+    private func sendViaTerminal(_ text: String, target: CodexTerminalJumpTarget, submit: Bool) -> Bool {
+        let paneTitle = escape(target.paneTitle)
+        guard !paneTitle.isEmpty else {
+            return false
+        }
+
+        let escapedText = escape(text)
+        let commandText = submit ? escapedText : escapedText.replacingOccurrences(of: "\n", with: "\\n")
+
+        let script = """
+        tell application "Terminal"
+            activate
+            set targetTab to missing value
+            if "\(paneTitle)" is not "" then
+                repeat with aWindow in windows
+                    repeat with aTab in tabs of aWindow
+                        try
+                            if custom title of aTab contains "\(paneTitle)" then
+                                set targetTab to aTab
+                                set selected of aTab to true
+                                exit repeat
+                            end if
+                        end try
+                    end repeat
+                    if targetTab is not missing value then exit repeat
+                end repeat
+            end if
+            if targetTab is missing value then return "error"
+            do script "\(commandText)" in targetTab
+            return "ok"
+        end tell
+        """
+
+        return runAppleScript(script)
+    }
+
+    private func sendViaITerm(_ text: String, target: CodexTerminalJumpTarget, submit: Bool) -> Bool {
+        let sessionID = escape(target.terminalSessionID)
+        let tty = escape(target.terminalTTY)
+        let escapedText = escape(text)
+        let suffix = submit ? "\\n" : ""
+
+        let script = """
+        tell application "iTerm"
+            activate
+            set targetSession to missing value
+            repeat with aWindow in windows
+                repeat with aTab in tabs of aWindow
+                    repeat with aSession in sessions of aTab
+                        if "\(sessionID)" is not "" and (id of aSession as text) is "\(sessionID)" then
+                            set targetSession to aSession
+                            select aTab
+                            exit repeat
+                        end if
+                        if "\(tty)" is not "" and (tty of aSession as text) is "\(tty)" then
+                            set targetSession to aSession
+                            select aTab
+                            exit repeat
+                        end if
+                    end repeat
+                    if targetSession is not missing value then exit repeat
+                end repeat
+                if targetSession is not missing value then exit repeat
+            end repeat
+            if targetSession is missing value then return "error"
+            tell targetSession to write text "\(escapedText)\(suffix)" newline NO
             return "ok"
         end tell
         """

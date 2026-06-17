@@ -17,7 +17,11 @@ enum CodexTerminalAppRegistry {
         .init(displayName: "Warp", bundleIdentifier: "dev.warp.Warp-Stable", aliases: ["warp", "warpterminal"]),
         .init(displayName: "WezTerm", bundleIdentifier: "com.github.wez.wezterm", aliases: ["wezterm"]),
         .init(displayName: "Codex", bundleIdentifier: "com.openai.codex", aliases: ["codex.app", "codex"]),
+        .init(displayName: "Claude", bundleIdentifier: "com.anthropic.claudefordesktop", aliases: ["claude", "claude code", "claude.app"]),
         .init(displayName: "Cursor", bundleIdentifier: "com.todesktop.230313mzl4w4u92", aliases: ["cursor"]),
+        .init(displayName: "Antigravity IDE", bundleIdentifier: "com.google.antigravity-ide", aliases: ["antigravity", "antigravity ide", "antigravity-ide"]),
+        .init(displayName: "Antigravity", bundleIdentifier: "com.google.antigravity", aliases: ["antigravity.app"]),
+        .init(displayName: "Conductor", bundleIdentifier: "com.conductor.app", aliases: ["conductor", "conductor.app"]),
         .init(displayName: "Visual Studio Code", bundleIdentifier: "com.microsoft.VSCode", aliases: ["vscode", "code"]),
         .init(displayName: "Visual Studio Code - Insiders", bundleIdentifier: "com.microsoft.VSCodeInsiders", aliases: ["vscode-insiders", "code-insiders"]),
         .init(displayName: "Windsurf", bundleIdentifier: "com.exafunction.windsurf", aliases: ["windsurf"]),
@@ -84,6 +88,17 @@ enum CodexTerminalAppRegistry {
 
         let appName = target.terminalApp.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return appName == "codex" || appName == "codex.app"
+    }
+
+    static func isProviderAppTarget(_ target: CodexTerminalJumpTarget) -> Bool {
+        guard let bundleIdentifier = normalizedBundleIdentifier(for: target) else {
+            return false
+        }
+
+        return AgentProvider.allCases.contains { provider in
+            provider.appBundleIdentifier == bundleIdentifier
+                || provider.fallbackAppBundleIdentifiers.contains(bundleIdentifier)
+        }
     }
 
     static func deepLinkURL(for target: CodexTerminalJumpTarget) -> URL? {
@@ -189,6 +204,15 @@ final class CodexTerminalJumpService {
             return jumpToCodexThread(target)
         }
 
+        if isConductorTarget(target) {
+            return jumpToConductorWorkspace(target)
+        }
+
+        if let bundleIdentifier = CodexTerminalAppRegistry.normalizedBundleIdentifier(for: target),
+           AgentProvider.allCases.contains(where: { $0.appBundleIdentifier == bundleIdentifier || $0.fallbackAppBundleIdentifiers.contains(bundleIdentifier) }) {
+            return launchBundle(bundleIdentifier)
+        }
+
         if app == "ghostty" {
             return runAppleScript(ghosttyJumpScript(target: target))
         }
@@ -233,6 +257,26 @@ final class CodexTerminalJumpService {
         }
 
         return launchBundle("com.openai.codex")
+    }
+
+    private func isConductorTarget(_ target: CodexTerminalJumpTarget) -> Bool {
+        if CodexTerminalAppRegistry.normalizedBundleIdentifier(for: target) == AgentProvider.conductor.appBundleIdentifier {
+            return true
+        }
+
+        return target.terminalApp
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .contains("conductor")
+    }
+
+    private func jumpToConductorWorkspace(_ target: CodexTerminalJumpTarget) -> Bool {
+        if let url = target.conductorRoutingURL,
+           NSWorkspace.shared.open(url) {
+            return true
+        }
+
+        return launchBundle(AgentProvider.conductor.appBundleIdentifier)
     }
 
     private func launchBundle(_ bundleIdentifier: String) -> Bool {

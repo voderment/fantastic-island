@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-private let islandDefaultNotchSize = CGSize(width: 224, height: 38)
+private let islandDefaultNotchSize = CGSize(width: 168, height: 38)
 
 // Copyright 2026 Fantastic Island contributors
 // Portions adapted from open-vibe-island contributors
@@ -36,10 +36,14 @@ final class IslandShellController {
     }
 
     static let defaultNotchSize = islandDefaultNotchSize
-    private static let minimumExpandedContentWidth: CGFloat = 720
-    private static let maximumExpandedContentWidth: CGFloat = 780
-    private static let expandedContentWidthFactor: CGFloat = 0.46
+    private static let minimumExpandedContentWidth: CGFloat = 430
+    private static let maximumExpandedContentWidth: CGFloat = 476
+    private static let expandedContentWidthFactor: CGFloat = 0.22
     private static let openedContentBottomPadding: CGFloat = CodexIslandChromeMetrics.openedSurfaceBottomInset
+    private static let closedHoverOpenDelay: TimeInterval = 0.18
+    private static let hudHitWidth: CGFloat = 196
+    private static let hudHitHeight: CGFloat = 52
+    private static let hudTopInset: CGFloat = 3
 
     fileprivate weak var model: IslandAppModel?
     private var panel: IslandShellPanel?
@@ -48,6 +52,7 @@ final class IslandShellController {
     private var globalClickMonitor: Any?
     private var localClickMonitor: Any?
     private var pendingCloseResize: DispatchWorkItem?
+    private var pendingHoverOpen: DispatchWorkItem?
     private var rootViewMetrics: RootViewMetrics?
     private(set) var notchRect: NSRect = .zero
 
@@ -64,6 +69,7 @@ final class IslandShellController {
     }
 
     deinit {
+        pendingHoverOpen?.cancel()
         if let screenObserver {
             NotificationCenter.default.removeObserver(screenObserver)
         }
@@ -82,6 +88,7 @@ final class IslandShellController {
         if panel.frame != targetFrame {
             panel.setFrame(targetFrame, display: false)
         }
+        applyPanelMobility(panel, using: model)
         computeNotchRect(screen: screen)
         panel.ignoresMouseEvents = !isPanelInteractive(for: model)
         panel.acceptsMouseMovedEvents = isPanelInteractive(for: model)
@@ -103,11 +110,12 @@ final class IslandShellController {
         }
 
         let openedFrame = holdingPanelFrame(for: model, on: screen)
-        if panel.frame != openedFrame {
+        if !shouldPreserveDetachedFrame(panel, using: model), panel.frame != openedFrame {
             IslandTransitionDiagnostics.panel("prepare expansion frame=\(NSStringFromRect(openedFrame))")
             panel.setFrame(openedFrame, display: false)
         }
 
+        applyPanelMobility(panel, using: model)
         computeNotchRect(screen: screen)
         panel.orderFrontRegardless()
         panel.ignoresMouseEvents = false
@@ -129,11 +137,12 @@ final class IslandShellController {
         }
 
         let targetFrame = holdingPanelFrame(for: model, on: screen)
-        if panel.frame != targetFrame {
+        if !shouldPreserveDetachedFrame(panel, using: model), panel.frame != targetFrame {
             IslandTransitionDiagnostics.panel("prepare peek frame=\(NSStringFromRect(targetFrame))")
             panel.setFrame(targetFrame, display: false)
         }
 
+        applyPanelMobility(panel, using: model)
         computeNotchRect(screen: screen)
         panel.orderFrontRegardless()
         let isInteractive = model.peekCapturesMouseEvents
@@ -161,6 +170,7 @@ final class IslandShellController {
         IslandTransitionDiagnostics.panel(
             "reposition refreshRootView=\(refreshRootView) transitioning=\(model.islandLayoutTransitionInFlight)"
         )
+        applyPanelMobility(panel, using: model)
         updatePanelFrame(panel, using: model, on: screen)
         computeNotchRect(screen: screen)
         syncClosedActivationPanel(using: model, on: screen)
@@ -194,7 +204,26 @@ final class IslandShellController {
             )
         }
 
+        if hasInteractiveHUD(for: model) {
+            return centeredShellRect(
+                in: contentRect,
+                width: Self.hudHitWidth,
+                height: Self.hudHitHeight
+            ).offsetBy(dx: 0, dy: -Self.hudTopInset)
+        }
+
         return .zero
+    }
+
+    func refreshInteractivity() {
+        guard let model, let panel, let screen = resolvedPanelScreen(for: panel) else {
+            return
+        }
+
+        let isInteractive = isPanelInteractive(for: model)
+        panel.ignoresMouseEvents = !isInteractive
+        panel.acceptsMouseMovedEvents = isInteractive
+        syncClosedActivationPanel(using: model, on: screen)
     }
 
     func isPointInExpandedArea(_ screenPoint: NSPoint) -> Bool {
@@ -224,8 +253,7 @@ final class IslandShellController {
 
     func expandedContentWidth(for model: IslandAppModel, on screen: NSScreen?) -> CGFloat {
         let resolvedWidth = CodexIslandChromeMetrics.resolvedExpandedContentWidth(
-            baseContentWidth: expandedContentWidth(for: screen),
-            showsWindDrivePanel: model.showsExpandedWindDrivePanel
+            baseContentWidth: expandedContentWidth(for: screen)
         )
 
         guard let screen else {
@@ -286,6 +314,7 @@ final class IslandShellController {
         panel.isOpaque = false
         panel.hasShadow = false
         panel.isMovable = false
+        panel.isMovableByWindowBackground = false
         panel.hidesOnDeactivate = false
         panel.acceptsMouseMovedEvents = false
         panel.collectionBehavior = [.fullScreenAuxiliary, .stationary, .canJoinAllSpaces, .ignoresCycle]
@@ -427,24 +456,38 @@ final class IslandShellController {
     private func updatePanelFrame(_ panel: IslandShellPanel, using model: IslandAppModel, on screen: NSScreen) {
         let openedFrame = holdingPanelFrame(for: model, on: screen)
 
-        if !model.islandLayoutTransitionInFlight, panel.frame != openedFrame {
+        if !model.islandLayoutTransitionInFlight,
+           !shouldPreserveDetachedFrame(panel, using: model),
+           panel.frame != openedFrame {
             panel.setFrame(openedFrame, display: false)
         }
 
         if model.islandUsesOpenedVisualState {
             cancelPendingCloseResize(resetCollapseState: true)
-            panel.ignoresMouseEvents = !isPanelInteractive(for: model)
-            panel.acceptsMouseMovedEvents = isPanelInteractive(for: model)
+            refreshInteractivity()
             return
         }
 
         cancelPendingCloseResize(resetCollapseState: false)
-        panel.ignoresMouseEvents = true
-        panel.acceptsMouseMovedEvents = false
+        refreshInteractivity()
+    }
+
+    private func applyPanelMobility(_ panel: IslandShellPanel, using model: IslandAppModel) {
+        let isMovable = model.detachedModeEnabled && model.islandUsesOpenedVisualState
+        panel.isMovable = isMovable
+        panel.isMovableByWindowBackground = isMovable
+    }
+
+    private func shouldPreserveDetachedFrame(_ panel: IslandShellPanel, using model: IslandAppModel) -> Bool {
+        model.detachedModeEnabled
+            && model.islandUsesOpenedVisualState
+            && panel.isVisible
+            && !panel.frame.isEmpty
     }
 
     private func syncClosedActivationPanel(using model: IslandAppModel, on screen: NSScreen) {
         guard !model.islandUsesOpenedVisualState,
+              !hasInteractiveHUD(for: model),
               let activationRect = closedActivationRect(for: model) else {
             hideClosedActivationPanel()
             return
@@ -485,7 +528,17 @@ final class IslandShellController {
     }
 
     private func isPanelInteractive(for model: IslandAppModel) -> Bool {
-        model.islandExpanded || model.peekCapturesMouseEvents
+        model.islandExpanded || model.peekCapturesMouseEvents || hasInteractiveHUD(for: model)
+    }
+
+    private func hasInteractiveHUD(for model: IslandAppModel) -> Bool {
+        guard !model.islandExpanded,
+              !model.peekCapturesMouseEvents,
+              let overlay = model.hudOverlay else {
+            return false
+        }
+
+        return overlay.isVisible
     }
 
     private func scheduleCloseResize(for panel: IslandShellPanel) {
@@ -539,6 +592,10 @@ final class IslandShellController {
         let point = screenPoint(for: event)
 
         if model.islandExpanded {
+            guard !model.detachedModeEnabled else {
+                return
+            }
+
             guard !isPointInExpandedArea(point) else {
                 return
             }
@@ -551,13 +608,17 @@ final class IslandShellController {
             return
         }
 
+        guard !hasInteractiveHUD(for: model) else {
+            return
+        }
+
         // Gesture recognizers can miss edge taps during rapid state switches;
         // event-monitor fallback keeps first-click expansion reliable.
         model.expandIsland(reason: .manualTap)
     }
 
     fileprivate func handleClosedActivationMouseDown() {
-        guard let model, !model.islandExpanded else {
+        guard let model, !model.islandExpanded, !hasInteractiveHUD(for: model) else {
             return
         }
 
@@ -565,7 +626,61 @@ final class IslandShellController {
     }
 
     fileprivate func handleClosedActivationHover(_ hovering: Bool) {
+        pendingHoverOpen?.cancel()
+        pendingHoverOpen = nil
         model?.setIslandClosedHovering(hovering)
+
+        guard hovering, let model, !model.islandExpanded else {
+            return
+        }
+
+        let workItem = DispatchWorkItem { [weak self, weak model] in
+            guard let self,
+                  let model,
+                  model.islandClosedHovering,
+                  !model.islandExpanded else {
+                return
+            }
+
+            model.expandIsland(reason: .hover)
+            self.pendingHoverOpen = nil
+        }
+        pendingHoverOpen = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.closedHoverOpenDelay, execute: workItem)
+    }
+
+    fileprivate func handleClosedActivationFileDragHover(_ hovering: Bool) {
+        pendingHoverOpen?.cancel()
+        pendingHoverOpen = nil
+        model?.setIslandClosedHovering(hovering)
+
+        guard hovering, let model else {
+            return
+        }
+
+        let workItem = DispatchWorkItem { [weak self, weak model] in
+            guard let self,
+                  let model,
+                  model.islandClosedHovering else {
+                return
+            }
+
+            model.prepareShelfForFileDrop()
+            self.pendingHoverOpen = nil
+        }
+        pendingHoverOpen = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.closedHoverOpenDelay, execute: workItem)
+    }
+
+    fileprivate func handleClosedActivationFileDrop(_ urls: [URL]) -> Bool {
+        guard let model, !urls.isEmpty else {
+            return false
+        }
+
+        pendingHoverOpen?.cancel()
+        pendingHoverOpen = nil
+        model.addFilesToShelf(urls)
+        return true
     }
 
     private func screenPoint(for event: NSEvent) -> NSPoint {
@@ -630,6 +745,7 @@ private final class IslandShellHostingView<Content: View>: NSHostingView<Content
     weak var notchController: IslandShellController?
 
     override var isOpaque: Bool { false }
+    override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric) }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
@@ -642,6 +758,11 @@ private final class IslandShellHostingView<Content: View>: NSHostingView<Content
 
     required init(rootView: Content) {
         super.init(rootView: rootView)
+        if #available(macOS 13.0, *) {
+            sizingOptions = []
+        }
+        translatesAutoresizingMaskIntoConstraints = true
+        autoresizingMask = [.width, .height]
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
     }
@@ -708,9 +829,49 @@ private final class IslandClosedActivationView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        registerForDraggedTypes([.fileURL])
         if window == nil {
             notchController?.handleClosedActivationHover(false)
         }
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard !draggedFileURLs(from: sender).isEmpty else {
+            return []
+        }
+
+        notchController?.handleClosedActivationFileDragHover(true)
+        return .copy
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        draggedFileURLs(from: sender).isEmpty ? [] : .copy
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        notchController?.handleClosedActivationFileDragHover(false)
+    }
+
+    override func draggingEnded(_ sender: NSDraggingInfo) {
+        notchController?.handleClosedActivationFileDragHover(false)
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let urls = draggedFileURLs(from: sender)
+        notchController?.handleClosedActivationFileDragHover(false)
+        return notchController?.handleClosedActivationFileDrop(urls) ?? false
+    }
+
+    private func draggedFileURLs(from sender: NSDraggingInfo) -> [URL] {
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        return sender.draggingPasteboard
+            .readObjects(forClasses: [NSURL.self], options: options)?
+            .compactMap { object in
+                if let url = object as? URL {
+                    return url
+                }
+                return (object as? NSURL) as URL?
+            } ?? []
     }
 }
 

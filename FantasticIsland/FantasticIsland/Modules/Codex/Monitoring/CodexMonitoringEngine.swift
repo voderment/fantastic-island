@@ -4,6 +4,7 @@ final class CodexMonitoringEngine {
     private let queue: DispatchQueue
     private let tokenUsageQueue: DispatchQueue
     private let discovery: CodexSessionDiscovery
+    private let sessionStore: AgentSessionStore
     private let reducer: CodexSessionReducer
     private let tailer: CodexRolloutTailer
     private let tokenUsageScanner: CodexTokenUsageHistoryScanner
@@ -14,6 +15,7 @@ final class CodexMonitoringEngine {
 
     init(
         discovery: CodexSessionDiscovery = CodexSessionDiscovery(),
+        sessionStore: AgentSessionStore = AgentSessionStore(),
         reducer: CodexSessionReducer = CodexSessionReducer(),
         tailer: CodexRolloutTailer = CodexRolloutTailer(),
         tokenUsageScanner: CodexTokenUsageHistoryScanner = CodexTokenUsageHistoryScanner(),
@@ -21,6 +23,7 @@ final class CodexMonitoringEngine {
         tokenUsageQueue: DispatchQueue = DispatchQueue(label: "fantastic-island.codex-token-usage", qos: .utility)
     ) {
         self.discovery = discovery
+        self.sessionStore = sessionStore
         self.reducer = reducer
         self.tailer = tailer
         self.tokenUsageScanner = tokenUsageScanner
@@ -42,14 +45,16 @@ final class CodexMonitoringEngine {
         followedBy event: CodexAgentEvent? = nil,
         completion: @escaping (CodexMonitoringSnapshot) -> Void
     ) {
+        let storedTranscriptURL = try? sessionStore.append(payload)
         queue.async { [self] in
             reducer.applyHookPayload(payload)
 
-            if let transcriptPath = payload.transcriptPath {
+            if let transcriptPath = payload.transcriptPath ?? storedTranscriptURL?.path {
                 let discovered = discovery.discoverSession(at: URL(fileURLWithPath: transcriptPath)) ?? DiscoveredSession(
                     id: payload.sessionID,
+                    provider: payload.agentProvider,
                     cwd: payload.cwd,
-                    title: SessionSnapshot.title(for: payload.cwd),
+                    title: SessionSnapshot.title(for: payload.cwd, provider: payload.agentProvider),
                     transcriptPath: transcriptPath,
                     jumpTarget: payload.terminalJumpTarget,
                     assistantSummary: payload.assistantSummary,

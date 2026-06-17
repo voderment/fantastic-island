@@ -53,6 +53,8 @@
 				403C20EF2F8CAF6100C9A86C /* Sources */,
 				403C20F02F8CAF6100C9A86C /* Frameworks */,
 				403C20F12F8CAF6100C9A86C /* Resources */,
+				40F9A0022F99B000009E4658 /* Build Hook Helper */,
+				40F9A0012F99B000009E4658 /* Clear Bundle Extended Attributes */,
 			);
 			buildRules = (
 			);
@@ -89,8 +91,6 @@
 			knownRegions = (
 				en,
 				Base,
-				"zh-Hans",
-				"zh-Hant",
 			);
 			mainGroup = 403C20EA2F8CAF6100C9A86C;
 			minimizedProjectReferenceProxies = 1;
@@ -114,6 +114,56 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		40F9A0022F99B000009E4658 /* Build Hook Helper */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/Helpers/fantastic-island-hook.swift",
+				"$(SRCROOT)/FantasticIsland/Assets.xcassets",
+				"$(SRCROOT)/FantasticIsland/source",
+			);
+			name = "Build Hook Helper";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Helpers/fantastic-island-hook",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -eu\n\nfor path in \"$SRCROOT/Helpers\" \"$SRCROOT/FantasticIsland/Assets.xcassets\" \"$SRCROOT/FantasticIsland/source\"; do\n    if [ -e \"$path\" ]; then\n        /usr/bin/xattr -cr \"$path\" >/dev/null 2>&1 || true\n    fi\ndone\n\nsource=\"$SRCROOT/Helpers/fantastic-island-hook.swift\"\noutput=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/Helpers/fantastic-island-hook\"\nmkdir -p \"$(dirname \"$output\")\"\n/usr/bin/xcrun --sdk macosx swiftc \"$source\" -O -o \"$output\"\nchmod 755 \"$output\"\n/usr/bin/xattr -c \"$output\" >/dev/null 2>&1 || true\n";
+		};
+		40F9A0012F99B000009E4658 /* Clear Bundle Extended Attributes */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/Helpers",
+				"$(SRCROOT)/FantasticIsland/Assets.xcassets",
+				"$(SRCROOT)/FantasticIsland/source",
+				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/Info.plist",
+				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/MacOS/$(EXECUTABLE_NAME)",
+				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Contents/Resources/Assets.car",
+			);
+			name = "Clear Bundle Extended Attributes";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_TEMP_DIR)/clear-bundle-xattrs.stamp",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -eu\n\nmkdir -p \"$TARGET_TEMP_DIR\"\nstamp=\"$TARGET_TEMP_DIR/clear-bundle-xattrs.stamp\"\nbundle=\"$TARGET_BUILD_DIR/$WRAPPER_NAME\"\n\nfor path in \"$SRCROOT/Helpers\" \"$SRCROOT/FantasticIsland/Assets.xcassets\" \"$SRCROOT/FantasticIsland/source\"; do\n    if [ -e \"$path\" ]; then\n        /usr/bin/xattr -cr \"$path\" >/dev/null 2>&1 || true\n    fi\ndone\n\nif [ -e \"$bundle\" ]; then\n    /usr/bin/xattr -cr \"$bundle\" >/dev/null 2>&1 || true\nfi\n\nindex=0\nwhile [ \"$index\" -lt \"${SCRIPT_INPUT_FILE_COUNT:-0}\" ]; do\n    eval file=\\\"\\${SCRIPT_INPUT_FILE_$index:-}\\\"\n    if [ -n \"$file\" ] && [ -e \"$file\" ]; then\n        if [ -d \"$file\" ]; then\n            /usr/bin/xattr -cr \"$file\" >/dev/null 2>&1 || true\n        else\n            /usr/bin/xattr -c \"$file\" >/dev/null 2>&1 || true\n        fi\n    fi\n    index=$((index + 1))\ndone\n\ntouch \"$stamp\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		403C20EF2F8CAF6100C9A86C /* Sources */ = {
@@ -164,7 +214,7 @@
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -229,7 +279,7 @@
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -253,6 +303,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = FantasticIsland;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
 				CODE_SIGN_ENTITLEMENTS = Support/FantasticIsland.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -288,6 +339,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = FantasticIsland;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
 				CODE_SIGN_ENTITLEMENTS = Support/FantasticIsland.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;

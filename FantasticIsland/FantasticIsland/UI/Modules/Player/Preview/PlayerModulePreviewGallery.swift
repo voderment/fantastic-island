@@ -50,38 +50,48 @@ private struct PlayerPreviewPanel: View {
     }
 }
 
-#Preview("Player Gallery") {
-    ScrollView {
-        VStack(alignment: .leading, spacing: 24) {
-            IslandPreviewContainer(title: "Expanded Playing") {
-                PlayerPreviewPanel(model: PlayerPreviewMocks.playing)
-            }
-
-            IslandPreviewContainer(title: "Peek") {
-                HStack(spacing: PlayerPeekMetrics.horizontalSpacing) {
-                    RoundedRectangle(cornerRadius: PlayerPeekMetrics.artworkCornerRadius, style: .continuous)
-                        .fill(Color.white.opacity(0.08))
-                        .frame(width: PlayerPeekMetrics.artworkSize, height: PlayerPeekMetrics.artworkSize)
-
-                    VStack(alignment: .leading, spacing: PlayerPeekMetrics.textSpacing) {
-                        Text(PlayerPreviewMocks.peekTitle)
-                            .font(.system(size: PlayerPeekMetrics.titleFontSize, weight: .bold))
-                            .foregroundStyle(.white.opacity(PlayerPeekMetrics.titleOpacity))
-                        Text(PlayerPreviewMocks.peekArtist)
-                            .font(.system(size: PlayerPeekMetrics.artistFontSize, weight: .medium))
-                            .foregroundStyle(.white.opacity(PlayerPeekMetrics.artistOpacity))
-                    }
+private struct PlayerModulePreviewGallery: View {
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                IslandPreviewContainer(title: "Expanded Playing") {
+                    PlayerPreviewPanel(model: PlayerPreviewMocks.playing)
                 }
-                .frame(width: 520)
-                .frame(minHeight: PlayerPeekMetrics.minimumHeight, alignment: .leading)
-            }
 
-            IslandPreviewContainer(title: "Expanded Idle") {
-                PlayerPreviewPanel(model: PlayerPreviewMocks.idle)
+                IslandPreviewContainer(title: "Peek") {
+                    HStack(spacing: PlayerPeekMetrics.horizontalSpacing) {
+                        RoundedRectangle(cornerRadius: PlayerPeekMetrics.artworkCornerRadius, style: .continuous)
+                            .fill(Color.white.opacity(0.08))
+                            .frame(width: PlayerPeekMetrics.artworkSize, height: PlayerPeekMetrics.artworkSize)
+
+                        VStack(alignment: .leading, spacing: PlayerPeekMetrics.textSpacing) {
+                            Text(PlayerPreviewMocks.peekTitle)
+                                .font(.system(size: PlayerPeekMetrics.titleFontSize, weight: .bold))
+                                .foregroundStyle(.white.opacity(PlayerPeekMetrics.titleOpacity))
+                            Text(PlayerPreviewMocks.peekArtist)
+                                .font(.system(size: PlayerPeekMetrics.artistFontSize, weight: .medium))
+                                .foregroundStyle(.white.opacity(PlayerPeekMetrics.artistOpacity))
+                        }
+                    }
+                    .frame(width: 520)
+                    .frame(minHeight: PlayerPeekMetrics.minimumHeight, alignment: .leading)
+                }
+
+                IslandPreviewContainer(title: "Expanded Idle") {
+                    PlayerPreviewPanel(model: PlayerPreviewMocks.idle)
+                }
             }
         }
+        .frame(width: 860, height: 940)
+        .background(Color(red: 0.06, green: 0.06, blue: 0.08))
+        .preferredColorScheme(.dark)
     }
-    .frame(width: 860, height: 940)
-    .background(Color(red: 0.06, green: 0.06, blue: 0.08))
-    .preferredColorScheme(.dark)
 }
+
+#if DEBUG
+private struct PlayerModulePreviewGalleryProvider: PreviewProvider {
+    static var previews: some View {
+        PlayerModulePreviewGallery()
+    }
+}
+#endif

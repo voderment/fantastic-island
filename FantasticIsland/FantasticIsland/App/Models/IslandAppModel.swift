@@ -3,9 +3,7 @@ import Combine
 import Foundation
 import ServiceManagement
 import SwiftUI
-import UniformTypeIdentifiers
 
-private let islandFanRotationRetuneThreshold: Double = 0.03
 private let islandOpenTransitionAnimation = CodexIslandPeekMetrics.openAnimation
 private let islandCloseTransitionAnimation = CodexIslandPeekMetrics.closeAnimation
 private let islandOpenedRevealAnimation = CodexIslandPeekMetrics.chromeRevealAnimation
@@ -14,7 +12,7 @@ private let islandClosedHeaderRevealAnimation = CodexIslandPeekMetrics.closedHea
 struct CompactModuleSummary: Identifiable, Equatable {
     enum Content: Equatable {
         case singleLine(String)
-        case clashTraffic(upload: String, download: String)
+        case agentGrid([CompactAgentIndicator], overflow: Int)
     }
 
     let moduleID: String
@@ -33,8 +31,9 @@ struct CompactModuleSummary: Identifiable, Equatable {
         switch content {
         case let .singleLine(text):
             return text
-        case let .clashTraffic(upload, download):
-            return "upload \(upload), download \(download)"
+        case let .agentGrid(indicators, overflow):
+            let count = indicators.count + overflow
+            return count == 1 ? "1 active session" : "\(count) active sessions"
         }
     }
 
@@ -47,27 +46,70 @@ struct CompactModuleSummary: Identifiable, Equatable {
             let minimumTextWidth = max(44, CodexIslandChromeMetrics.closedPrimaryFontSize * 4.4)
             let estimatedCharacterWidth = max(5.2, CodexIslandChromeMetrics.closedPrimaryFontSize * 0.62)
             textWidth = max(minimumTextWidth, ceil(CGFloat(text.count) * estimatedCharacterWidth))
-        case .clashTraffic:
-            textWidth = CodexIslandChromeMetrics.compactClashTrafficBlockWidth
+        case let .agentGrid(indicators, overflow):
+            let count = indicators.count + overflow
+            let countBadgeWidth = max(16, ceil(CGFloat(String(count).count) * 6.4) + 10)
+            textWidth = CompactAgentGridMetrics.intrinsicWidth(
+                count: indicators.count + (overflow > 0 ? 1 : 0)
+            ) + 5 + countBadgeWidth
         }
 
         return iconWidth + contentSpacing + textWidth
     }
 }
 
+enum CompactAgentIndicatorState: Equatable {
+    case running
+    case waiting
+    case idle
+}
+
+struct CompactAgentIndicator: Identifiable, Equatable {
+    let id: String
+    let provider: AgentProvider
+    let state: CompactAgentIndicatorState
+}
+
+enum CompactAgentGridMetrics {
+    static func balancedRows(_ count: Int) -> [Int] {
+        switch count {
+        case ..<1: []
+        case 1: [1]
+        case 2: [2]
+        case 3: [3]
+        case 4: [2, 2]
+        case 5: [3, 2]
+        case 6: [3, 3]
+        case 7: [4, 3]
+        case 8: [4, 4]
+        default: [4, 4, count - 8]
+        }
+    }
+
+    static func cellGeometry(rowCount: Int) -> (cell: CGFloat, gap: CGFloat, radius: CGFloat) {
+        rowCount >= 3 ? (cell: 6, gap: 1.5, radius: 1.0) : (cell: 8, gap: 2, radius: 1.5)
+    }
+
+    static func intrinsicWidth(count: Int) -> CGFloat {
+        guard count > 0 else { return 0 }
+        let rows = balancedRows(count)
+        let maxRow = rows.max() ?? 0
+        let geometry = cellGeometry(rowCount: rows.count)
+        return CGFloat(maxRow) * geometry.cell + CGFloat(max(0, maxRow - 1)) * geometry.gap
+    }
+}
+
 @MainActor
 final class IslandAppModel: ObservableObject {
-    @Published private(set) var activityState = FanActivityState()
-    @Published private(set) var isAudioMuted = false
+    @Published private(set) var activityState = AgentActivityState()
+    @Published private(set) var isAudioMuted = true
+    @Published private(set) var hideInFullscreen = true
+    @Published private(set) var detachedModeEnabled = false
+    @Published private(set) var hudOverlay: IslandHUDOverlayState?
     @Published private(set) var collapsedSummaryConfiguration = CollapsedSummaryConfiguration.load()
     @Published private(set) var launchAtLoginEnabled = false
     @Published private(set) var launchAtLoginStatusText = "Fantastic Island won't launch automatically when you sign in."
     @Published private(set) var interfaceLanguage: IslandInterfaceLanguage = .followSystem
-    @Published private(set) var windDriveLogoPreset: WindDriveLogoPreset = .defaultMark
-    @Published private(set) var usesCustomWindDriveLogo = false
-    @Published private(set) var windDriveCustomLogoPath = ""
-    @Published private(set) var windDriveCustomLogoImage: NSImage?
-    @Published private(set) var showsExpandedWindDrivePanel = true
     @Published private(set) var enabledModuleIDs: Set<String> = []
     @Published var islandExpanded = false
     @Published private(set) var islandPeeking = false
@@ -86,15 +128,19 @@ final class IslandAppModel: ObservableObject {
     @Published private(set) var frozenPeekSnapshot: IslandModuleRenderSnapshot?
     @Published private(set) var frozenExpandedSnapshot: IslandModuleRenderSnapshot?
 
-    let codexFanModule: CodexModuleModel
-    let clashModule: ClashModuleModel
+    let agentsModule: CodexModuleModel
     let playerModule: PlayerModuleModel
-    let xPostModule: XPostModuleModel
+    let horizonModule: HorizonModuleModel
+    let timerModule: TimerModuleModel
+    let shelfModule: ShelfModuleModel
+    let systemModule: SystemModuleModel
+    let diagnosticsModule: DiagnosticsModuleModel
     let moduleRegistry: IslandModuleRegistry
     let designTokenStore = IslandDebugTokenStore()
 
     private let shellController = IslandShellController()
     private let audioController = CodexAudioController()
+    private let volumeHUDMonitor = IslandVolumeHUDMonitor()
     private lazy var settingsWindowController = IslandSettingsWindowController(model: self)
 #if DEBUG
     @Published private(set) var debugPanelLockMode: IslandDebugPanelLockMode = .automatic
@@ -111,8 +157,14 @@ final class IslandAppModel: ObservableObject {
             switch action {
             case .toggleExpansion:
                 self?.toggleIslandExpansionFromShortcut()
-            case .openTwitterComposer:
-                self?.openTwitterComposerFromShortcut()
+            case .openAgents:
+                self?.openAgentsFromShortcut()
+            case .previousModule:
+                self?.selectAdjacentModuleFromShortcut(offset: -1)
+            case .nextModule:
+                self?.selectAdjacentModuleFromShortcut(offset: 1)
+            case .toggleDetachedMode:
+                self?.toggleDetachedModeFromShortcut()
             }
         }
     }
@@ -124,8 +176,6 @@ final class IslandAppModel: ObservableObject {
     private var pendingDirtyModules: Set<String> = []
     private var pendingActivityReconcile = false
     private var pendingMeasuredHeights: [String: CGFloat] = [:]
-    private var spinAnchorDate = Date()
-    private var spinAnchorDegrees = 0.0
     private var lastAggregateRefreshAt = Date()
     private var displayedScore = 0.0
     private var hasPrimedAudioState = false
@@ -136,45 +186,82 @@ final class IslandAppModel: ObservableObject {
     private var notificationAutoCollapseActivityID: String?
     private var notificationAutoCollapseDelay: TimeInterval?
     private var notificationAutoCollapseShouldCollapsePanel = false
+    private var shellHiddenForFullscreen = false
+    private var hudVisibilityTimer: Timer?
+    private var workspaceActivationObserver: NSObjectProtocol?
+    private var lastPointerModuleSwitchAt = Date.distantPast
+    private let pointerModuleSwitchThrottle: TimeInterval = 0.28
 
     init() {
-        let codexFanModule = CodexModuleModel()
-        let clashModule = ClashModuleModel()
+        let agentsModule = CodexModuleModel()
         let playerModule = PlayerModuleModel()
-        let xPostModule = XPostModuleModel()
+        let horizonModule = HorizonModuleModel()
+        let timerModule = TimerModuleModel(timerController: horizonModule.timerController)
+        let shelfModule = ShelfModuleModel(horizonModule: horizonModule)
+        let systemModule = SystemModuleModel(horizonModule: horizonModule)
+        let diagnosticsModule = DiagnosticsModuleModel(agentsModule: agentsModule)
         IslandDefaults.migrateLegacyValues()
-        let allModules: [any IslandModule] = [codexFanModule, clashModule, playerModule, xPostModule]
+        let allModules: [any IslandModule] = [
+            agentsModule,
+            playerModule,
+            horizonModule,
+            timerModule,
+            shelfModule,
+            systemModule,
+        ]
         let defaults = UserDefaults.standard
         let loadedEnabledModuleIDs = Self.loadEnabledModuleIDs(defaults: defaults, availableModules: allModules)
 
-        self.codexFanModule = codexFanModule
-        self.clashModule = clashModule
+        self.agentsModule = agentsModule
         self.playerModule = playerModule
-        self.xPostModule = xPostModule
+        self.horizonModule = horizonModule
+        self.timerModule = timerModule
+        self.shelfModule = shelfModule
+        self.systemModule = systemModule
+        self.diagnosticsModule = diagnosticsModule
         self.moduleRegistry = IslandModuleRegistry(modules: allModules)
-        self.isAudioMuted = defaults.bool(forKey: IslandDefaults.audioMutedKey)
+        self.isAudioMuted = defaults.object(forKey: IslandDefaults.audioMutedKey) as? Bool ?? true
+        self.hideInFullscreen = defaults.object(forKey: IslandDefaults.hideInFullscreenKey) as? Bool ?? true
+        self.detachedModeEnabled = defaults.bool(forKey: IslandDefaults.detachedModeKey)
         self.launchAtLoginEnabled = defaults.bool(forKey: IslandDefaults.launchAtLoginKey)
         self.interfaceLanguage = IslandInterfaceLanguage(
             rawValue: defaults.string(forKey: IslandDefaults.interfaceLanguageKey) ?? ""
         ) ?? .followSystem
-        self.windDriveLogoPreset = WindDriveLogoPreset(
-            rawValue: defaults.string(forKey: IslandDefaults.windDriveLogoPresetKey) ?? ""
-        ) ?? .defaultMark
-        self.usesCustomWindDriveLogo = defaults.bool(forKey: IslandDefaults.windDriveUsesCustomLogoKey)
-        self.windDriveCustomLogoPath = defaults.string(forKey: IslandDefaults.windDriveCustomLogoPathKey) ?? ""
-        self.showsExpandedWindDrivePanel =
-            defaults.object(forKey: IslandDefaults.windDriveShowsExpandedPanelKey) as? Bool ?? true
         self.enabledModuleIDs = loadedEnabledModuleIDs
-        self.selectedModuleID = loadedEnabledModuleIDs.first ?? codexFanModule.id
-        self.windDriveCustomLogoImage = Self.loadImage(at: windDriveCustomLogoPath)
+        self.selectedModuleID = loadedEnabledModuleIDs.contains(agentsModule.id)
+            ? agentsModule.id
+            : (allModules.first { loadedEnabledModuleIDs.contains($0.id) }?.id ?? agentsModule.id)
+        Self.migrateSystemCollapsedSummary(defaults: defaults)
+        self.collapsedSummaryConfiguration = CollapsedSummaryConfiguration.load()
         normalizeSelectedModuleID()
         refreshLaunchAtLoginState()
 
         audioController.setMuted(isAudioMuted)
         bindModules()
+        bindSystemMonitors()
         refreshFromModules(now: .now)
-        shellController.show(using: self)
+        refreshShellVisibility()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.shellController.show(using: self)
+        }
         _ = globalHotKeyController
+    }
+
+    var agentsShortcutDisplayText: String {
+        IslandAgentsShortcut.displayText
+    }
+
+    var previousModuleShortcutDisplayText: String {
+        IslandPreviousModuleShortcut.displayText
+    }
+
+    var nextModuleShortcutDisplayText: String {
+        IslandNextModuleShortcut.displayText
+    }
+
+    var detachedModeShortcutDisplayText: String {
+        IslandDetachedModeShortcut.displayText
     }
 
     var modules: [any IslandModule] {
@@ -189,7 +276,7 @@ final class IslandAppModel: ObservableObject {
         enabledModules.first(where: { $0.id == selectedModuleID })
             ?? enabledModules.first
             ?? moduleRegistry.module(id: selectedModuleID)
-            ?? codexFanModule
+            ?? agentsModule
     }
 
     var logicalPresentationState: IslandPresentationState {
@@ -264,7 +351,6 @@ final class IslandAppModel: ObservableObject {
 
     var visibleCompactModules: [CompactModuleSummary] {
         let compactModuleOrder: [String] = [
-            ClashModuleModel.moduleID,
             CodexModuleModel.moduleID,
         ]
         let supportedCompactModuleIDs = Set(compactModuleOrder)
@@ -274,18 +360,14 @@ final class IslandAppModel: ObservableObject {
                 return nil
             }
 
-            if module.id == ClashModuleModel.moduleID,
-               let trafficItem = module.collapsedSummaryItems.first(where: { $0.id == "\(module.id).summary.traffic" }),
-               collapsedSummaryConfiguration.isVisible(trafficItem) {
+            if module.id == CodexModuleModel.moduleID {
+                let indicators = agentsModule.closedAgentIndicators
                 return CompactModuleSummary(
                     moduleID: module.id,
                     title: module.title,
                     symbolName: module.symbolName,
                     iconAssetName: module.iconAssetName,
-                    content: .clashTraffic(
-                        upload: clashModule.uploadRateText,
-                        download: clashModule.downloadRateText
-                    )
+                    content: .agentGrid(indicators.visible, overflow: indicators.overflow)
                 )
             }
 
@@ -313,15 +395,6 @@ final class IslandAppModel: ObservableObject {
         modules.flatMap { $0.collapsedSummaryItems }
     }
 
-    var isSpinning: Bool { activityState.isSpinning }
-    var fanAnimationState: IslandFanAnimationState {
-        IslandFanAnimationState(
-            anchorDate: spinAnchorDate,
-            anchorDegrees: spinAnchorDegrees,
-            rotationPeriod: activityState.rotationPeriod,
-            isSpinning: activityState.isSpinning
-        )
-    }
     var audioToggleSymbolName: String {
         isAudioMuted ? "speaker.slash.circle.fill" : "speaker.wave.2.circle.fill"
     }
@@ -422,40 +495,19 @@ final class IslandAppModel: ObservableObject {
                 && activity.kind == .actionRequired
         }
     }
-    var windDriveLogoDisplayPath: String? {
-        guard usesCustomWindDriveLogo, !windDriveCustomLogoPath.isEmpty else {
-            return nil
-        }
-
-        return windDriveCustomLogoPath
-    }
-    var canUseCustomWindDriveLogo: Bool { windDriveCustomLogoImage != nil }
     var expandShortcutDisplayText: String { IslandExpandShortcut.displayText }
-    var twitterShortcutDisplayText: String { IslandTwitterShortcut.displayText }
     var resolvedLocale: Locale {
-        if let localeIdentifier = interfaceLanguage.localeIdentifier {
-            return Locale(identifier: localeIdentifier)
-        }
-
-        return .autoupdatingCurrent
+        Locale(identifier: "en")
     }
 
     func closedSurfaceWidth(baseCompactWidth: CGFloat, hardwareNotchExclusionWidth: CGFloat = 0) -> CGFloat {
-        let moduleSpacing = CodexIslandChromeMetrics.closedModuleSpacing
-        let horizontalPadding = CodexIslandChromeMetrics.closedHorizontalPadding * 2
-        let fanWidth: CGFloat = 20
-        let minimumGapAfterFan = CodexIslandChromeMetrics.closedFanModuleSpacing
-        let modulesWidth = visibleCompactModules.reduce(0) { $0 + $1.estimatedWidth }
-        let totalModuleSpacing = CGFloat(max(visibleCompactModules.count - 1, 0)) * moduleSpacing
-
+        let contentWidth = visibleCompactModules.first?.estimatedWidth ?? 0
         if hardwareNotchExclusionWidth > 0 {
-            let wingRequiredWidth = fanWidth + horizontalPadding + 4
-            let preferredWidth = hardwareNotchExclusionWidth + (wingRequiredWidth * 2)
-            return max(baseCompactWidth + 92, preferredWidth)
+            let wingWidth = max(36, min(54, contentWidth + 8))
+            return max(baseCompactWidth, hardwareNotchExclusionWidth + (wingWidth * 2))
         }
 
-        let preferredWidth = horizontalPadding + fanWidth + minimumGapAfterFan + modulesWidth + totalModuleSpacing
-        return max(baseCompactWidth + 92, 332, preferredWidth)
+        return max(baseCompactWidth, contentWidth + 28, 112)
     }
 
     func expandIsland(reason: IslandOpenReason = .manualTap) {
@@ -470,6 +522,7 @@ final class IslandAppModel: ObservableObject {
         openReason = reason
         if !reason.isNotification {
             presentedActivity = nil
+            prepareModuleForUserIntent(selectedModuleID)
         }
         islandPeeking = false
         setIslandExpanded(true, shouldReposition: false)
@@ -548,15 +601,6 @@ final class IslandAppModel: ObservableObject {
         }
     }
 
-    func openTwitterComposerFromShortcut() {
-        NSApplication.shared.activate(ignoringOtherApps: true)
-        selectModule(id: XPostModuleModel.moduleID)
-        if !islandExpanded {
-            expandIsland(reason: .shortcut)
-        }
-        xPostModule.requestComposerFocus()
-    }
-
     func beginIslandCollapseAnimation() {
         lockExpandedLayoutHeight()
         islandCollapseAnimationInFlight = true
@@ -576,6 +620,7 @@ final class IslandAppModel: ObservableObject {
             let fromState = logicalPresentationState
             let didChange = selectedModuleID != id
             selectedModuleID = id
+            prepareModuleForUserIntent(id)
             if didChange {
                 reconcileActivities(allowAutoPresentation: false)
             }
@@ -607,7 +652,87 @@ final class IslandAppModel: ObservableObject {
         }
     }
 
+    func selectAdjacentModule(offset: Int) {
+        guard offset != 0,
+              !islandLayoutTransitionInFlight else {
+            return
+        }
+
+        let modules = enabledModules
+        let count = modules.count
+        guard count > 1 else {
+            return
+        }
+
+        guard let selectedIndex = modules.firstIndex(where: { $0.id == selectedModuleID }) else {
+            selectModule(id: modules[0].id)
+            return
+        }
+
+        let step = offset > 0 ? 1 : -1
+        let nextIndex = (selectedIndex + step + count) % count
+        guard nextIndex != selectedIndex else {
+            return
+        }
+
+        selectModule(id: modules[nextIndex].id)
+    }
+
+    @discardableResult
+    func selectAdjacentModuleFromPointer(offset: Int, now: Date = .now) -> Bool {
+        guard islandExpanded,
+              now.timeIntervalSince(lastPointerModuleSwitchAt) >= pointerModuleSwitchThrottle else {
+            return false
+        }
+
+        let previousModuleID = selectedModuleID
+        selectAdjacentModule(offset: offset)
+        let didSwitch = selectedModuleID != previousModuleID
+        if didSwitch {
+            lastPointerModuleSwitchAt = now
+        }
+        return didSwitch
+    }
+
+    func selectAdjacentModuleFromShortcut(offset: Int) {
+        selectAdjacentModule(offset: offset)
+        if !islandExpanded {
+            expandIsland(reason: .shortcut)
+        }
+    }
+
+    func prepareShelfForFileDrop() {
+        if !enabledModuleIDs.contains(ShelfModuleModel.moduleID) {
+            enabledModuleIDs.insert(ShelfModuleModel.moduleID)
+            persistEnabledModuleIDs()
+        }
+
+        selectModule(id: ShelfModuleModel.moduleID)
+        if !islandExpanded {
+            expandIsland(reason: .hover)
+        }
+    }
+
+    func addFilesToShelf(_ urls: [URL]) {
+        guard !urls.isEmpty else {
+            return
+        }
+
+        prepareShelfForFileDrop()
+        shelfModule.horizonModule.addShelfURLs(urls)
+    }
+
     func updateMeasuredModuleContentHeight(
+        _ height: CGFloat,
+        for moduleID: String,
+        presentation: IslandModulePresentationContext
+    ) {
+        DispatchQueue.main.async { [weak self] in
+            self?.applyMeasuredModuleContentHeight(height, for: moduleID, presentation: presentation)
+        }
+    }
+
+    private func applyMeasuredModuleContentHeight(
         _ height: CGFloat,
         for moduleID: String,
         presentation: IslandModulePresentationContext
@@ -615,7 +740,6 @@ final class IslandAppModel: ObservableObject {
         guard height > 0 else {
             return
         }
-
         let measurementKey = moduleContentMeasurementKey(for: moduleID, presentation: presentation)
         let previousHeight = measuredModuleContentHeights[measurementKey] ?? 0
         guard abs(previousHeight - height) >= 2 else {
@@ -661,12 +785,51 @@ final class IslandAppModel: ObservableObject {
     }
 
     func toggleAudioMuted() {
-        isAudioMuted.toggle()
+        setAgentSoundsEnabled(isAudioMuted)
+    }
+
+    func setAgentSoundsEnabled(_ enabled: Bool) {
+        isAudioMuted = !enabled
         UserDefaults.standard.set(isAudioMuted, forKey: IslandDefaults.audioMutedKey)
         audioController.setMuted(isAudioMuted)
-        if !isAudioMuted {
-            syncAudioState()
+    }
+
+    func setHideInFullscreen(_ enabled: Bool) {
+        hideInFullscreen = enabled
+        UserDefaults.standard.set(enabled, forKey: IslandDefaults.hideInFullscreenKey)
+        refreshShellVisibility()
+    }
+
+    func setDetachedModeEnabled(_ enabled: Bool) {
+        guard detachedModeEnabled != enabled else {
+            return
         }
+
+        detachedModeEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: IslandDefaults.detachedModeKey)
+        shellController.reposition(refreshRootView: true)
+    }
+
+    func toggleDetachedModeFromShortcut() {
+        setDetachedModeEnabled(!detachedModeEnabled)
+        if detachedModeEnabled, !islandExpanded {
+            expandIsland(reason: .shortcut)
+        }
+    }
+
+    func openAgentsFromShortcut() {
+        guard enabledModuleIDs.contains(agentsModule.id) else {
+            return
+        }
+
+        let wasAlreadyExpandedOnAgents = islandExpanded && selectedModuleID == agentsModule.id
+        selectedModuleID = agentsModule.id
+        if wasAlreadyExpandedOnAgents {
+            collapseIsland()
+            return
+        }
+
+        expandIsland(reason: .shortcut)
     }
 
     func setLaunchAtLoginEnabled(_ enabled: Bool) {
@@ -687,51 +850,6 @@ final class IslandAppModel: ObservableObject {
     func setInterfaceLanguage(_ language: IslandInterfaceLanguage) {
         interfaceLanguage = language
         UserDefaults.standard.set(language.rawValue, forKey: IslandDefaults.interfaceLanguageKey)
-    }
-
-    func setWindDriveLogoPreset(_ preset: WindDriveLogoPreset) {
-        windDriveLogoPreset = preset
-        usesCustomWindDriveLogo = false
-        let defaults = UserDefaults.standard
-        defaults.set(preset.rawValue, forKey: IslandDefaults.windDriveLogoPresetKey)
-        defaults.set(false, forKey: IslandDefaults.windDriveUsesCustomLogoKey)
-    }
-
-    func selectCustomWindDriveLogo() {
-        let panel = NSOpenPanel()
-        panel.title = NSLocalizedString("Choose a Wind Drive Logo", comment: "")
-        panel.prompt = NSLocalizedString("Use Image", comment: "")
-        panel.canChooseDirectories = false
-        panel.canCreateDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.image]
-
-        guard panel.runModal() == .OK, let url = panel.url else {
-            return
-        }
-
-        let path = url.path
-        windDriveCustomLogoPath = path
-        windDriveCustomLogoImage = Self.loadImage(at: path)
-        usesCustomWindDriveLogo = windDriveCustomLogoImage != nil
-
-        let defaults = UserDefaults.standard
-        defaults.set(path, forKey: IslandDefaults.windDriveCustomLogoPathKey)
-        defaults.set(usesCustomWindDriveLogo, forKey: IslandDefaults.windDriveUsesCustomLogoKey)
-    }
-
-    func clearCustomWindDriveLogo() {
-        usesCustomWindDriveLogo = false
-        UserDefaults.standard.set(false, forKey: IslandDefaults.windDriveUsesCustomLogoKey)
-    }
-
-    func setShowsExpandedWindDrivePanel(_ showsPanel: Bool) {
-        showsExpandedWindDrivePanel = showsPanel
-        UserDefaults.standard.set(showsPanel, forKey: IslandDefaults.windDriveShowsExpandedPanelKey)
-
-        if !islandLayoutTransitionInFlight {
-            shellController.reposition()
-        }
     }
 
     func isModuleEnabled(_ moduleID: String) -> Bool {
@@ -804,11 +922,17 @@ final class IslandAppModel: ObservableObject {
         NSApplication.shared.terminate(nil)
     }
 
+    func adjustHUDOverlay(to level: Float) {
+        volumeHUDMonitor.setOverlayLevel(level)
+    }
+
     private func bindModules() {
-        bindModule(codexFanModule)
-        bindModule(clashModule)
+        bindModule(agentsModule)
         bindModule(playerModule)
-        bindModule(xPostModule)
+        bindModule(horizonModule)
+        bindModule(timerModule)
+        bindModule(shelfModule)
+        bindModule(systemModule)
 
         designTokenStore.objectWillChange
             .sink { [weak self] _ in
@@ -824,6 +948,66 @@ final class IslandAppModel: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+    }
+
+    private func bindSystemMonitors() {
+        volumeHUDMonitor.$overlay
+            .receive(on: RunLoop.main)
+            .sink { [weak self] overlay in
+                guard let self else {
+                    return
+                }
+
+                hudOverlay = overlay
+                shellController.refreshInteractivity()
+            }
+            .store(in: &cancellables)
+
+        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.volumeHUDMonitor.refreshOverlayVisibility()
+                if self?.hudOverlay == nil {
+                    self?.shellController.refreshInteractivity()
+                    self?.objectWillChange.send()
+                }
+            }
+        }
+        hudVisibilityTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+
+        workspaceActivationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.refreshShellVisibility()
+            }
+        }
+    }
+
+    private func refreshShellVisibility() {
+        let hasUrgentAgentIntervention = allActivities.contains {
+            $0.moduleID == CodexModuleModel.moduleID && $0.kind == .actionRequired
+        }
+        let shouldHide = hideInFullscreen
+            && !hasUrgentAgentIntervention
+            && IslandFullscreenMonitor.frontmostAppIsFullscreen()
+        if shouldHide {
+            guard !shellHiddenForFullscreen else {
+                return
+            }
+            shellHiddenForFullscreen = true
+            shellController.hide()
+            return
+        }
+
+        guard shellHiddenForFullscreen else {
+            return
+        }
+
+        shellHiddenForFullscreen = false
+        shellController.show(using: self)
     }
 
     private func bindModule<Module: IslandModule & ObservableObject>(_ module: Module)
@@ -845,6 +1029,7 @@ final class IslandAppModel: ObservableObject {
 
                     self.objectWillChange.send()
                     self.refreshFromModules(now: .now)
+                    self.refreshShellVisibility()
                 }
             }
             .store(in: &cancellables)
@@ -1084,42 +1269,20 @@ final class IslandAppModel: ObservableObject {
     }
 
     private func refreshFromModules(now: Date) {
-        let previousState = activityState
-        let preservedRotation = normalizedRotation(
-            FanRotationMath.degrees(
-                anchorDate: spinAnchorDate,
-                anchorDegrees: spinAnchorDegrees,
-                rotationPeriod: previousState.rotationPeriod,
-                isSpinning: previousState.isSpinning,
-                at: now
-            )
-        )
         let delta = min(max(now.timeIntervalSince(lastAggregateRefreshAt), 0), 2.0)
         lastAggregateRefreshAt = now
 
         let aggregated = TaskActivityAggregator.aggregate(modules.map { $0.taskActivityContribution })
-        let speedTier = FanSpeedTier.resolve(
-            hasActivitySource: aggregated.supportsIdleSpin,
-            inProgressTaskCount: aggregated.inProgressTaskCount
-        )
         let decayFactor = pow(0.92, delta / 0.2)
         displayedScore = max(aggregated.activityScore, displayedScore * decayFactor)
-        activityState = FanActivityState(
+        activityState = AgentActivityState(
             activityScore: displayedScore,
-            isSpinning: speedTier.isSpinning,
-            rotationPeriod: speedTier.rotationPeriod,
             activeSessionCount: aggregated.activeTaskCount,
             inProgressSessionCount: aggregated.inProgressTaskCount,
             busySessionCount: aggregated.busyTaskCount,
             lastEventAt: aggregated.lastEventAt
         )
 
-        updateSpinAnchor(
-            previousState: previousState,
-            nextState: activityState,
-            preservedRotation: preservedRotation,
-            now: now
-        )
         reconcileActivities(allowAutoPresentation: true)
         rebuildStableRenderSnapshots()
         syncAudioState()
@@ -1334,6 +1497,7 @@ final class IslandAppModel: ObservableObject {
         }
 
         selectedModuleID = activity.moduleID
+        prepareModuleForUserIntent(activity.moduleID)
     }
 
     private func updateNotificationAutoCollapse() {
@@ -1461,41 +1625,17 @@ final class IslandAppModel: ObservableObject {
     }
 #endif
 
-    private func updateSpinAnchor(
-        previousState: FanActivityState,
-        nextState: FanActivityState,
-        preservedRotation: Double,
-        now: Date
-    ) {
-        guard nextState.isSpinning else {
-            spinAnchorDate = now
-            spinAnchorDegrees = preservedRotation
-            return
-        }
-
-        if !previousState.isSpinning || FanRotationMath.shouldRetuneRotationPeriod(
-            from: previousState.rotationPeriod,
-            to: nextState.rotationPeriod,
-            threshold: islandFanRotationRetuneThreshold
-        ) {
-            spinAnchorDate = now
-            spinAnchorDegrees = preservedRotation
-        }
-    }
-
     private func syncAudioState() {
+        let approvalCount = allActivities.filter { $0.kind == .actionRequired }.count
+        let completedCount = allActivities.filter { $0.id.contains(".activity.completed.") }.count
+
         if !hasPrimedAudioState {
-            audioController.primePlayback(inProgressSessionCount: activityState.inProgressSessionCount)
+            audioController.primePlayback(approvalCount: approvalCount, completedCount: completedCount)
             hasPrimedAudioState = true
             return
         }
 
-        audioController.syncPlayback(inProgressSessionCount: activityState.inProgressSessionCount)
-    }
-
-    private func normalizedRotation(_ degrees: Double) -> Double {
-        let normalized = degrees.truncatingRemainder(dividingBy: 360)
-        return normalized >= 0 ? normalized : normalized + 360
+        audioController.syncPlayback(approvalCount: approvalCount, completedCount: completedCount)
     }
 
     private func flushDeferredAggregateRefreshIfNeeded() {
@@ -1593,6 +1733,15 @@ final class IslandAppModel: ObservableObject {
 
         switch resolvedPresentation {
         case .standard, .activity:
+            guard module.allowsInternalScrolling else {
+                return max(
+                    measuredContentHeight
+                    + CodexIslandChromeMetrics.moduleChromeHeight
+                    + CodexIslandChromeMetrics.expandedContentBottomPadding,
+                    maximumHeight
+                )
+            }
+
             return min(
                 max(
                     measuredContentHeight
@@ -1614,9 +1763,7 @@ final class IslandAppModel: ObservableObject {
         case .peek:
             return 0
         case .standard, .activity:
-            return showsExpandedWindDrivePanel
-                ? CodexIslandChromeMetrics.minimumExpandedHeightWithWindDrivePanel
-                : 0
+            return 0
         }
     }
 
@@ -1672,15 +1819,69 @@ final class IslandAppModel: ObservableObject {
     ) -> Set<String> {
         let availableIDs = Set(availableModules.map(\.id))
         let storedIDs = Set(defaults.stringArray(forKey: IslandDefaults.enabledModuleIDsKey) ?? [])
-        let sanitizedIDs = availableIDs.intersection(storedIDs)
-        return sanitizedIDs.isEmpty ? availableIDs : sanitizedIDs
-    }
+        let defaultIDs: Set<String> = [
+            CodexModuleModel.moduleID,
+            PlayerModuleModel.moduleID,
+            HorizonModuleModel.moduleID,
+            TimerModuleModel.moduleID,
+            ShelfModuleModel.moduleID,
+            SystemModuleModel.moduleID,
+        ]
+        let sanitizedDefaults = availableIDs.intersection(defaultIDs)
 
-    private static func loadImage(at path: String) -> NSImage? {
-        guard !path.isEmpty else {
-            return nil
+        guard !storedIDs.isEmpty else {
+            return sanitizedDefaults.isEmpty ? availableIDs : sanitizedDefaults
         }
 
-        return NSImage(contentsOf: URL(fileURLWithPath: path))
+        var sanitizedIDs = availableIDs.intersection(storedIDs)
+        if defaults.object(forKey: IslandDefaults.horizonUtilityModulesMigrationKey) == nil,
+           sanitizedIDs.contains(HorizonModuleModel.moduleID) {
+            sanitizedIDs.insert(TimerModuleModel.moduleID)
+            sanitizedIDs.insert(ShelfModuleModel.moduleID)
+            defaults.set(Array(sanitizedIDs), forKey: IslandDefaults.enabledModuleIDsKey)
+        }
+        defaults.set(true, forKey: IslandDefaults.horizonUtilityModulesMigrationKey)
+        if defaults.object(forKey: IslandDefaults.systemModuleMigrationKey) == nil,
+           sanitizedIDs.contains(HorizonModuleModel.moduleID) {
+            sanitizedIDs.insert(SystemModuleModel.moduleID)
+            defaults.set(Array(sanitizedIDs), forKey: IslandDefaults.enabledModuleIDsKey)
+        }
+        defaults.set(true, forKey: IslandDefaults.systemModuleMigrationKey)
+        sanitizedIDs.remove("xpost")
+        defaults.set(true, forKey: IslandDefaults.xPostModuleMigrationKey)
+        sanitizedIDs.remove(DiagnosticsModuleModel.moduleID)
+        defaults.set(true, forKey: IslandDefaults.diagnosticsModuleMigrationKey)
+        defaults.set(Array(sanitizedIDs), forKey: IslandDefaults.enabledModuleIDsKey)
+        return sanitizedIDs.isEmpty ? (sanitizedDefaults.isEmpty ? availableIDs : sanitizedDefaults) : sanitizedIDs
     }
+
+    private static func migrateSystemCollapsedSummary(defaults: UserDefaults) {
+        guard defaults.object(forKey: IslandDefaults.systemCollapsedSummaryMigrationKey) == nil else {
+            return
+        }
+
+        defer {
+            defaults.set(true, forKey: IslandDefaults.systemCollapsedSummaryMigrationKey)
+        }
+
+        let legacyBatteryID = "\(HorizonModuleModel.moduleID).summary.battery"
+        let systemBatteryID = "\(SystemModuleModel.moduleID).summary.battery"
+        guard var storedIDs = defaults.stringArray(forKey: IslandDefaults.collapsedSummaryVisibleIDsKey),
+              storedIDs.contains(legacyBatteryID),
+              !storedIDs.contains(systemBatteryID) else {
+            return
+        }
+
+        storedIDs.append(systemBatteryID)
+        defaults.set(storedIDs, forKey: IslandDefaults.collapsedSummaryVisibleIDsKey)
+    }
+
+    private func prepareModuleForUserIntent(_ moduleID: String) {
+        if moduleID == HorizonModuleModel.moduleID {
+            horizonModule.activateForUserIntent()
+        } else if moduleID == SystemModuleModel.moduleID {
+            systemModule.refresh()
+        }
+    }
+
 }

@@ -25,37 +25,36 @@ import SwiftUI
 // Modified for Fantastic Island on 2026-04-13.
 @MainActor
 enum CodexIslandChromeMetrics {
-    static let defaultOpenedShadowHorizontalInset: CGFloat = 18
-    static let defaultOpenedShadowBottomInset: CGFloat = 0 // 展开态外层阴影为面板额外占用的底部空间
-    static let defaultOpenedSurfaceBottomInset: CGFloat = 0 // 展开态黑色壳体本身相对底边预留的安全距离
-    static let defaultOpenedSurfaceContentHorizontalInset: CGFloat = 22
-    static let defaultClosedHoverScale: CGFloat = 1.028
-    static let defaultClosedHorizontalPadding: CGFloat = 20
-    static let defaultClosedFanModuleSpacing: CGFloat = 16
-    static let defaultClosedModuleSpacing: CGFloat = 8
-    static let defaultClosedModuleContentSpacing: CGFloat = 8
-    static let defaultClosedIconSize: CGFloat = 18
+    static let defaultOpenedShadowHorizontalInset: CGFloat = 0
+    static let defaultOpenedShadowBottomInset: CGFloat = 0
+    static let defaultOpenedSurfaceBottomInset: CGFloat = 0
+    static let defaultOpenedSurfaceContentHorizontalInset: CGFloat = 14
+    static let defaultClosedHoverScale: CGFloat = 1.014
+    static let defaultClosedHorizontalPadding: CGFloat = 14
+    static let defaultClosedModuleSpacing: CGFloat = 6
+    static let defaultClosedModuleContentSpacing: CGFloat = 6
+    static let defaultClosedIconSize: CGFloat = 16
     static let defaultClosedPrimaryFontSize: CGFloat = 10
-    static let defaultClosedTrafficFontSize: CGFloat = 8.5
-    static let defaultClosedTrafficLineSpacing: CGFloat = 1
+    static let defaultClosedSecondaryFontSize: CGFloat = 8.5
+    static let defaultClosedSecondaryLineSpacing: CGFloat = 1
     static let defaultOpenedBodyRevealDelay: CGFloat = 0.05
     static let defaultOpenLayoutSettleDuration: CGFloat = 0.46
     static let defaultCloseLayoutSettleDuration: CGFloat = 0.3
 
-    static let defaultExpandedContentBottomPadding: CGFloat = 20
-    static let defaultExpandedContentTopPadding: CGFloat = 10
+    static let defaultExpandedContentBottomPadding: CGFloat = 14
+    static let defaultExpandedContentTopPadding: CGFloat = 8
 
-    static let defaultModuleColumnSpacing: CGFloat = 20
-    static let defaultModuleNavigationRowHeight: CGFloat = 38
+    static let defaultModuleColumnSpacing: CGFloat = 12
+    static let defaultModuleNavigationRowHeight: CGFloat = 28
 
-    static let defaultModuleTabSpacing: CGFloat = 10
-    static let defaultModuleTabHorizontalPadding: CGFloat = 16
-    static let defaultModuleTabVerticalPadding: CGFloat = 9
-    static let defaultModuleHeaderToolbarSpacing: CGFloat = 16
-    static let defaultModuleToolbarButtonGroupSpacing: CGFloat = 12
+    static let defaultModuleTabSpacing: CGFloat = 6
+    static let defaultModuleTabHorizontalPadding: CGFloat = 10
+    static let defaultModuleTabVerticalPadding: CGFloat = 5
+    static let defaultModuleHeaderToolbarSpacing: CGFloat = 8
+    static let defaultModuleToolbarButtonGroupSpacing: CGFloat = 8
 
-    static let defaultPreferredTallModuleOpenedContentHeight: CGFloat = 560 // 高内容模块的默认目标展开高度
-    static let defaultMinimumExpandedContentWidthWithoutWindDrivePanel: CGFloat = 520
+    static let defaultPreferredTallModuleOpenedContentHeight: CGFloat = 460
+    static let defaultMinimumExpandedContentWidth: CGFloat = 424
 
     static var openedShadowHorizontalInset: CGFloat { CGFloat(IslandDesignTokenRuntime.current.shell.openedShadowHorizontalInset) }
     static var openedShadowBottomInset: CGFloat { CGFloat(IslandDesignTokenRuntime.current.shell.openedShadowBottomInset) }
@@ -63,14 +62,13 @@ enum CodexIslandChromeMetrics {
     static var openedSurfaceContentHorizontalInset: CGFloat { CGFloat(IslandDesignTokenRuntime.current.shell.openedSurfaceContentHorizontalInset) }
     static var closedHoverScale: CGFloat { CGFloat(IslandDesignTokenRuntime.current.shell.closedHoverScale) }
     static var closedHorizontalPadding: CGFloat { CGFloat(IslandDesignTokenRuntime.current.shell.closedHorizontalPadding) }
-    static var closedFanModuleSpacing: CGFloat { CGFloat(IslandDesignTokenRuntime.current.shell.closedFanModuleSpacing) }
     static var closedModuleSpacing: CGFloat { CGFloat(IslandDesignTokenRuntime.current.shell.closedModuleSpacing) }
     static var closedModuleContentSpacing: CGFloat { CGFloat(IslandDesignTokenRuntime.current.shell.closedModuleContentSpacing) }
     static var closedIconSize: CGFloat { CGFloat(IslandDesignTokenRuntime.current.shell.closedIconSize) }
     static var closedPrimaryFontSize: CGFloat { CGFloat(IslandDesignTokenRuntime.current.shell.closedPrimaryFontSize) }
-    static var closedTrafficFontSize: CGFloat { CGFloat(IslandDesignTokenRuntime.current.shell.closedTrafficFontSize) }
-    static var closedTrafficLineSpacing: CGFloat { CGFloat(IslandDesignTokenRuntime.current.shell.closedTrafficLineSpacing) }
-    static var compactClashTrafficBlockWidth: CGFloat { max(54, ceil(closedTrafficFontSize * 6.4)) }
+    static var closedSecondaryFontSize: CGFloat { CGFloat(IslandDesignTokenRuntime.current.shell.closedSecondaryFontSize) }
+    static var closedSecondaryLineSpacing: CGFloat { CGFloat(IslandDesignTokenRuntime.current.shell.closedSecondaryLineSpacing) }
+    static var compactSecondaryBlockWidth: CGFloat { max(54, ceil(closedSecondaryFontSize * 6.4)) }
     static var openedBodyRevealDelay: TimeInterval { IslandDesignTokenRuntime.current.shell.openedBodyRevealDelay }
     static var openLayoutSettleDuration: TimeInterval { IslandDesignTokenRuntime.current.shell.openLayoutSettleDuration }
     static var openedChromeRevealDelay: TimeInterval { openedBodyRevealDelay }
@@ -89,46 +87,26 @@ enum CodexIslandChromeMetrics {
     static var moduleHeaderToolbarSpacing: CGFloat { CGFloat(IslandDesignTokenRuntime.current.shell.moduleHeaderToolbarSpacing) }
     static var moduleToolbarButtonGroupSpacing: CGFloat { CGFloat(IslandDesignTokenRuntime.current.shell.moduleToolbarButtonGroupSpacing) }
 
-    static var windDrivePanelSide: CGFloat { CGFloat(IslandDesignTokenRuntime.current.windDrive.panelSide) }
     static var preferredTallModuleOpenedContentHeight: CGFloat { defaultPreferredTallModuleOpenedContentHeight }
-    static var minimumExpandedContentWidthWithoutWindDrivePanel: CGFloat {
-        defaultMinimumExpandedContentWidthWithoutWindDrivePanel
-    }
+    static var minimumExpandedContentWidth: CGFloat { defaultMinimumExpandedContentWidth }
 
     static var moduleChromeHeight: CGFloat =
         expandedContentTopPadding + moduleColumnSpacing + moduleNavigationRowHeight
-    static var windDrivePanelWidth: CGFloat { windDrivePanelSide }
-    static var windDrivePanelHeight: CGFloat { windDrivePanelSide }
-    static var hiddenWindDriveExpandedContentWidthReduction: CGFloat {
-        windDrivePanelWidth + moduleColumnSpacing
-    }
-    static var minimumExpandedHeightWithWindDrivePanel: CGFloat =
-        expandedContentTopPadding + windDrivePanelHeight + expandedContentBottomPadding
 
-    static func resolvedExpandedContentWidth(
-        baseContentWidth: CGFloat,
-        showsWindDrivePanel: Bool
-    ) -> CGFloat {
-        guard !showsWindDrivePanel else {
-            return baseContentWidth
-        }
-
-        return max(
-            minimumExpandedContentWidthWithoutWindDrivePanel,
-            baseContentWidth - hiddenWindDriveExpandedContentWidthReduction
-        )
+    static func resolvedExpandedContentWidth(baseContentWidth: CGFloat) -> CGFloat {
+        max(minimumExpandedContentWidth, baseContentWidth)
     }
 }
 
 @MainActor
 enum CodexIslandPeekMetrics {
-    static let defaultContentHorizontalInset: CGFloat = 16
-    static let defaultContentTopPadding: CGFloat = 10
-    static let defaultContentBottomPadding: CGFloat = 16
+    static let defaultContentHorizontalInset: CGFloat = 12
+    static let defaultContentTopPadding: CGFloat = 8
+    static let defaultContentBottomPadding: CGFloat = 12
 
-    static let defaultMinimumContentWidth: CGFloat = 420
-    static let defaultMaximumContentWidth: CGFloat = 480
-    static let defaultContentWidthFactor: CGFloat = 0.32
+    static let defaultMinimumContentWidth: CGFloat = 340
+    static let defaultMaximumContentWidth: CGFloat = 430
+    static let defaultContentWidthFactor: CGFloat = 0.28
 
     static let defaultOpenAnimationDuration: CGFloat = 0.3
     static let defaultCloseAnimationDuration: CGFloat = 0.26
@@ -156,7 +134,7 @@ enum CodexIslandPeekMetrics {
         max(
             closeAnimationDuration,
             closeAnimationDuration - closedHeaderRevealLeadTime + closedHeaderRevealDuration
-        ) // 等尾段所有可见动画结束后，再真正移除 peek 渲染快照，避免最后一拍卡顿
+        )
 
     static var openAnimation: Animation { .snappy(duration: openAnimationDuration, extraBounce: 0) }
     static var closeAnimation: Animation { .smooth(duration: closeAnimationDuration) }
