@@ -192,7 +192,7 @@ protocol IslandModule: AnyObject {
 extension IslandModule {
     var iconAssetName: String? { nil }
     var islandActivities: [IslandActivity] { [] }
-    var allowsInternalScrolling: Bool { true }
+    var allowsInternalScrolling: Bool { false }
 
     func preferredOpenedContentHeight(for presentation: IslandModulePresentationContext) -> CGFloat {
         preferredOpenedContentHeight

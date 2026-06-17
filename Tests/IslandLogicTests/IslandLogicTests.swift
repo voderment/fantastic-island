@@ -176,6 +176,12 @@ final class IslandLogicTests: XCTestCase {
         )
         XCTAssertEqual(secondDecision, .consume)
 
+        let cooldownGapDecision = gate.handle(
+            IslandHorizontalModuleSwipeEvent(horizontalDelta: 90, verticalDelta: 0, phaseBegan: true),
+            at: 10.65
+        )
+        XCTAssertEqual(cooldownGapDecision, .consume)
+
         let nextGestureDecision = gate.handle(
             IslandHorizontalModuleSwipeEvent(horizontalDelta: 64, verticalDelta: 0, phaseBegan: true),
             at: 10.8
@@ -992,6 +998,47 @@ final class IslandLogicTests: XCTestCase {
         XCTAssertEqual(payload.terminalJumpTarget?.conductorPort, 3777)
         XCTAssertEqual(payload.terminalJumpTarget?.detailLabel, "ws_123 · :3777")
         XCTAssertEqual(try XCTUnwrap(payload.terminalJumpTarget).conductorRoutingURL?.absoluteString, "http://127.0.0.1:3777")
+    }
+
+    func testSessionStoreReadsHelperPersistedConductorRecord() throws {
+        let rootURL = temporaryDirectory().appendingPathComponent("store", isDirectory: true)
+        let sessionDirectory = rootURL.appendingPathComponent("conductor", isDirectory: true)
+        try FileManager.default.createDirectory(at: sessionDirectory, withIntermediateDirectories: true)
+
+        let record: [String: Any] = [
+            "schemaVersion": 1,
+            "timestamp": "2026-06-17T01:00:00Z",
+            "provider": "conductor",
+            "payload": [
+                "source": "codex",
+                "terminal_app": "Conductor",
+                "terminal_bundle_identifier": "com.conductor.app",
+                "session_id": "helper-offline-conductor",
+                "cwd": "/tmp/fantastic-island",
+                "workspace_name": "belgrade",
+                "workspace_id": "ws_helper",
+                "conductor_port": "3999",
+                "hook_event_name": "PreToolUse",
+                "tool_name": "shell",
+                "tool_input": ["command": "swift test"],
+                "prompt": "Run the checks",
+            ],
+        ]
+        var data = try JSONSerialization.data(withJSONObject: record, options: [.sortedKeys])
+        data.append(UInt8(ascii: "\n"))
+        let recordURL = sessionDirectory.appendingPathComponent("helper-offline-conductor.jsonl")
+        try data.write(to: recordURL, options: .atomic)
+
+        let store = AgentSessionStore(rootURL: rootURL)
+        let stored = try XCTUnwrap(store.loadSession(at: recordURL, modifiedAt: Date(timeIntervalSince1970: 1_800_000_000)))
+
+        XCTAssertEqual(stored.provider, .conductor)
+        XCTAssertEqual(stored.phase, .busy)
+        XCTAssertEqual(stored.currentCommandPreview, "swift test")
+        XCTAssertEqual(stored.latestUserPrompt, "Run the checks")
+        XCTAssertEqual(stored.jumpTarget?.workspaceName, "belgrade")
+        XCTAssertEqual(stored.jumpTarget?.conductorRoutingURL?.absoluteString, "http://127.0.0.1:3999")
+        XCTAssertTrue(stored.modifiedAt.timeIntervalSince1970 == 1_800_000_000)
     }
 
     func testHookBridgeAcceptsPayloadAndReturnsDirective() throws {

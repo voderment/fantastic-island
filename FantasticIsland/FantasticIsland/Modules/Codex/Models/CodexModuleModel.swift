@@ -81,6 +81,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     let title = "Agents"
     let symbolName = "sparkles"
     let iconAssetName: String? = nil
+    let allowsInternalScrolling = true
 
     private let monitoringEngine = CodexMonitoringEngine()
     private let hookManager = CodexHookManager()

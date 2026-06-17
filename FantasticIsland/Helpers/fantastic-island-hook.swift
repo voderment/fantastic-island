@@ -132,6 +132,89 @@ func writeUsageCache(provider: String, data: Data) {
     try? data.write(to: url, options: .atomic)
 }
 
+func firstString(in object: [String: Any], keys: [String]) -> String? {
+    for key in keys {
+        if let value = object[key] as? String {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+    }
+
+    if let payload = object["payload"] as? [String: Any] {
+        return firstString(in: payload, keys: keys)
+    }
+
+    return nil
+}
+
+func sessionStoreProvider(for object: [String: Any]) -> String {
+    let bundleIdentifier = firstString(in: object, keys: ["terminal_bundle_identifier", "bundleIdentifier"])?.lowercased()
+    let terminalApp = firstString(in: object, keys: ["terminal_app", "terminalApp"])?.lowercased()
+    let source = firstString(in: object, keys: ["source"])?.lowercased()
+
+    if bundleIdentifier == "com.conductor.app" || terminalApp == "conductor" {
+        return "conductor"
+    }
+
+    switch source {
+    case "claude", "claudecode", "claude_code":
+        return "claudeCode"
+    case "cursor":
+        return "cursor"
+    case "antigravity":
+        return "antigravity"
+    case "conductor":
+        return "conductor"
+    default:
+        return "codex"
+    }
+}
+
+func safeFileName(_ value: String) -> String {
+    let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+    let scalars = value.unicodeScalars.map { scalar -> Character in
+        allowed.contains(scalar) ? Character(scalar) : "-"
+    }
+    let result = String(scalars).trimmingCharacters(in: CharacterSet(charactersIn: "-."))
+    return result.isEmpty ? UUID().uuidString : result
+}
+
+func writeSessionRecord(_ object: [String: Any]) {
+    guard let sessionID = firstString(in: object, keys: ["session_id", "sessionId", "sessionID", "id"]) else {
+        return
+    }
+
+    let provider = sessionStoreProvider(for: object)
+    let directory = URL(fileURLWithPath: NSHomeDirectory())
+        .appendingPathComponent("Library/Application Support/Fantastic Island/Agent Sessions", isDirectory: true)
+        .appendingPathComponent(provider, isDirectory: true)
+    try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+    let record: [String: Any] = [
+        "schemaVersion": 1,
+        "timestamp": ISO8601DateFormatter().string(from: Date()),
+        "provider": provider,
+        "payload": object,
+    ]
+
+    guard var data = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]) else {
+        return
+    }
+    data.append(UInt8(ascii: "\n"))
+
+    let url = directory.appendingPathComponent(safeFileName(sessionID)).appendingPathExtension("jsonl")
+    if FileManager.default.fileExists(atPath: url.path),
+       let handle = try? FileHandle(forWritingTo: url) {
+        _ = try? handle.seekToEnd()
+        _ = try? handle.write(contentsOf: data)
+        _ = try? handle.close()
+    } else {
+        try? data.write(to: url, options: .atomic)
+    }
+}
+
 var input = FileHandle.standardInput.readDataToEndOfFile()
 
 if let usageProvider = argumentValue(after: "--usage-provider") {
@@ -193,6 +276,7 @@ if var object = (try? JSONSerialization.jsonObject(with: input)) as? [String: An
     if let data = try? JSONSerialization.data(withJSONObject: object) {
         input = data
     }
+    writeSessionRecord(object)
 }
 
 let socketPath = NSHomeDirectory() + "/Library/Application Support/Fantastic Island/hook-bridge.sock"

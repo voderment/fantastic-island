@@ -39,6 +39,13 @@ struct IslandHorizontalModuleSwipeGate {
             return isVerticalIntent(event) ? .passThrough : .consume
         }
 
+        if event.phaseBegan,
+           hasSwitchedDuringGesture,
+           now - lastSwitchAt <= postSwitchIdleResetDelay {
+            lastScrollEventAt = now
+            return isVerticalIntent(event) ? .passThrough : .consume
+        }
+
         if event.phaseBegan {
             resetGestureState()
         }
