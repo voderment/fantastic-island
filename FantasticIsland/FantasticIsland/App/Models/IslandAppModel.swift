@@ -135,7 +135,6 @@ final class IslandAppModel: ObservableObject {
     let shelfModule: ShelfModuleModel
     let systemModule: SystemModuleModel
     let diagnosticsModule: DiagnosticsModuleModel
-    let postModule: XPostModuleModel
     let moduleRegistry: IslandModuleRegistry
     let designTokenStore = IslandDebugTokenStore()
 
@@ -201,7 +200,6 @@ final class IslandAppModel: ObservableObject {
         let shelfModule = ShelfModuleModel(horizonModule: horizonModule)
         let systemModule = SystemModuleModel(horizonModule: horizonModule)
         let diagnosticsModule = DiagnosticsModuleModel(agentsModule: agentsModule)
-        let postModule = XPostModuleModel()
         IslandDefaults.migrateLegacyValues()
         let allModules: [any IslandModule] = [
             agentsModule,
@@ -221,7 +219,6 @@ final class IslandAppModel: ObservableObject {
         self.shelfModule = shelfModule
         self.systemModule = systemModule
         self.diagnosticsModule = diagnosticsModule
-        self.postModule = postModule
         self.moduleRegistry = IslandModuleRegistry(modules: allModules)
         self.isAudioMuted = defaults.object(forKey: IslandDefaults.audioMutedKey) as? Bool ?? true
         self.hideInFullscreen = defaults.object(forKey: IslandDefaults.hideInFullscreenKey) as? Bool ?? true
@@ -932,7 +929,6 @@ final class IslandAppModel: ObservableObject {
         bindModule(timerModule)
         bindModule(shelfModule)
         bindModule(systemModule)
-        bindModule(postModule)
 
         designTokenStore.objectWillChange
             .sink { [weak self] _ in
@@ -1841,7 +1837,7 @@ final class IslandAppModel: ObservableObject {
             defaults.set(Array(sanitizedIDs), forKey: IslandDefaults.enabledModuleIDsKey)
         }
         defaults.set(true, forKey: IslandDefaults.systemModuleMigrationKey)
-        sanitizedIDs.remove(XPostModuleModel.moduleID)
+        sanitizedIDs.remove("xpost")
         defaults.set(true, forKey: IslandDefaults.xPostModuleMigrationKey)
         sanitizedIDs.remove(DiagnosticsModuleModel.moduleID)
         defaults.set(true, forKey: IslandDefaults.diagnosticsModuleMigrationKey)

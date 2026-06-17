@@ -285,8 +285,6 @@ struct IslandSettingsView: View {
                             detail: "Shows provider hook readiness, quota bridge status, app-server status, and compact repair actions directly in the island."
                         )
                     }
-                case XPostModuleModel.moduleID:
-                    postModulePage
                 default:
                     SettingsCard(title: "Details") {
                         PlaceholderRow(
@@ -442,46 +440,6 @@ struct IslandSettingsView: View {
                         detail: "Battery reads local power state. Shelf supports AirDrop/share, open, and reveal."
                     ) {
                         StatusBadge(text: "Local", tint: Color(nsColor: .systemGreen))
-                    }
-                }
-            }
-        }
-    }
-
-    private var postModulePage: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            SettingsCard(title: "X Account") {
-                VStack(alignment: .leading, spacing: 14) {
-                    SettingsField(
-                        title: "OAuth 2.0 Client ID",
-                        prompt: "Client ID",
-                        text: Binding(
-                            get: { model.postModule.configuredClientID },
-                            set: { model.postModule.updateConfiguredClientID($0) }
-                        )
-                    )
-
-                    SettingsControlRow(
-                        title: "Account",
-                        detail: model.postModule.accountStatusText
-                    ) {
-                        StatusBadge(
-                            text: model.postModule.isAuthenticated ? "Signed In" : "Setup",
-                            tint: model.postModule.isAuthenticated ? Color(nsColor: .systemGreen) : Color(nsColor: .systemOrange)
-                        )
-                    }
-
-                    AdaptiveActionGroup {
-                        if model.postModule.isAuthenticated {
-                            SecondaryActionButton(title: "Disconnect", tint: Color.red.opacity(0.22)) {
-                                model.postModule.disconnect()
-                            }
-                        } else {
-                            ProminentActionButton(title: model.postModule.isSigningIn ? "Signing In..." : "Sign In") {
-                                model.postModule.signIn()
-                            }
-                            .disabled(!model.postModule.canSignIn)
-                        }
                     }
                 }
             }
@@ -707,8 +665,6 @@ struct IslandSettingsView: View {
             return "Drop files into a compact island shelf with quick open, reveal, share, and remove actions."
         case DiagnosticsModuleModel.moduleID:
             return "Keep hooks, quota bridges, and agent routing trustworthy without digging through Settings."
-        case XPostModuleModel.moduleID:
-            return "Draft and publish a compact text post without leaving the island."
         default:
             return nil
         }
