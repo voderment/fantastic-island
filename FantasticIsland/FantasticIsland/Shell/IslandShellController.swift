@@ -85,7 +85,7 @@ final class IslandShellController {
         computeNotchRect(screen: screen)
         panel.ignoresMouseEvents = !isPanelInteractive(for: model)
         panel.acceptsMouseMovedEvents = isPanelInteractive(for: model)
-        panel.orderFrontRegardless()
+        orderPanelFront(panel, activate: model.islandExpanded)
         syncClosedActivationPanel(using: model, on: screen)
         startEventMonitoring()
     }
@@ -109,10 +109,10 @@ final class IslandShellController {
         }
 
         computeNotchRect(screen: screen)
-        panel.orderFrontRegardless()
         panel.ignoresMouseEvents = false
         panel.acceptsMouseMovedEvents = true
         hideClosedActivationPanel()
+        orderPanelFront(panel, activate: true)
         startEventMonitoring()
     }
 
@@ -135,10 +135,10 @@ final class IslandShellController {
         }
 
         computeNotchRect(screen: screen)
-        panel.orderFrontRegardless()
         let isInteractive = model.peekCapturesMouseEvents
         panel.ignoresMouseEvents = !isInteractive
         panel.acceptsMouseMovedEvents = isInteractive
+        orderPanelFront(panel, activate: false)
         hideClosedActivationPanel()
         startEventMonitoring()
     }
@@ -225,7 +225,7 @@ final class IslandShellController {
     func expandedContentWidth(for model: IslandAppModel, on screen: NSScreen?) -> CGFloat {
         let resolvedWidth = CodexIslandChromeMetrics.resolvedExpandedContentWidth(
             baseContentWidth: expandedContentWidth(for: screen),
-            showsWindDrivePanel: model.showsExpandedWindDrivePanel
+            showsWindDrivePanel: false
         )
 
         guard let screen else {
@@ -273,7 +273,7 @@ final class IslandShellController {
         let metrics = resolvedRootViewMetrics(for: screen)
         let panel = IslandShellPanel(
             contentRect: holdingPanelFrame(for: model, on: screen),
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
@@ -488,6 +488,18 @@ final class IslandShellController {
         model.islandExpanded || model.peekCapturesMouseEvents
     }
 
+    private func orderPanelFront(_ panel: IslandShellPanel, activate: Bool) {
+        guard activate else {
+            panel.orderFrontRegardless()
+            return
+        }
+
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
+        panel.orderFrontRegardless()
+        panel.makeKey()
+    }
+
     private func scheduleCloseResize(for panel: IslandShellPanel) {
         cancelPendingCloseResize(resetCollapseState: false)
     }
@@ -636,6 +648,7 @@ private final class IslandShellHostingView<Content: View>: NSHostingView<Content
     }
 
     override func mouseDown(with event: NSEvent) {
+        NSApplication.shared.activate(ignoringOtherApps: true)
         window?.makeKey()
         super.mouseDown(with: event)
     }

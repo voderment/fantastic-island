@@ -98,15 +98,6 @@ struct IslandSettingsView: View {
             }
 
             SidebarItemButton(
-                title: "Wind Drive",
-                subtitle: "Logo and sound",
-                symbolName: "wind",
-                isSelected: selection == .windDrive
-            ) {
-                selection = .windDrive
-            }
-
-            SidebarItemButton(
                 title: "About",
                 subtitle: "Product, version, credits",
                 symbolName: "info.circle",
@@ -155,8 +146,6 @@ struct IslandSettingsView: View {
                 switch selection {
                 case .general:
                     generalPage
-                case .windDrive:
-                    windDrivePage
                 case .about:
                     IslandAboutPage()
                 case let .module(moduleID):
@@ -224,7 +213,7 @@ struct IslandSettingsView: View {
         }
     }
 
-    private var windDrivePage: some View {
+    private var fanModuleSettingsPage: some View {
         let iconTileSize: CGFloat = 74
         let iconGridSpacing: CGFloat = 12
         let previewSide = iconTileSize * 2 + iconGridSpacing
@@ -235,22 +224,6 @@ struct IslandSettingsView: View {
         )
 
         return VStack(alignment: .leading, spacing: 22) {
-            pageHeader(
-                title: "Wind Drive",
-                caption: "Own the fan center mark here. The settings window itself stays static."
-            )
-
-            SettingsCard(title: "Expanded Notch Area") {
-                ToggleRow(
-                    title: "Show Wind Drive Panel",
-                    detail: "Hides only the large Wind Drive panel while expanded. The collapsed fan icon stays visible.",
-                    isOn: Binding(
-                        get: { model.showsExpandedWindDrivePanel },
-                        set: { model.setShowsExpandedWindDrivePanel($0) }
-                    )
-                )
-            }
-
             SettingsCard(title: "Sound Effects") {
                 ToggleRow(
                     title: "Enable Sound Effects",
@@ -361,6 +334,8 @@ struct IslandSettingsView: View {
                     playerModulePage
                 case XPostModuleModel.moduleID:
                     twitterModulePage
+                case FanModuleModel.moduleID:
+                    fanModuleSettingsPage
                 default:
                     SettingsCard(title: "Module Specific") {
                         PlaceholderRow(
@@ -1309,6 +1284,8 @@ struct IslandSettingsView: View {
             return "Review the current media integration state and keep transport controls close at hand."
         case XPostModuleModel.moduleID:
             return "Configure your own X API credentials, sign in, and publish text-only posts from the island."
+        case FanModuleModel.moduleID:
+            return "Tune the fan module's sound cues and center logo."
         default:
             return nil
         }
@@ -1410,7 +1387,6 @@ struct IslandSettingsView: View {
 
 private enum IslandSettingsDestination: Hashable {
     case general
-    case windDrive
     case about
     case module(String)
 }

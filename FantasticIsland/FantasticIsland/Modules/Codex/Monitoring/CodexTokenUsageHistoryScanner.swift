@@ -1,10 +1,17 @@
 import Foundation
 
-struct CodexTokenUsageHistoryScanner {
+final class CodexTokenUsageHistoryScanner {
     var rootURL: URL
     var maxAge: TimeInterval
     var maxFiles: Int
     var maxReadBytesPerFile: UInt64
+    private var cachedFiles: [URL: CachedFileSummary] = [:]
+
+    private struct CachedFileSummary {
+        var modifiedAt: Date
+        var fileSize: Int
+        var history: CodexTokenUsageHistory
+    }
 
     init(
         rootURL: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/sessions", isDirectory: true),
@@ -22,19 +29,20 @@ struct CodexTokenUsageHistoryScanner {
         guard FileManager.default.fileExists(atPath: rootURL.path),
               let enumerator = FileManager.default.enumerator(
                 at: rootURL,
-                includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+                includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey],
                 options: [.skipsHiddenFiles]
               ) else {
+            cachedFiles.removeAll()
             return .empty
         }
 
         let cutoff = now.addingTimeInterval(-maxAge)
-        var candidates: [(url: URL, modifiedAt: Date)] = []
+        var candidates: [(url: URL, modifiedAt: Date, fileSize: Int)] = []
 
         for case let fileURL as URL in enumerator {
             guard fileURL.lastPathComponent.hasPrefix("rollout-"),
                   fileURL.pathExtension == "jsonl",
-                  let values = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey, .isRegularFileKey]),
+                  let values = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]),
                   values.isRegularFile == true else {
                 continue
             }
@@ -44,7 +52,7 @@ struct CodexTokenUsageHistoryScanner {
                 continue
             }
 
-            candidates.append((fileURL, modifiedAt))
+            candidates.append((fileURL, modifiedAt, values.fileSize ?? 0))
         }
 
         let files = candidates
@@ -57,28 +65,49 @@ struct CodexTokenUsageHistoryScanner {
             }
             .prefix(maxFiles)
 
-        return files.reduce(into: CodexTokenUsageHistory()) { history, candidate in
-            scan(fileURL: candidate.url, into: &history)
+        var activeURLs = Set<URL>()
+        let history = files.reduce(into: CodexTokenUsageHistory()) { history, candidate in
+            activeURLs.insert(candidate.url)
+            history.merge(historyForFile(candidate))
         }
+        cachedFiles = cachedFiles.filter { activeURLs.contains($0.key) }
+        return history
     }
 
-    private func scan(fileURL: URL, into history: inout CodexTokenUsageHistory) {
+    private func historyForFile(_ candidate: (url: URL, modifiedAt: Date, fileSize: Int)) -> CodexTokenUsageHistory {
+        if let cached = cachedFiles[candidate.url],
+           cached.modifiedAt == candidate.modifiedAt,
+           cached.fileSize == candidate.fileSize {
+            return cached.history
+        }
+
+        let history = scan(fileURL: candidate.url)
+        cachedFiles[candidate.url] = CachedFileSummary(
+            modifiedAt: candidate.modifiedAt,
+            fileSize: candidate.fileSize,
+            history: history
+        )
+        return history
+    }
+
+    private func scan(fileURL: URL) -> CodexTokenUsageHistory {
+        var history = CodexTokenUsageHistory()
         guard let handle = try? FileHandle(forReadingFrom: fileURL) else {
-            return
+            return history
         }
 
         defer { try? handle.close() }
 
         let fileSize = (try? handle.seekToEnd()) ?? 0
         guard fileSize > 0 else {
-            return
+            return history
         }
 
         let readSize = min(fileSize, maxReadBytesPerFile)
         let readStart = fileSize - readSize
         try? handle.seek(toOffset: readStart)
         guard var data = try? handle.readToEnd(), !data.isEmpty else {
-            return
+            return history
         }
 
         let startsAtFileBeginning = readStart == 0
@@ -111,6 +140,8 @@ struct CodexTokenUsageHistoryScanner {
             }
             previousCumulativeTokens = cumulativeTokens
         }
+
+        return history
     }
 
     private func trimLeadingPartialLine(from data: inout Data) {

@@ -37,10 +37,13 @@ struct OpenedIslandFanHeroView: View {
     let animationState: IslandFanAnimationState
     let logoPreset: WindDriveLogoPreset
     let customImage: NSImage?
+    var showsBasePlate = true
 
     var body: some View {
         ZStack {
-            basePlate
+            if showsBasePlate {
+                basePlate
+            }
             fanBladeLayer
             logoHub
         }

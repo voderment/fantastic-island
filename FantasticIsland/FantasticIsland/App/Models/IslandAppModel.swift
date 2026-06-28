@@ -6,6 +6,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 private let islandFanRotationRetuneThreshold: Double = 0.03
+private let islandMeasuredContentHeightThreshold: CGFloat = 2
+private let islandVisibleContentHeightRefreshThreshold: CGFloat = 1.5
 private let islandOpenTransitionAnimation = CodexIslandPeekMetrics.openAnimation
 private let islandCloseTransitionAnimation = CodexIslandPeekMetrics.closeAnimation
 private let islandOpenedRevealAnimation = CodexIslandPeekMetrics.chromeRevealAnimation
@@ -67,7 +69,6 @@ final class IslandAppModel: ObservableObject {
     @Published private(set) var usesCustomWindDriveLogo = false
     @Published private(set) var windDriveCustomLogoPath = ""
     @Published private(set) var windDriveCustomLogoImage: NSImage?
-    @Published private(set) var showsExpandedWindDrivePanel = true
     @Published private(set) var enabledModuleIDs: Set<String> = []
     @Published var islandExpanded = false
     @Published private(set) var islandPeeking = false
@@ -90,6 +91,7 @@ final class IslandAppModel: ObservableObject {
     let clashModule: ClashModuleModel
     let playerModule: PlayerModuleModel
     let xPostModule: XPostModuleModel
+    let fanModule: FanModuleModel
     let moduleRegistry: IslandModuleRegistry
     let designTokenStore = IslandDebugTokenStore()
 
@@ -142,8 +144,9 @@ final class IslandAppModel: ObservableObject {
         let clashModule = ClashModuleModel()
         let playerModule = PlayerModuleModel()
         let xPostModule = XPostModuleModel()
+        let fanModule = FanModuleModel()
         IslandDefaults.migrateLegacyValues()
-        let allModules: [any IslandModule] = [codexFanModule, clashModule, playerModule, xPostModule]
+        let allModules: [any IslandModule] = [codexFanModule, clashModule, playerModule, xPostModule, fanModule]
         let defaults = UserDefaults.standard
         let loadedEnabledModuleIDs = Self.loadEnabledModuleIDs(defaults: defaults, availableModules: allModules)
 
@@ -151,6 +154,7 @@ final class IslandAppModel: ObservableObject {
         self.clashModule = clashModule
         self.playerModule = playerModule
         self.xPostModule = xPostModule
+        self.fanModule = fanModule
         self.moduleRegistry = IslandModuleRegistry(modules: allModules)
         self.isAudioMuted = defaults.bool(forKey: IslandDefaults.audioMutedKey)
         self.launchAtLoginEnabled = defaults.bool(forKey: IslandDefaults.launchAtLoginKey)
@@ -162,11 +166,12 @@ final class IslandAppModel: ObservableObject {
         ) ?? .defaultMark
         self.usesCustomWindDriveLogo = defaults.bool(forKey: IslandDefaults.windDriveUsesCustomLogoKey)
         self.windDriveCustomLogoPath = defaults.string(forKey: IslandDefaults.windDriveCustomLogoPathKey) ?? ""
-        self.showsExpandedWindDrivePanel =
-            defaults.object(forKey: IslandDefaults.windDriveShowsExpandedPanelKey) as? Bool ?? true
         self.enabledModuleIDs = loadedEnabledModuleIDs
-        self.selectedModuleID = loadedEnabledModuleIDs.first ?? codexFanModule.id
+        self.selectedModuleID = loadedEnabledModuleIDs.contains(codexFanModule.id)
+            ? codexFanModule.id
+            : loadedEnabledModuleIDs.first ?? codexFanModule.id
         self.windDriveCustomLogoImage = Self.loadImage(at: windDriveCustomLogoPath)
+        syncFanModulePresentation()
         normalizeSelectedModuleID()
         refreshLaunchAtLoginState()
 
@@ -368,6 +373,17 @@ final class IslandAppModel: ObservableObject {
             for: selectedModule.id,
             presentation: selectedModulePresentationContext
         )
+    }
+    private var currentOpenedContentHeight: CGFloat {
+        if islandPeeking {
+            return peekContentHeight
+        }
+
+        if islandExpanded {
+            return selectedModuleContentHeight
+        }
+
+        return closedSurfaceHeight
     }
     var selectedModuleViewportHeight: CGFloat {
         max(0, selectedModuleContentHeight - CodexIslandChromeMetrics.moduleChromeHeight)
@@ -618,11 +634,10 @@ final class IslandAppModel: ObservableObject {
 
         let measurementKey = moduleContentMeasurementKey(for: moduleID, presentation: presentation)
         let previousHeight = measuredModuleContentHeights[measurementKey] ?? 0
-        guard abs(previousHeight - height) >= 2 else {
+        guard abs(previousHeight - height) >= islandMeasuredContentHeightThreshold else {
             return
         }
 
-        measuredModuleContentHeights[measurementKey] = height
         let updatesVisiblePresentation: Bool
         switch presentation {
         case .standard, .activity:
@@ -630,6 +645,15 @@ final class IslandAppModel: ObservableObject {
         case let .peek(activity):
             updatesVisiblePresentation = islandPeeking && presentedPeekActivity?.id == activity.id
         }
+        let isOpenedPresentationVisible = updatesVisiblePresentation && (islandExpanded || islandPeeking)
+        let previousVisibleContentHeight = isOpenedPresentationVisible ? currentOpenedContentHeight : nil
+        let previouslyNeededScrolling =
+            isOpenedPresentationVisible
+            ? moduleNeedsScrolling(for: moduleID, presentation: presentation)
+            : false
+
+        measuredModuleContentHeights[measurementKey] = height
+
         guard updatesVisiblePresentation else {
             return
         }
@@ -640,9 +664,20 @@ final class IslandAppModel: ObservableObject {
             return
         }
 
+        let visibleContentHeightChanged =
+            previousVisibleContentHeight.map {
+                abs(currentOpenedContentHeight - $0) >= islandVisibleContentHeightRefreshThreshold
+            } ?? false
+        let scrollModeChanged =
+            isOpenedPresentationVisible
+            && previouslyNeededScrolling != moduleNeedsScrolling(for: moduleID, presentation: presentation)
+        guard visibleContentHeightChanged || scrollModeChanged else {
+            return
+        }
+
         objectWillChange.send()
 
-        if islandExpanded || islandPeeking {
+        if visibleContentHeightChanged, islandExpanded || islandPeeking {
             shellController.reposition()
         }
     }
@@ -692,6 +727,7 @@ final class IslandAppModel: ObservableObject {
     func setWindDriveLogoPreset(_ preset: WindDriveLogoPreset) {
         windDriveLogoPreset = preset
         usesCustomWindDriveLogo = false
+        syncFanModulePresentation()
         let defaults = UserDefaults.standard
         defaults.set(preset.rawValue, forKey: IslandDefaults.windDriveLogoPresetKey)
         defaults.set(false, forKey: IslandDefaults.windDriveUsesCustomLogoKey)
@@ -714,6 +750,7 @@ final class IslandAppModel: ObservableObject {
         windDriveCustomLogoPath = path
         windDriveCustomLogoImage = Self.loadImage(at: path)
         usesCustomWindDriveLogo = windDriveCustomLogoImage != nil
+        syncFanModulePresentation()
 
         let defaults = UserDefaults.standard
         defaults.set(path, forKey: IslandDefaults.windDriveCustomLogoPathKey)
@@ -722,16 +759,8 @@ final class IslandAppModel: ObservableObject {
 
     func clearCustomWindDriveLogo() {
         usesCustomWindDriveLogo = false
+        syncFanModulePresentation()
         UserDefaults.standard.set(false, forKey: IslandDefaults.windDriveUsesCustomLogoKey)
-    }
-
-    func setShowsExpandedWindDrivePanel(_ showsPanel: Bool) {
-        showsExpandedWindDrivePanel = showsPanel
-        UserDefaults.standard.set(showsPanel, forKey: IslandDefaults.windDriveShowsExpandedPanelKey)
-
-        if !islandLayoutTransitionInFlight {
-            shellController.reposition()
-        }
     }
 
     func isModuleEnabled(_ moduleID: String) -> Bool {
@@ -850,6 +879,14 @@ final class IslandAppModel: ObservableObject {
             .store(in: &cancellables)
     }
 
+    private func syncFanModulePresentation() {
+        fanModule.updatePresentation(
+            animationState: fanAnimationState,
+            logoPreset: windDriveLogoPreset,
+            customImage: usesCustomWindDriveLogo ? windDriveCustomLogoImage : nil
+        )
+    }
+
     private func setIslandExpanded(_ expanded: Bool, shouldReposition: Bool = true) {
         guard islandExpanded != expanded else {
             return
@@ -963,6 +1000,7 @@ final class IslandAppModel: ObservableObject {
         }
 
         IslandTransitionDiagnostics.transition("settle token=\(planID.uuidString)")
+        let hadPendingLayoutRefresh = pendingExpandedLayoutRefresh
         cancelPendingTransitionWork()
         currentTransitionPlan = nil
         transitionPhase = .stable
@@ -971,15 +1009,21 @@ final class IslandAppModel: ObservableObject {
         frozenPeekSnapshot = nil
         frozenExpandedSnapshot = nil
 
+        let visibleContentHeightBeforePendingMeasurements = currentOpenedContentHeight
+        let appliedPendingMeasuredHeights = applyPendingMeasuredHeights()
+        let visibleContentHeightChanged =
+            appliedPendingMeasuredHeights
+            && abs(currentOpenedContentHeight - visibleContentHeightBeforePendingMeasurements)
+                >= islandVisibleContentHeightRefreshThreshold
+
         if !islandExpanded {
             lockedExpandedContentHeight = nil
         }
 
-        if (islandExpanded || islandPeeking) && pendingExpandedLayoutRefresh {
-            pendingExpandedLayoutRefresh = false
+        pendingExpandedLayoutRefresh = false
+
+        if (islandExpanded || islandPeeking) && (hadPendingLayoutRefresh || visibleContentHeightChanged) {
             shellController.reposition()
-        } else {
-            pendingExpandedLayoutRefresh = false
         }
 
         if plan.to == .closed {
@@ -1120,6 +1164,7 @@ final class IslandAppModel: ObservableObject {
             preservedRotation: preservedRotation,
             now: now
         )
+        syncFanModulePresentation()
         reconcileActivities(allowAutoPresentation: true)
         rebuildStableRenderSnapshots()
         syncAudioState()
@@ -1614,9 +1659,7 @@ final class IslandAppModel: ObservableObject {
         case .peek:
             return 0
         case .standard, .activity:
-            return showsExpandedWindDrivePanel
-                ? CodexIslandChromeMetrics.minimumExpandedHeightWithWindDrivePanel
-                : 0
+            return 0
         }
     }
 
@@ -1672,8 +1715,23 @@ final class IslandAppModel: ObservableObject {
     ) -> Set<String> {
         let availableIDs = Set(availableModules.map(\.id))
         let storedIDs = Set(defaults.stringArray(forKey: IslandDefaults.enabledModuleIDsKey) ?? [])
+        if storedIDs.isEmpty {
+            if availableIDs.contains(FanModuleModel.moduleID) {
+                defaults.set(true, forKey: IslandDefaults.fanModuleDefaultEnabledMigrationKey)
+            }
+            return availableIDs
+        }
+
         let sanitizedIDs = availableIDs.intersection(storedIDs)
-        return sanitizedIDs.isEmpty ? availableIDs : sanitizedIDs
+        var resolvedIDs = sanitizedIDs
+
+        if availableIDs.contains(FanModuleModel.moduleID),
+           !defaults.bool(forKey: IslandDefaults.fanModuleDefaultEnabledMigrationKey) {
+            resolvedIDs.insert(FanModuleModel.moduleID)
+            defaults.set(true, forKey: IslandDefaults.fanModuleDefaultEnabledMigrationKey)
+        }
+
+        return resolvedIDs.isEmpty ? availableIDs : resolvedIDs
     }
 
     private static func loadImage(at path: String) -> NSImage? {

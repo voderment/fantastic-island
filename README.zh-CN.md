@@ -77,7 +77,7 @@ Fantastic Island 源自开源项目 [open-vibe-island](https://github.com/Octane
 
 不包含内容：
 
-- DMG 打包产物
+- 预构建的 DMG 打包产物
 - 代码签名与 notarization 配置
 - 个人开发团队标识
 - 私有本地元数据
@@ -99,8 +99,20 @@ xcodebuild -project 'FantasticIsland/FantasticIsland.xcodeproj' -scheme 'Fantast
 swift test
 ```
 
+## DMG 打包
+
+生成本地 DMG 安装包：
+
+```bash
+scripts/create-dmg.sh
+```
+
+当前 DMG 先使用无背景图的 Finder 安装窗口：左侧是大尺寸 `Fantastic Island.app` 图标，右侧是 `Applications` 快捷入口，并隐藏工具栏和状态栏。
+
 ## 发布说明
 
+- [v0.5.0](./docs/releases/v0.5.0.md) - Fan 模组与岛体性能优化
+- [v0.4.0](./docs/releases/v0.4.0.md) - Codex 用量热力图与 X 发帖器
 - [v0.3.0](./docs/releases/v0.3.0.md) - Player 播放源切换与 Codex 问题流
 - [v0.2.0](./docs/releases/v0.2.0.md) - Island 动画与交互细节优化
 - [v0.1.0](./docs/releases/v0.1.0.md) - 首个公开源码版本

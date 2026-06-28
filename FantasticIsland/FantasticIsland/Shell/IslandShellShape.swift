@@ -21,7 +21,7 @@ import SwiftUI
 // https://github.com/Octane0411/open-vibe-island
 // Original file: Sources/OpenIslandApp/NotchShape.swift
 // Modified for Fantastic Island on 2026-04-13.
-struct CodexNotchShape: InsettableShape {
+struct CodexNotchShape: InsettableShape, Equatable {
     var topCornerRadius: CGFloat
     var bottomCornerRadius: CGFloat
     var insetAmount: CGFloat = 0

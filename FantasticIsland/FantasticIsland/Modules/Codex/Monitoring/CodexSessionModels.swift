@@ -735,7 +735,7 @@ enum CodexAgentEvent: Equatable, Codable {
     case actionableStateResolved(ActionableStateResolvedEvent)
 }
 
-struct FanActivityState {
+struct FanActivityState: Equatable {
     var activityScore = 0.0
     var isSpinning = false
     var rotationPeriod = 1.6
@@ -743,6 +743,16 @@ struct FanActivityState {
     var inProgressSessionCount = 0
     var busySessionCount = 0
     var lastEventAt: Date?
+
+    func isVisuallyEquivalent(to other: FanActivityState) -> Bool {
+        isSpinning == other.isSpinning
+            && activeSessionCount == other.activeSessionCount
+            && inProgressSessionCount == other.inProgressSessionCount
+            && busySessionCount == other.busySessionCount
+            && lastEventAt == other.lastEventAt
+            && abs(activityScore - other.activityScore) < 0.05
+            && abs(rotationPeriod - other.rotationPeriod) < 0.03
+    }
 }
 
 struct CodexQuotaSnapshot: Equatable {
@@ -920,6 +930,60 @@ struct CodexTokenUsageDay: Identifiable, Equatable {
     var id: Date { date }
 }
 
+struct CodexTokenHeatmapSnapshot: Equatable {
+    static let rowCount = 7
+
+    var weekColumns: [[CodexTokenUsageDay?]]
+    var periodText: String
+    var peakText: String
+    var maxTokenCount: Int
+
+    static let empty = CodexTokenHeatmapSnapshot(
+        weekColumns: [],
+        periodText: "365D 0",
+        peakText: "PEAK --",
+        maxTokenCount: 1
+    )
+
+    static func make(
+        days: [CodexTokenUsageDay],
+        periodText: String,
+        peakText: String,
+        calendar: Calendar = .autoupdatingCurrent
+    ) -> CodexTokenHeatmapSnapshot {
+        let peak = days.map(\.totalTokens).max() ?? 0
+        return CodexTokenHeatmapSnapshot(
+            weekColumns: weekColumns(for: days, calendar: calendar),
+            periodText: periodText,
+            peakText: peakText,
+            maxTokenCount: max(peak, 1)
+        )
+    }
+
+    private static func weekColumns(
+        for days: [CodexTokenUsageDay],
+        calendar: Calendar
+    ) -> [[CodexTokenUsageDay?]] {
+        guard let firstDay = days.first else {
+            return []
+        }
+
+        let weekday = calendar.component(.weekday, from: firstDay.date)
+        let leadingEmptyDays = (weekday - calendar.firstWeekday + rowCount) % rowCount
+        var paddedDays = Array(repeating: Optional<CodexTokenUsageDay>.none, count: leadingEmptyDays)
+        paddedDays.append(contentsOf: days.map(Optional.some))
+
+        let remainder = paddedDays.count % rowCount
+        if remainder > 0 {
+            paddedDays.append(contentsOf: Array(repeating: Optional<CodexTokenUsageDay>.none, count: rowCount - remainder))
+        }
+
+        return stride(from: 0, to: paddedDays.count, by: rowCount).map { startIndex in
+            Array(paddedDays[startIndex..<min(startIndex + rowCount, paddedDays.count)])
+        }
+    }
+}
+
 struct CodexTokenUsageHistory: Equatable {
     private var totalsByDay: [Date: Int] = [:]
 
@@ -936,6 +1000,12 @@ struct CodexTokenUsageHistory: Equatable {
 
         let day = calendar.startOfDay(for: date)
         totalsByDay[day, default: 0] += tokens
+    }
+
+    mutating func merge(_ other: CodexTokenUsageHistory) {
+        for (day, tokens) in other.totalsByDay where tokens > 0 {
+            totalsByDay[day, default: 0] += tokens
+        }
     }
 
     func days(endingAt endDate: Date = .now, dayCount: Int, calendar: Calendar = .autoupdatingCurrent) -> [CodexTokenUsageDay] {

@@ -5,7 +5,7 @@ struct XPostModuleContentView: View {
     @ObservedObject var model: XPostModuleModel
     @State private var isComposerFocused = false
 
-    private let composerTextInset = EdgeInsets(top: 16, leading: 18, bottom: 16, trailing: 18)
+    private let composerFieldHeight: CGFloat = 118
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -63,66 +63,59 @@ struct XPostModuleContentView: View {
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: 10) {
-            ZStack(alignment: .topLeading) {
-                XPostComposerTextView(
+            GeometryReader { geometry in
+                XPostComposerField(
                     text: $model.draftText,
+                    placeholder: NSLocalizedString("What's happening?", comment: ""),
                     isEnabled: !model.isPosting && !model.isSigningIn,
-                    textInset: composerTextInset,
+                    isInvalid: model.validation.containsURL || model.validation.isOverLimit,
                     focusRequestID: model.composerFocusRequestID,
                     onFocusChange: { isComposerFocused = $0 },
                     onFocusRequestHandled: { model.markComposerFocusRequestHandled($0) },
                     onSubmit: submitFromComposer
                 )
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-
-                if model.draftText.isEmpty {
-                    Text("What's happening?")
-                        .font(.system(size: 14, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.34))
-                        .padding(composerTextInset)
-                        .allowsHitTesting(false)
-                }
+                .frame(width: max(0, geometry.size.width), height: composerFieldHeight)
             }
-            .frame(minHeight: 116, maxHeight: 116)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color.white.opacity(isComposerFocused ? 0.072 : 0.055))
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(composerStrokeColor, lineWidth: isComposerFocused ? 1.8 : 1)
-            }
-            .shadow(color: composerGlowColor, radius: isComposerFocused ? 7 : 0)
+            .frame(maxWidth: .infinity, minHeight: composerFieldHeight, maxHeight: composerFieldHeight)
+            .layoutPriority(1)
 
-            HStack(spacing: 10) {
-                Text(LocalizedStringKey(footerMessage))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(footerTint)
-                    .lineLimit(1)
-
-                Spacer(minLength: 0)
-
-                Text("\(model.validation.weightedLength)/\(XPostTextValidator.maxWeightedLength)")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundStyle(counterTint)
-
-                Button {
-                    model.submitPost()
-                } label: {
-                    Text(LocalizedStringKey(model.postButtonTitle))
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(Color.black.opacity(0.9))
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 9)
-                        .background(
-                            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                                .fill(Color.white.opacity(model.canPost ? 0.92 : 0.36))
-                        )
-                }
-                .buttonStyle(.plain)
-                .disabled(!model.canPost)
-            }
+            composerFooter
         }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private var composerFooter: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Text(LocalizedStringKey(footerMessage))
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(footerTint)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .layoutPriority(1)
+
+            Spacer(minLength: 8)
+
+            Text("\(model.validation.weightedLength)/\(XPostTextValidator.maxWeightedLength)")
+                .font(.system(size: 11.5, weight: .bold, design: .monospaced))
+                .foregroundStyle(counterTint)
+                .frame(minWidth: 46, alignment: .trailing)
+
+            Button {
+                model.submitPost()
+            } label: {
+                Text(LocalizedStringKey(model.postButtonTitle))
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Color.black.opacity(model.canPost ? 0.9 : 0.48))
+                    .frame(minWidth: 70, minHeight: 34)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(Color.white.opacity(model.canPost ? 0.92 : 0.22))
+                    )
+            }
+            .buttonStyle(.plain)
+            .disabled(!model.canPost)
+        }
+        .frame(minHeight: 34)
     }
 
     @ViewBuilder
@@ -180,26 +173,6 @@ struct XPostModuleContentView: View {
         return Color.white.opacity(0.62)
     }
 
-    private var composerStrokeColor: Color {
-        if model.validation.containsURL || model.validation.isOverLimit {
-            return Color.red.opacity(isComposerFocused ? 0.74 : 0.32)
-        }
-
-        if isComposerFocused {
-            return Color.white.opacity(0.78)
-        }
-
-        return Color.white.opacity(0.06)
-    }
-
-    private var composerGlowColor: Color {
-        if model.validation.containsURL || model.validation.isOverLimit {
-            return Color.red.opacity(isComposerFocused ? 0.28 : 0)
-        }
-
-        return Color.white.opacity(isComposerFocused ? 0.12 : 0)
-    }
-
     private func submitFromComposer() {
         guard model.canPost else {
             return
@@ -209,11 +182,12 @@ struct XPostModuleContentView: View {
     }
 }
 
-private struct XPostComposerTextView: NSViewRepresentable {
+private struct XPostComposerField: NSViewRepresentable {
     @Binding var text: String
 
+    let placeholder: String
     let isEnabled: Bool
-    let textInset: EdgeInsets
+    let isInvalid: Bool
     let focusRequestID: UUID?
     let onFocusChange: (Bool) -> Void
     let onFocusRequestHandled: (UUID) -> Void
@@ -232,31 +206,20 @@ private struct XPostComposerTextView: NSViewRepresentable {
         let hostView = XPostComposerHostView()
         let textView = hostView.textView
         textView.delegate = context.coordinator
-        textView.onFocusChange = { [weak coordinator = context.coordinator] isFocused in
+        hostView.onFocusChange = { [weak coordinator = context.coordinator] isFocused in
             coordinator?.setFocused(isFocused)
         }
-        textView.drawsBackground = false
-        textView.isEditable = isEnabled
-        textView.isSelectable = true
-        textView.allowsUndo = true
-        textView.isRichText = false
-        textView.importsGraphics = false
-        textView.string = text
-        textView.font = .systemFont(ofSize: 14, weight: .regular)
-        textView.textColor = NSColor.white.withAlphaComponent(0.94)
-        textView.insertionPointColor = .white
-        textView.focusRingType = .none
-        textView.textContainer?.lineFragmentPadding = 0
-        textView.textContainer?.widthTracksTextView = true
-        textView.textContainer?.heightTracksTextView = false
-        textView.minSize = .zero
-        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
-        textView.backgroundColor = .clear
-
-        hostView.updateTextInset(textInset)
+        textView.onFocusChange = { [weak hostView] isFocused in
+            hostView?.setFocused(isFocused)
+        }
+        hostView.configureTextView()
+        hostView.update(
+            text: text,
+            placeholder: placeholder,
+            isEnabled: isEnabled,
+            isInvalid: isInvalid,
+            isFocused: false
+        )
         context.coordinator.textView = textView
         return hostView
     }
@@ -267,22 +230,37 @@ private struct XPostComposerTextView: NSViewRepresentable {
         }
 
         let textView = hostView.textView
+        let isFocused = textView.window?.firstResponder === textView
 
         if textView.string != text {
             textView.string = text
         }
         textView.isEditable = isEnabled
-        textView.textColor = NSColor.white.withAlphaComponent(isEnabled ? 0.94 : 0.48)
-        hostView.updateTextInset(textInset)
-        context.coordinator.setFocused(textView.window?.firstResponder === textView)
+        hostView.update(
+            text: text,
+            placeholder: placeholder,
+            isEnabled: isEnabled,
+            isInvalid: isInvalid,
+            isFocused: isFocused
+        )
+        context.coordinator.setFocused(isFocused)
         context.coordinator.focusIfNeeded(requestID: focusRequestID)
         hostView.needsLayout = true
     }
 
     private final class XPostComposerHostView: NSView {
         let textView = XPostNativeTextView(frame: .zero)
+        var onFocusChange: ((Bool) -> Void)?
 
-        private var textInset = EdgeInsets()
+        private let placeholderLabel = NSTextField(labelWithString: "")
+
+        private let horizontalInset: CGFloat = 16
+        private let verticalInset: CGFloat = 14
+        private var isInvalid = false
+        private var isFocused = false
+        private var isEnabled = true
+
+        override var isFlipped: Bool { true }
 
         override var intrinsicContentSize: NSSize {
             NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric)
@@ -291,27 +269,137 @@ private struct XPostComposerTextView: NSViewRepresentable {
         override init(frame frameRect: NSRect) {
             super.init(frame: frameRect)
             wantsLayer = true
-            layer?.backgroundColor = NSColor.clear.cgColor
-            textView.frame = bounds
-            textView.autoresizingMask = [.width, .height]
+            layer?.masksToBounds = true
+
+            placeholderLabel.font = .systemFont(ofSize: 15, weight: .medium)
+            placeholderLabel.isBezeled = false
+            placeholderLabel.drawsBackground = false
+            placeholderLabel.isEditable = false
+            placeholderLabel.isSelectable = false
+            placeholderLabel.lineBreakMode = .byTruncatingTail
+
             addSubview(textView)
+            addSubview(placeholderLabel)
+            updateAppearance()
         }
 
         required init?(coder: NSCoder) {
             nil
         }
 
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard bounds.contains(point) else {
+                return nil
+            }
+
+            return self
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            guard isEnabled else {
+                return
+            }
+
+            window?.makeFirstResponder(textView)
+            setFocused(textView.window?.firstResponder === textView)
+            textView.mouseDown(with: event)
+        }
+
         override func layout() {
             super.layout()
             textView.frame = bounds
+            placeholderLabel.frame = placeholderRect
             updateTextContainerSize()
         }
 
-        func updateTextInset(_ inset: EdgeInsets) {
-            textInset = inset
-            textView.textContainerInset = NSSize(width: inset.leading, height: inset.top)
-            updateTextContainerSize()
+        func configureTextView() {
+            textView.drawsBackground = false
+            textView.isEditable = true
+            textView.isSelectable = true
+            textView.allowsUndo = true
+            textView.isRichText = false
+            textView.importsGraphics = false
+            textView.font = .systemFont(ofSize: 15, weight: .medium)
+            textView.textColor = NSColor.white.withAlphaComponent(0.94)
+            textView.insertionPointColor = .white
+            textView.focusRingType = .none
+            textView.textContainerInset = NSSize(width: horizontalInset, height: verticalInset)
+            textView.textContainer?.lineFragmentPadding = 0
+            textView.textContainer?.widthTracksTextView = true
+            textView.textContainer?.heightTracksTextView = false
+            textView.minSize = .zero
+            textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+            textView.isVerticallyResizable = true
+            textView.isHorizontallyResizable = false
+            textView.autoresizingMask = [.width, .height]
+            textView.backgroundColor = .clear
+        }
+
+        func update(
+            text: String,
+            placeholder: String,
+            isEnabled: Bool,
+            isInvalid: Bool,
+            isFocused: Bool
+        ) {
+            if textView.string != text {
+                textView.string = text
+            }
+            placeholderLabel.stringValue = placeholder
+            placeholderLabel.isHidden = !text.isEmpty
+            placeholderLabel.textColor = NSColor.white.withAlphaComponent(isFocused ? 0.36 : 0.28)
+            textView.isEditable = isEnabled
+            textView.textColor = NSColor.white.withAlphaComponent(isEnabled ? 0.94 : 0.48)
+
+            self.isEnabled = isEnabled
+            self.isInvalid = isInvalid
+            setFocused(isFocused, notify: false)
+            updateAppearance()
             needsLayout = true
+        }
+
+        func setFocused(_ focused: Bool, notify: Bool = true) {
+            let didChange = isFocused != focused
+            isFocused = focused
+            updateAppearance()
+
+            if notify, didChange {
+                onFocusChange?(focused)
+            }
+        }
+
+        private var placeholderRect: NSRect {
+            NSRect(
+                x: horizontalInset,
+                y: verticalInset + 1,
+                width: max(0, bounds.width - (horizontalInset * 2)),
+                height: 22
+            )
+        }
+
+        private func updateAppearance() {
+            guard let layer else {
+                return
+            }
+
+            layer.cornerRadius = 18
+            layer.cornerCurve = .continuous
+            layer.backgroundColor = NSColor.black.withAlphaComponent(isFocused ? 0.22 : 0.14).cgColor
+            layer.borderWidth = isFocused ? 1.2 : 1
+            layer.borderColor = borderColor.cgColor
+            placeholderLabel.textColor = NSColor.white.withAlphaComponent(isFocused ? 0.36 : 0.28)
+        }
+
+        private var borderColor: NSColor {
+            if isInvalid {
+                return NSColor.systemRed.withAlphaComponent(isFocused ? 0.74 : 0.34)
+            }
+
+            if isFocused {
+                return NSColor.white.withAlphaComponent(0.78)
+            }
+
+            return NSColor.white.withAlphaComponent(0.18)
         }
 
         private func updateTextContainerSize() {
@@ -320,7 +408,7 @@ private struct XPostComposerTextView: NSViewRepresentable {
             }
 
             textContainer.containerSize = NSSize(
-                width: max(0, bounds.width - textInset.leading - textInset.trailing),
+                width: max(0, bounds.width - (horizontalInset * 2)),
                 height: CGFloat.greatestFiniteMagnitude
             )
         }

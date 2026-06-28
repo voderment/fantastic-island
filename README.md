@@ -78,7 +78,7 @@ Included:
 
 Not included:
 
-- DMG packaging
+- Prebuilt DMG artifacts
 - Code signing or notarization setup
 - Personal team identifiers
 - Private local metadata
@@ -100,8 +100,20 @@ Run the lightweight logic checks with:
 swift test
 ```
 
+## DMG Packaging
+
+Create a local DMG with a Finder install window:
+
+```bash
+scripts/create-dmg.sh
+```
+
+The DMG layout uses a plain Finder window for now: a large `Fantastic Island.app` icon on the left, an `Applications` shortcut on the right, hidden toolbar/status bar, and no background image.
+
 ## Releases
 
+- [v0.5.0](./docs/releases/v0.5.0.md) - Fan module and island performance polish
+- [v0.4.0](./docs/releases/v0.4.0.md) - Codex usage heatmap and X composer
 - [v0.3.0](./docs/releases/v0.3.0.md) - Player source switching and Codex question flow
 - [v0.2.0](./docs/releases/v0.2.0.md) - Island transition and interaction polish
 - [v0.1.0](./docs/releases/v0.1.0.md) - First public source release

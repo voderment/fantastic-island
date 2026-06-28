@@ -11,6 +11,7 @@ final class CodexMonitoringEngine {
     private var lastTokenUsageScanAt = Date.distantPast
     private var isTokenUsageScanInFlight = false
     private let tokenUsageScanInterval: TimeInterval = 60
+    private let tokenUsageForcedScanInterval: TimeInterval = 30
 
     init(
         discovery: CodexSessionDiscovery = CodexSessionDiscovery(),
@@ -92,8 +93,9 @@ final class CodexMonitoringEngine {
         force: Bool = false,
         completion: @escaping (CodexMonitoringSnapshot) -> Void
     ) {
+        let minimumInterval = force ? tokenUsageForcedScanInterval : tokenUsageScanInterval
         guard !isTokenUsageScanInFlight,
-              force || now.timeIntervalSince(lastTokenUsageScanAt) >= tokenUsageScanInterval else {
+              now.timeIntervalSince(lastTokenUsageScanAt) >= minimumInterval else {
             return
         }
 
@@ -102,9 +104,12 @@ final class CodexMonitoringEngine {
         tokenUsageQueue.async { [self] in
             let history = tokenUsageScanner.scan(now: now)
             queue.async { [self] in
+                let didChange = history != latestTokenUsageHistory
                 latestTokenUsageHistory = history
                 isTokenUsageScanInFlight = false
-                publishSnapshot(completion)
+                if didChange {
+                    publishSnapshot(completion)
+                }
             }
         }
     }

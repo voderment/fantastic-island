@@ -91,6 +91,8 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     private var monitoredSessions: [SessionSnapshot] = []
     private var latestQuotaSnapshot: CodexQuotaSnapshot?
     private var tokenUsageHistory = CodexTokenUsageHistory.empty
+    private var tokenUsageHeatmapSnapshot = CodexTokenHeatmapSnapshot.empty
+    private var tokenUsageHeatmapEndDay = Date.distantPast
     private var lastActivityRefreshAt = Date()
     private var displayedScore = 0.0
     private let pollInterval = 1.0
@@ -124,8 +126,10 @@ final class CodexModuleModel: ObservableObject, IslandModule {
             hooksStatus = .error("Bridge unavailable: \(error.localizedDescription)")
         }
 
+        let now = Date()
         refreshHooksStatus()
-        refreshActivityState(now: .now)
+        rebuildTokenUsageHeatmapSnapshot(now: now)
+        refreshActivityState(now: now)
         let codexRunning = CodexProcessMonitor.isCodexRunning()
         isCodexCurrentlyRunning = codexRunning
         pollRollouts(force: true, codexRunning: codexRunning)
@@ -174,12 +178,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     var globalInfoWeekValueText: String { quotaValueText(quotaSnapshot?.weekRemainingPercent) }
     var globalInfoFiveHourResetCompactText: String { quotaResetTimeCompactText(quotaSnapshot?.fiveHourResetAt) }
     var globalInfoWeekResetCompactText: String { quotaResetCompactText(quotaSnapshot?.weekResetAt) }
-    var tokenUsageHeatmapDays: [CodexTokenUsageDay] { tokenUsageHistory.days(dayCount: Self.tokenUsageHeatmapDayCount) }
-    var tokenUsageHeatmapPeriodText: String { "\(Self.tokenUsageHeatmapDayCount)D \(formatTokenCount(tokenUsageHeatmapDays.map(\.totalTokens).reduce(0, +)))" }
-    var tokenUsageHeatmapPeakText: String {
-        let peak = tokenUsageHeatmapDays.map(\.totalTokens).max() ?? 0
-        return peak > 0 ? "PEAK \(formatTokenCount(peak))" : "PEAK --"
-    }
+    var tokenUsageHeatmap: CodexTokenHeatmapSnapshot { tokenUsageHeatmapSnapshot }
     var expandedFiveHourQuotaText: String { expandedQuotaText(title: "5H Left", value: quotaSnapshot?.fiveHourRemainingPercent) }
     var expandedWeekQuotaText: String { expandedQuotaText(title: "Week Left", value: quotaSnapshot?.weekRemainingPercent) }
     var fiveHourResetDescriptionText: String { quotaResetText(quotaSnapshot?.fiveHourResetAt) }
@@ -408,9 +407,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
             globalInfoWeekValueText: globalInfoWeekValueText,
             globalInfoFiveHourResetCompactText: globalInfoFiveHourResetCompactText,
             globalInfoWeekResetCompactText: globalInfoWeekResetCompactText,
-            tokenUsageHeatmapDays: tokenUsageHeatmapDays,
-            tokenUsageHeatmapPeriodText: tokenUsageHeatmapPeriodText,
-            tokenUsageHeatmapPeakText: tokenUsageHeatmapPeakText,
+            tokenUsageHeatmap: tokenUsageHeatmap,
             approvePermission: { [weak self] sessionID, action in
                 Task { @MainActor in
                     self?.approvePermission(for: sessionID, action: action)
@@ -719,11 +716,43 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     }
 
     private func pollIfNeeded() {
+        let now = Date()
         let codexRunning = CodexProcessMonitor.isCodexRunning()
         isCodexCurrentlyRunning = codexRunning
-        refreshActivityState(now: .now)
+        updateTokenUsageHeatmapSnapshotIfNeeded(now: now)
+        refreshActivityState(now: now)
         pollRollouts(codexRunning: codexRunning)
         refreshAppServerConnection(codexRunning: codexRunning)
+    }
+
+    private func updateTokenUsageHeatmapSnapshotIfNeeded(now: Date, force: Bool = false) {
+        let calendar = Calendar.autoupdatingCurrent
+        let endDay = calendar.startOfDay(for: now)
+        guard force || tokenUsageHeatmapEndDay != endDay else {
+            return
+        }
+
+        rebuildTokenUsageHeatmapSnapshot(now: now, calendar: calendar)
+    }
+
+    private func rebuildTokenUsageHeatmapSnapshot(now: Date, calendar: Calendar = .autoupdatingCurrent) {
+        let days = tokenUsageHistory.days(
+            endingAt: now,
+            dayCount: Self.tokenUsageHeatmapDayCount,
+            calendar: calendar
+        )
+        let totalTokens = days.reduce(0) { $0 + $1.totalTokens }
+        let peakTokens = days.map(\.totalTokens).max() ?? 0
+        let periodText = "\(Self.tokenUsageHeatmapDayCount)D \(formatTokenCount(totalTokens))"
+        let peakText = peakTokens > 0 ? "PEAK \(formatTokenCount(peakTokens))" : "PEAK --"
+
+        tokenUsageHeatmapSnapshot = CodexTokenHeatmapSnapshot.make(
+            days: days,
+            periodText: periodText,
+            peakText: peakText,
+            calendar: calendar
+        )
+        tokenUsageHeatmapEndDay = calendar.startOfDay(for: now)
     }
 
     private func refreshActivityState(now: Date) {
@@ -735,7 +764,7 @@ final class CodexModuleModel: ObservableObject, IslandModule {
         )
         let decayFactor = pow(0.92, delta / 0.2)
         displayedScore = max(freshState.activityScore, displayedScore * decayFactor)
-        activityState = FanActivityState(
+        let nextActivityState = FanActivityState(
             activityScore: displayedScore,
             isSpinning: freshState.isSpinning,
             rotationPeriod: freshState.rotationPeriod,
@@ -744,6 +773,9 @@ final class CodexModuleModel: ObservableObject, IslandModule {
             busySessionCount: freshState.busySessionCount,
             lastEventAt: freshState.lastEventAt
         )
+        if !activityState.isVisuallyEquivalent(to: nextActivityState) {
+            activityState = nextActivityState
+        }
     }
 
     private func pollRollouts(force: Bool = false, codexRunning: Bool) {
@@ -938,7 +970,12 @@ final class CodexModuleModel: ObservableObject, IslandModule {
     private func applyMonitoringSnapshot(_ snapshot: CodexMonitoringSnapshot, refreshedAt now: Date) {
         monitoredSessions = snapshot.sessions.filter { !$0.isInternalSupportSession }
         latestQuotaSnapshot = snapshot.quotaSnapshot
+        let previousTokenUsageHistory = tokenUsageHistory
         tokenUsageHistory = snapshot.tokenUsageHistory
+        updateTokenUsageHeatmapSnapshotIfNeeded(
+            now: now,
+            force: previousTokenUsageHistory != tokenUsageHistory
+        )
         reconcileSessionSurface()
         refreshActivityState(now: now)
     }

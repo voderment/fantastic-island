@@ -8,8 +8,8 @@ enum IslandDefaults {
     static let windDriveLogoPresetKey = "island.settings.windDrive.logoPreset"
     static let windDriveUsesCustomLogoKey = "island.settings.windDrive.usesCustomLogo"
     static let windDriveCustomLogoPathKey = "island.settings.windDrive.customLogoPath"
-    static let windDriveShowsExpandedPanelKey = "island.settings.windDrive.showsExpandedPanel"
     static let enabledModuleIDsKey = "island.settings.enabledModuleIDs"
+    static let fanModuleDefaultEnabledMigrationKey = "island.settings.fanModule.defaultEnabledMigration"
 
     private static let legacyAudioMutedKey = "audioMuted"
 

@@ -300,7 +300,7 @@ struct IslandShellView: View {
         let closedTotalWidth = closedContentWidth
         let resolvedExpandedContentWidth = CodexIslandChromeMetrics.resolvedExpandedContentWidth(
             baseContentWidth: expandedContentWidth,
-            showsWindDrivePanel: model.showsExpandedWindDrivePanel
+            showsWindDrivePanel: false
         )
         let expandedSurfaceWidth = min(
             layoutWidth,
@@ -366,17 +366,43 @@ struct IslandShellView: View {
 
             return surfaceWidth
         }()
+        let materialSurfaceMetrics: (width: CGFloat, height: CGFloat, isOpened: Bool) = {
+            guard let transitionPlan else {
+                return (surfaceWidth, surfaceHeight, usesOpenedVisualState)
+            }
+
+            if transitionPlan.from.visualMode == .expanded || transitionPlan.to.visualMode == .expanded {
+                return (expandedSurfaceWidth, expandedSurfaceHeight, true)
+            }
+
+            if transitionPlan.from.visualMode == .peek || transitionPlan.to.visualMode == .peek {
+                return (peekSurfaceWidth, peekSurfaceHeight, true)
+            }
+
+            return (surfaceWidth, surfaceHeight, usesOpenedVisualState)
+        }()
         let premeasuredModuleColumnWidth = expandedModuleColumnWidth(for: resolvedExpandedContentWidth)
         let surfaceShape = CodexNotchShape(
             topCornerRadius: usesOpenedVisualState ? CodexNotchShape.openedTopRadius : CodexNotchShape.closedTopRadius,
             bottomCornerRadius: usesOpenedVisualState ? CodexNotchShape.openedBottomRadius : CodexNotchShape.closedBottomRadius
         )
+        let materialShape = CodexNotchShape(
+            topCornerRadius: materialSurfaceMetrics.isOpened ? CodexNotchShape.openedTopRadius : CodexNotchShape.closedTopRadius,
+            bottomCornerRadius: materialSurfaceMetrics.isOpened ? CodexNotchShape.openedBottomRadius : CodexNotchShape.closedBottomRadius
+        )
 
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
-                surfaceShape
-                    .fill(Color.black)
-                    .frame(width: surfaceWidth, height: surfaceHeight)
+                IslandShellBackplateSurface(
+                    shape: surfaceShape,
+                    materialShape: materialShape,
+                    width: surfaceWidth,
+                    height: surfaceHeight,
+                    materialWidth: materialSurfaceMetrics.width,
+                    materialHeight: materialSurfaceMetrics.height,
+                    isOpened: usesOpenedVisualState
+                )
+                .equatable()
 
                 ZStack(alignment: .top) {
                     headerRow
@@ -429,7 +455,21 @@ struct IslandShellView: View {
         }
         .contentShape(Rectangle())
         .onHover { hovering in
-            isHovering = hovering
+            guard !usesOpenedVisualState else {
+                if isHovering {
+                    isHovering = false
+                }
+                return
+            }
+
+            if isHovering != hovering {
+                isHovering = hovering
+            }
+        }
+        .onChange(of: usesOpenedVisualState) { _, usesOpenedVisualState in
+            if usesOpenedVisualState, isHovering {
+                isHovering = false
+            }
         }
         .onTapGesture {
             if !model.islandExpanded {
@@ -529,11 +569,7 @@ struct IslandShellView: View {
     }
 
     private func expandedChromeSection<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        HStack(alignment: .top, spacing: model.showsExpandedWindDrivePanel ? CodexIslandChromeMetrics.moduleColumnSpacing : 0) { // Wind Drive 与右侧内容列的间距
-            if model.showsExpandedWindDrivePanel {
-                fanColumn
-                    .frame(width: CodexIslandChromeMetrics.windDrivePanelWidth, alignment: .top)
-            }
+        HStack(alignment: .top, spacing: 0) {
             rightColumn(content: content)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
         }
@@ -566,20 +602,6 @@ struct IslandShellView: View {
             alignment: .topLeading
         )
         .clipped()
-    }
-
-    private var fanColumn: some View {
-        fanPanel
-    }
-
-    private var fanPanel: some View {
-        IslandWindDrivePanelView(
-            state: IslandWindDrivePanelRenderState(
-                animationState: model.fanAnimationState,
-                logoPreset: model.windDriveLogoPreset,
-                customImage: model.usesCustomWindDriveLogo ? model.windDriveCustomLogoImage : nil
-            )
-        )
     }
 
     private func rightColumn<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -769,11 +791,7 @@ struct IslandShellView: View {
 
     private func expandedModuleColumnWidth(for openedWidth: CGFloat) -> CGFloat {
         let expandedBodyWidth = max(0, openedWidth - (CodexIslandChromeMetrics.expandedContentHorizontalInset * 2))
-        let leadingColumnWidth =
-            model.showsExpandedWindDrivePanel
-            ? CodexIslandChromeMetrics.windDrivePanelWidth + CodexIslandChromeMetrics.moduleColumnSpacing
-            : 0
-        return max(0, expandedBodyWidth - leadingColumnWidth)
+        return max(0, expandedBodyWidth)
     }
 
     private var moduleTabRow: some View {
@@ -804,4 +822,88 @@ struct IslandShellView: View {
     private var actionToolbar: some View {
         EmptyView()
     }
+}
+
+private extension View {
+    @ViewBuilder
+    func islandShellLiquidGlass<S: Shape>(in shape: S) -> some View {
+        if #available(macOS 26.0, *) {
+            self.glassEffect(.regular, in: shape)
+        } else {
+            self.background(.ultraThinMaterial, in: shape)
+        }
+    }
+}
+
+private struct IslandShellBackplateSurface: View, Equatable {
+    let shape: CodexNotchShape
+    let materialShape: CodexNotchShape
+    let width: CGFloat
+    let height: CGFloat
+    let materialWidth: CGFloat
+    let materialHeight: CGFloat
+    let isOpened: Bool
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            materialLayer
+
+            shape
+                .fill(backplateGradient)
+        }
+        .frame(width: width, height: height)
+        .clipShape(shape)
+        .overlay {
+            shape
+                .fill(openedHighlightGradient)
+                .opacity(isOpened ? 1 : 0)
+                .blendMode(.screen)
+        }
+        .overlay {
+            shape
+                .strokeBorder(Color.white.opacity(rimOpacity), lineWidth: isOpened ? 0.8 : 0.6)
+                .blendMode(.screen)
+        }
+    }
+
+    private var materialLayer: some View {
+        Color.clear
+            .frame(width: materialWidth, height: materialHeight)
+            .islandShellLiquidGlass(in: materialShape)
+            .transaction { transaction in
+                transaction.animation = nil
+            }
+    }
+
+    private var backplateGradient: LinearGradient {
+        LinearGradient(
+            stops: [
+                .init(color: Color.black.opacity(topShadeOpacity), location: 0),
+                .init(color: Color.black.opacity(middleShadeOpacity), location: 0.42),
+                .init(color: Color.black.opacity(lowerShadeOpacity), location: 0.72),
+                .init(color: Color.black.opacity(bottomShadeOpacity), location: 1),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    private var openedHighlightGradient: LinearGradient {
+        LinearGradient(
+            stops: [
+                .init(color: Color.clear, location: 0),
+                .init(color: Color.clear, location: 0.58),
+                .init(color: Color.white.opacity(0.035), location: 0.82),
+                .init(color: Color.white.opacity(0.02), location: 1),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    private var topShadeOpacity: Double { isOpened ? 0.96 : 0.92 }
+    private var middleShadeOpacity: Double { isOpened ? 0.88 : 0.86 }
+    private var lowerShadeOpacity: Double { isOpened ? 0.46 : 0.70 }
+    private var bottomShadeOpacity: Double { isOpened ? 0.18 : 0.62 }
+    private var rimOpacity: Double { isOpened ? 0.11 : 0.05 }
 }
